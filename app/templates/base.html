@@ -87,17 +87,13 @@
     <header>
         <div class="header-left">
             <h1><i>Firework</i></h1>
-            <span class="version">beta</span>
+            <span class="version">0.1beta</span>
         </div>
         
         <nav>
             {%- if current_user.is_authenticated -%}
                 <a href="{{ url_for('routes.home') }}">Home</a>
-
-		{%- if current_user.has_role('superadmin') -%}
-		    <a href="{{ url_for('admin.add_user') }}">Add User</a>
-		{%- endif -%}                
-
+                
                 {%- if current_user.has_role('superadmin', 'admin', 'requester') -%}
                     <a href="{{ url_for('routes.request_form') }}">Create Request</a>
                 {%- endif -%}
@@ -117,14 +113,23 @@
                 {%- if current_user.has_role('superadmin', 'admin', 'implementer') -%}
                     <a href="{{ url_for('routes.blacklist_rules_list') }}">Blacklist Rules</a>
                 {%- endif -%}
+
+                {# Removed "Add User" link from here. It's now only accessible from the "Users" page #}
+
+                {# New: Users list link for Superadmin #}
+                {%- if current_user.has_role('superadmin') -%}
+                    <a href="{{ url_for('admin.users_list') }}">Users</a>
+                {%- endif -%}
             {%- endif -%}
         </nav>
 
         <div class="header-right flex items-center space-x-4">
             {%- if current_user.is_authenticated -%}
-                <div class="text-white text-sm">
-                    Logged in as: <span class="font-bold">{{ current_user.username }}</span> ({{ current_user.role | capitalize }})
-                </div>
+                {# Make the user info section a clickable link to profile page #}
+                <a href="{{ url_for('routes.profile') }}" class="flex items-center text-white text-sm hover:text-blue-200 transition duration-300 ease-in-out">
+                    <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 12V3a1 1 0 00-1-1H4a1 1 0 00-1 1v18h18z"></path></svg>
+                    Logged in as: <span class="font-bold ml-1">{{ current_user.username }}</span> ({{ current_user.role | capitalize }})
+                </a>
                 <a href="{{ url_for('auth.logout') }}" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-sm">
                     Logout
                 </a>

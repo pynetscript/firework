@@ -1,12 +1,12 @@
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
-from app.models import FirewallRule, BlacklistRule, db, User # Import User model
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, abort
+from app.models import FirewallRule, BlacklistRule, db, User
 import ipaddress
 import json
 import logging
 from datetime import datetime
-from flask_login import login_required, current_user # Import current_user
+from flask_login import login_required, current_user
 from app.services.network_automation import NetworkAutomationService
-from app.decorators import roles_required, no_self_approval # Import custom decorators
+from app.decorators import roles_required, no_self_approval
 
 
 routes = Blueprint('routes', __name__)
@@ -17,6 +17,8 @@ app_logger = logging.getLogger(__name__)
 
 @routes.route('/')
 def home():
+    # If not authenticated, Flask-Login will redirect to auth.login due to login_manager.login_view setting.
+    # We explicitly redirect here to ensure a clean redirect from the root URL.
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
     # Redirect authenticated users to a default dashboard page
@@ -24,14 +26,14 @@ def home():
 
 
 @routes.route('/request-form')
-@login_required
+@login_required # Ensures user is logged in
 @roles_required('superadmin', 'admin', 'requester') # Only these roles can create requests
 def request_form():
     return render_template('request_form.html')
 
 
 @routes.route('/task-results')
-@login_required
+@login_required # Ensures user is logged in
 @roles_required('superadmin', 'admin', 'implementer', 'approver', 'requester') # All roles can see task results, but content varies
 def task_results():
     if current_user.role == 'requester':
@@ -48,7 +50,39 @@ def task_results():
             rule.firewalls_involved = []
     return render_template('task_results.html', rules=rules)
 
-# --- Helper Validation Functions (unchanged) ---
+
+# --- User Profile Page ---
+@routes.route('/profile', methods=['GET', 'POST'])
+@login_required # Ensures user is logged in
+def profile():
+    user = current_user # The current_user object is already loaded by Flask-Login
+
+    if request.method == 'POST':
+        # Update user details
+        user.username = request.form.get('username', user.username) # Username from form, fallback to current
+        user.email = request.form.get('email', user.email) # Email from form, fallback to current
+        user.first_name = request.form.get('first_name')
+        user.last_name = request.form.get('last_name')
+        
+        new_password = request.form.get('password')
+        if new_password:
+            user.set_password(new_password)
+            flash('Password updated successfully!', 'success')
+            app_logger.info(f"User {user.username} (ID: {user.id}) updated their password.")
+
+        try:
+            db.session.commit()
+            flash('Profile updated successfully!', 'success')
+            app_logger.info(f"User {user.username} (ID: {user.id}) updated their profile details.")
+            return redirect(url_for('routes.profile'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating profile: {e}', 'error')
+            app_logger.error(f"Error updating profile for user {user.username} (ID: {user.id}): {e}", exc_info=True)
+
+    return render_template('profile.html', user=user)
+
+# --- Helper Validation Functions (unchanged, not directly exposed as routes) ---
 def validate_ip_address(ip_str, field_name):
     """Validates if a string is a valid IPv4 address or network."""
     if not ip_str:
@@ -112,7 +146,7 @@ def validate_port(port_value):
             return False, f"Invalid port format: '{port_value}'. Must be an integer, 'start-end', or 'any'."
 
 
-# --- Blacklist Logic (unchanged for now, will apply roles later) ---
+# --- Blacklist Logic (unchanged) ---
 def check_blacklist(source_ip, destination_ip, protocol, destination_port):
     """
     Checks if a given request matches any active blacklist rules.
@@ -188,8 +222,8 @@ def check_blacklist(source_ip, destination_ip, protocol, destination_port):
     return False, None
 
 @routes.route('/api/request', methods=['POST'])
-@login_required # Ensure user is logged in to make a request
-@roles_required('superadmin', 'admin', 'requester') # Only these roles can make a request
+@login_required
+@roles_required('superadmin', 'admin', 'requester')
 def create_request():
     data = request.form
 
@@ -200,7 +234,6 @@ def create_request():
 
     errors = []
 
-    # 1.1 Pre-check: Input field validation
     is_valid, error_msg = validate_ip_address(source_ip, "Source IP")
     if not is_valid: errors.append(error_msg)
     is_valid, error_msg = validate_ip_address(destination_ip, "Destination IP")
@@ -214,7 +247,6 @@ def create_request():
         app_logger.warning(f"Request validation failed: {errors}")
         return jsonify({"status": "error", "message": "Validation failed", "errors": errors}), 400
 
-    # 2.2 Pre-check: Run requested rule against blacklist db
     is_blacklisted, rule_name = check_blacklist(source_ip, destination_ip, protocol, dest_port)
     if is_blacklisted:
         app_logger.warning(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} denied by blacklist rule: '{rule_name}' for user {current_user.username}.")
@@ -223,13 +255,11 @@ def create_request():
         app_logger.info(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} passed blacklist check for user {current_user.username}.")
 
 
-    # --- Pre-check 2.3 & 2.4: Network Path & Firewall Identification using service ---
     firewalls_in_path = []
-    initial_rule_status = "Pending" # Default status before pathfinding
-    initial_approval_status = "Pending" # Default approval status
+    initial_rule_status = "Pending"
+    initial_approval_status = "Pending"
 
     try:
-        # 1. Call Ansible collector playbook and DB builder via service
         collection_result = network_automation_service.run_collector()
         if collection_result["status"] == "error":
             raise RuntimeError(collection_result["message"])
@@ -239,28 +269,25 @@ def create_request():
             raise RuntimeError(db_build_result["message"])
 
 
-        # 2. Run Pathfinder script and capture JSON output via service
         firewalls_in_path = network_automation_service.find_path_and_firewalls(source_ip, destination_ip)
         
         if firewalls_in_path:
-            # --- NEW: Check if policy already exists on identified firewalls ---
             policy_already_exists = network_automation_service.check_policy_existence(
                 source_ip, destination_ip, protocol, dest_port, firewalls_in_path
             )
             if policy_already_exists:
                 app_logger.info(f"Existing policy found for {source_ip} to {destination_ip}:{dest_port}/{protocol}. Request marked as already implemented.")
                 return jsonify({"status": "info", "message": "Requested access is already implemented on one or more firewalls in the path."}), 200
-            # --- END NEW CHECK ---
 
-            initial_rule_status = "Pending Approval" # Firewalls found, needs human approval
+            initial_rule_status = "Pending Approval"
             initial_approval_status = "Pending"
             app_logger.info(f"Path found for {source_ip} to {destination_ip}. Firewalls involved: {firewalls_in_path}. Request set to 'Pending Approval'.")
         else:
-            initial_rule_status = "No Firewall Involved" # No firewalls, might not need approval or different workflow
-            initial_approval_status = "N/A" # Not applicable for approval
+            initial_rule_status = "No Firewall Involved"
+            initial_approval_status = "N/A"
             app_logger.info(f"No firewalls found in path for {source_ip} to {destination_ip}. Request set to 'No Firewall Involved'.")
 
-    except RuntimeError as e: # Catch RuntimeError raised by the service
+    except RuntimeError as e:
         app_logger.error(f"Network automation service failed during pre-check for {source_ip} to {destination_ip}: {e}")
         initial_rule_status = "Pathfinding Failed"
         initial_approval_status = "Failed"
@@ -275,7 +302,6 @@ def create_request():
         return jsonify({"status": "error", "message": "Pre-check failed", "errors": errors, "path_status": initial_rule_status}), 500
 
 
-    # If validation and blacklist checks pass, proceed to create the rule
     try:
         rule = FirewallRule(
             source_ip=source_ip,
@@ -285,7 +311,7 @@ def create_request():
             status=initial_rule_status,
             approval_status=initial_approval_status,
             firewalls_involved=firewalls_in_path,
-            requester_id=current_user.id # Set the requester ID
+            requester_id=current_user.id
         )
         db.session.add(rule)
         db.session.commit()
@@ -300,22 +326,21 @@ def create_request():
 # --- Blacklist Management Routes ---
 
 @routes.route('/admin/blacklist', methods=['GET'])
-@login_required
-@roles_required('superadmin', 'admin', 'implementer') # Admins/Superadmins can manage, Implementers can view
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'implementer')
 def blacklist_rules_list():
     """Displays a list of all blacklist rules."""
     return render_template('blacklist_rules_list.html')
 
 @routes.route('/admin/blacklist/add', methods=['GET', 'POST'])
-@login_required
-@roles_required('superadmin', 'admin') # Only superadmin and admin can add blacklist rules
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin')
 def add_blacklist_rule():
     """Displays the form to add a new blacklist rule and handles its submission."""
     if request.method == 'POST':
         data = request.form
         try:
             sequence = int(data['sequence'])
-            # Check for existing sequence
             if BlacklistRule.query.filter_by(sequence=sequence).first():
                 flash(f"Rule with sequence {sequence} already exists. Please choose a different sequence.", 'error')
                 app_logger.warning(f"Attempted by {current_user.username} to add blacklist rule with duplicate sequence: {sequence}")
@@ -350,8 +375,8 @@ def add_blacklist_rule():
     return render_template('add_blacklist_form.html')
 
 @routes.route('/admin/blacklist/<int:rule_id>', methods=['GET'])
-@login_required
-@roles_required('superadmin', 'admin', 'implementer') # Admins/Superadmins/Implementers can view
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'implementer')
 def blacklist_rule_detail(rule_id):
     """Displays the details of a specific blacklist rule."""
     rule = BlacklistRule.query.get_or_404(rule_id)
@@ -360,8 +385,8 @@ def blacklist_rule_detail(rule_id):
 
 # --- API Endpoints for Blacklist Rules (for AJAX calls) ---
 @routes.route('/api/blacklist_rules', methods=['GET'])
-@login_required
-@roles_required('superadmin', 'admin', 'implementer') # All who can view the list can fetch data
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'implementer')
 def get_blacklist_rules_api():
     """API endpoint to get all blacklist rules."""
     rules = BlacklistRule.query.order_by(BlacklistRule.sequence).all()
@@ -384,8 +409,8 @@ def get_blacklist_rules_api():
     return jsonify(rules_data), 200
 
 @routes.route('/api/blacklist_rules/<int:rule_id>', methods=['DELETE'])
-@login_required
-@roles_required('superadmin', 'admin') # Only superadmin and admin can delete blacklist rules
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin')
 def delete_blacklist_rule_api(rule_id):
     """API endpoint to delete a single blacklist rule."""
     rule = BlacklistRule.query.get(rule_id)
@@ -403,8 +428,8 @@ def delete_blacklist_rule_api(rule_id):
     return jsonify({"status": "error", "message": f"Rule ID {rule_id} not found."}), 404
 
 @routes.route('/api/blacklist_rules', methods=['DELETE'])
-@login_required
-@roles_required('superadmin', 'admin') # Only superadmin and admin can delete multiple blacklist rules
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin')
 def delete_multiple_blacklist_rules_api():
     """API endpoint to delete multiple blacklist rules."""
     data = request.get_json()
@@ -432,27 +457,29 @@ def delete_multiple_blacklist_rules_api():
 # --- Routes for Approval Workflow ---
 
 @routes.route('/approvals')
-@login_required
-@roles_required('superadmin', 'admin', 'approver') # Superadmin, Admin, Approver can see approvals
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'approver')
 def approvals_list():
     """Displays a list of requests pending approval."""
     pending_rules = FirewallRule.query.filter_by(status='Pending Approval', approval_status='Pending').all()
     app_logger.info(f"User {current_user.username} viewing list of pending approvals.")
+    for rule in pending_rules:
+        if rule.firewalls_involved is None:
+            rule.firewalls_involved = []
     return render_template('approvals_list.html', rules=pending_rules)
 
 @routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
-@login_required
-@roles_required('superadmin', 'admin', 'approver') # Superadmin, Admin, Approver can approve/deny
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'approver')
 @no_self_approval # Prevent approver from approving their own requests
 def approve_deny_request(rule_id):
     """Allows an approver to view details and approve/deny a specific request."""
     rule = FirewallRule.query.get_or_404(rule_id)
 
     if request.method == 'POST':
-        action = request.form.get('action') # 'approve' or 'deny'
+        action = request.form.get('action')
         approver_comment = request.form.get('approver_comment')
         
-        # Approver ID is now current_user.id
         current_approver_id = current_user.id 
         
         if action == 'approve':
@@ -487,8 +514,8 @@ def approve_deny_request(rule_id):
 # --- Routes for Implementer Workflow ---
 
 @routes.route('/implementation')
-@login_required
-@roles_required('superadmin', 'admin', 'implementer') # Superadmin, Admin, Implementer can see implementation list
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'implementer')
 def implementation_list():
     """Displays a list of rules ready for implementation (approved and pending implementation)."""
     ready_for_implementation_rules = FirewallRule.query.filter_by(status='Approved - Pending Implementation', approval_status='Approved').all()
@@ -499,8 +526,8 @@ def implementation_list():
     return render_template('implementation_list.html', rules=ready_for_implementation_rules)
 
 @routes.route('/implementation/<int:rule_id>', methods=['GET', 'POST'])
-@login_required
-@roles_required('superadmin', 'admin', 'implementer') # Superadmin, Admin, Implementer can trigger implementation
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'implementer')
 def implement_rule(rule_id):
     """Allows an implementer to view details and provision/decline a specific rule."""
     rule = FirewallRule.query.get_or_404(rule_id)
@@ -508,17 +535,16 @@ def implement_rule(rule_id):
     if request.method == 'POST':
         action = request.form.get('action')
         implementer_comment = request.form.get('implementer_comment')
-        current_implementer_id = current_user.id # Use current_user.id for implementer
+        current_implementer_id = current_user.id
 
         if action == 'provision':
             app_logger.info(f"Implementer {current_user.username} triggered provisioning for rule ID {rule_id}.")
             return provision_request(rule_id)
         elif action == 'decline_implementation':
             rule.status = "Declined by Implementer"
-            # Append implementer comment to existing comments
             existing_comments = rule.approver_comment if rule.approver_comment else ""
             rule.approver_comment = f"{existing_comments}\nImplementer ({current_user.username}) Comment: {implementer_comment}"
-            rule.approver_id = current_implementer_id # This should ideally be a separate implementer_id column
+            rule.approver_id = current_implementer_id
             db.session.commit()
             flash('Implementation declined.', 'info')
             app_logger.info(f"Implementer {current_user.username} declined implementation for rule ID {rule_id}.")
@@ -535,8 +561,8 @@ def implement_rule(rule_id):
 
 
 @routes.route('/provision/<int:rule_id>', methods=['POST'])
-@login_required
-@roles_required('superadmin', 'admin', 'implementer') # Only these roles can provision
+@login_required # Ensures user is logged in
+@roles_required('superadmin', 'admin', 'implementer')
 def provision_request(rule_id):
     """
     Triggers the Ansible provisioning playbook for an approved firewall rule.
