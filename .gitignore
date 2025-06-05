@@ -6,9 +6,14 @@ venv/
 
 # Database files
 *.db
-migrations/ # If you manage migrations through Flask-Migrate, you generally don't commit the migration scripts themselves, but rather the process to generate them.
-# However, if you *do* want to keep migration scripts for rollbacks, you might comment this out.
-# For simplicity and typical development, let's keep them ignored for now, assuming you regenerate if needed.
+
+# Flask-Migrate / Alembic specific
+# NOTE: We DO NOT ignore the entire 'migrations/' directory
+# because you generally want to commit your migration scripts
+# (e.g., files in migrations/versions/).
+# We only ignore Python bytecode within migration directories.
+migrations/**/__pycache__/
+migrations/**/*.pyc
 
 # Output files from Ansible/Collectors
 outputs/
@@ -23,3 +28,11 @@ outputs/
 
 # Flask specific
 instance/
+
+# Editor/OS specific backup files
+*.bak
+*.bak[0-9]*
+*.swp
+*~
+.DS_Store # macOS specific
+Thumbs.db # Windows specific
