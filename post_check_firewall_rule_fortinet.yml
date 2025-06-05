@@ -1,6 +1,6 @@
 ---
 - name: Post-Check Firewall Rule Configuration on FortiGate
-  hosts: all # This playbook will be delegated to specific FortiGate hosts
+  hosts: "{{ target_hostname }}" # Target specific host passed from Flask
   gather_facts: no
   connection: network_cli
   collections:
@@ -15,60 +15,55 @@
 
     # Define FortiGate Address Object names based on IP type (/32 or network)
     check_src_addr_name: >-
-      {% set _src_ip_parts = source_ip.split('/') %}
-      {% if _src_ip_parts | length == 2 %}
+      {%- set _src_ip_parts = source_ip.split('/') -%}
+      {%- if _src_ip_parts | length == 2 -%}
         n-{{ _src_ip_parts[0] | replace('.', '-') }}/{{ _src_ip_parts[1] }}
-      {% else %}
+      {%- else -%}
         h-{{ source_ip | replace('.', '-') }}
-      {% endif %}
+      {%- endif -%}
 
     check_dst_addr_name: >-
-      {% set _dst_ip_parts = destination_ip.split('/') %}
-      {% if _dst_ip_parts | length == 2 %}
+      {%- set _dst_ip_parts = destination_ip.split('/') -%}
+      {%- if _dst_ip_parts | length == 2 -%}
         n-{{ _dst_ip_parts[0] | replace('.', '-') }}/{{ _dst_ip_parts[1] }}
-      {% else %}
+      {%- else -%}
         h-{{ destination_ip | replace('.', '-') }}
-      {% endif %}
+      {%- endif -%}
 
     # Define FortiGate Service Object names based on protocol/port
     check_service_object_name: >-
-      {% if protocol | lower == 'any' %}
+      {%- if protocol | lower == 'any' -%}
         ALL
-      {% elif protocol | lower == 'icmp' %}
+      {%- elif protocol | lower == 'icmp' -%}
         ICMP
-      {% else %}
+      {%- else -%}
         {{ protocol | upper }}-{{ dest_port }}
-      {% endif %}
+      {%- endif -%}
 
   tasks:
     - name: Debug Post-Check variables for FortiGate
       debug:
-        msg: "Post-checking FortiGate Rule ID: {{ rule_id }}, Source: {{ source_ip }} ({{ check_src_addr_name }}), Dest: {{ destination_ip }} ({{ check_dst_addr_name }}), Proto: {{ protocol }}, Port: {{ dest_port }} ({{ check_service_object_name }})"
-      delegate_to: "{{ inventory_hostname }}"
+        msg: "Post-checking FortiGate Rule ID: {{ rule_id }}, Source: '{{ source_ip }}' (FortiGate Name: '{{ check_src_addr_name | trim }}'), Dest: '{{ destination_ip }}' (FortiGate Name: '{{ check_dst_addr_name | trim }}'), Proto: '{{ protocol }}', Port: '{{ dest_port }}' (FortiGate Service: '{{ check_service_object_name | trim }}')"
 
-    - name: Get FortiGate Firewall Policies for Post-Check
-      fortinet.fortios.fortios_monitor_fact:
-        selector: 'system_policy'
-        vdom: 'root'
-      register: fgt_policies_post_check
-      delegate_to: "{{ inventory_hostname }}"
+    - name: Run FortiGate IPROPE Lookup for Post-Check
+      fortinet.fortios.fortios_cli_command:
+        commands:
+          # Assuming source interface 'port1' and destination interface 'port2' based on provisioning playbook
+          - "diag firewall iprope lookup {{ source_ip }} port1 {{ destination_ip }} {{ dest_port }} {{ protocol | lower }} port2"
+      register: fgt_ip_lookup_output
       ignore_errors: yes
 
-    - name: Debug FortiGate policies retrieved for post-check (full output)
+    - name: Debug FortiGate IPROPE Lookup Output (for post-check)
       debug:
-        var: fgt_policies_post_check
-      delegate_to: "{{ inventory_hostname }}"
-      when: fgt_policies_post_check is defined
+        var: fgt_ip_lookup_output.stdout
+      when: fgt_ip_lookup_output is defined
 
-    - name: Check if FortiGate policy exists for Rule ID and parameters
+    - name: Check if FortiGate policy matches (IPROPE lookup)
       fail:
-        msg: "FortiGate policy 'firework-rule-{{ rule_id }}' not found or incorrect on {{ inventory_hostname }} during post-check!"
+        msg: "FortiGate policy for Rule ID {{ rule_id }} not found or incorrect on {{ inventory_hostname }} during post-check!"
       when: >-
-        # Check if policy with rule_id exists AND its parameters match expected values
-        (fgt_policies_post_check.meta.results | default([]) | selectattr('policyid', 'equalto', rule_id | int) | list | length == 0) or
-        (fgt_policies_post_check.meta.results | default([]) | selectattr('policyid', 'equalto', rule_id | int) | first).name != 'firework-rule-{{ rule_id }}' or
-        (fgt_policies_post_check.meta.results | default([]) | selectattr('policyid', 'equalto', rule_id | int) | first).srcaddr | map(attribute='name') | list | difference([check_src_addr_name]) | length > 0 or
-        (fgt_policies_post_check.meta.results | default([]) | selectattr('policyid', 'equalto', rule_id | int) | first).dstaddr | map(attribute='name') | list | difference([check_dst_addr_name]) | length > 0 or
-        (fgt_policies_post_check.meta.results | default([]) | selectattr('policyid', 'equalto', rule_id | int) | first).service | map(attribute='name') | list | difference([check_service_object_name]) | length > 0
+        fgt_ip_lookup_output.stdout[0] is not defined or
+        (fgt_ip_lookup_output.stdout[0] | regex_search('matches policy id: 0')) or
+        (fgt_ip_lookup_output.stdout[0] | regex_search('matches policy id: ([1-9][0-9]*)')) is not search('matches policy id: ' + (rule_id | string)) # Ensure it's the correct policy ID
       delegate_to: localhost # Perform check on controller, to fail the whole playbook if any device fails
       ignore_errors: yes

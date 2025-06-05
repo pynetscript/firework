@@ -1,6 +1,6 @@
 ---
 - name: Provision Firewall Rule on FortiGate
-  hosts: all # This playbook will be delegated to specific FortiGate hosts
+  hosts: "{{ target_hostname }}" # Target specific host passed from Flask
   gather_facts: no
   connection: network_cli
   collections:
@@ -16,33 +16,32 @@
 
     # Define FortiGate Address Object names based on IP type (/32 or network)
     src_addr_name: >-
-      {% set _src_ip_parts = source_ip.split('/') %}
-      {% if _src_ip_parts | length == 2 %}
+      {%- set _src_ip_parts = source_ip.split('/') -%}
+      {%- if _src_ip_parts | length == 2 -%}
         n-{{ _src_ip_parts[0] | replace('.', '-') }}/{{ _src_ip_parts[1] }}
-      {% else %}
+      {%- else -%}
         h-{{ source_ip | replace('.', '-') }}
-      {% endif %}
+      {%- endif -%}
 
     dst_addr_name: >-
-      {% set _dst_ip_parts = destination_ip.split('/') %}
-      {% if _dst_ip_parts | length == 2 %}
+      {%- set _dst_ip_parts = destination_ip.split('/') -%}
+      {%- if _dst_ip_parts | length == 2 -%}
         n-{{ _dst_ip_parts[0] | replace('.', '-') }}/{{ _dst_ip_parts[1] }}
-      {% else %}
+      {%- else -%}
         h-{{ destination_ip | replace('.', '-') }}
-      {% endif %}
+      {%- endif -%}
 
     # Define FortiGate Service Object names based on protocol/port
     fortigate_service_name: >-
-      {% if protocol | lower == 'any' %}
+      {%- if protocol | lower == 'any' -%}
         ALL
-      {% elif protocol | lower == 'icmp' %}
+      {%- elif protocol | lower == 'icmp' -%}
         ICMP
-      {% else %}
+      {%- else -%}
         {{ protocol | upper }}-{{ dest_port }}
-      {% endif %}
+      {%- endif -%}
 
     # Determine subnet value for FortiGate address objects
-    # If the source/destination IP already has a CIDR, use it. Otherwise, assume /32 for a host.
     fortigate_src_subnet: "{{ source_ip if '/' in source_ip else source_ip + '/32' }}"
     fortigate_dst_subnet: "{{ destination_ip if '/' in destination_ip else destination_ip + '/32' }}"
 
@@ -50,51 +49,46 @@
   tasks:
     - name: Debug Provisioning variables for FortiGate
       debug:
-        msg: "Provisioning FortiGate Rule ID: {{ rule_id }}, Source: {{ source_ip }} ({{ src_addr_name }}), Dest: {{ destination_ip }} ({{ dst_addr_name }}), Proto: {{ protocol }}, Port: {{ dest_port }} ({{ fortigate_service_name }})"
-      delegate_to: "{{ inventory_hostname }}"
+        msg: "Provisioning FortiGate Rule ID: {{ rule_id }}, Source: '{{ source_ip }}' (FortiGate Name: '{{ src_addr_name | trim }}'), Dest: '{{ destination_ip }}' (FortiGate Name: '{{ dst_addr_name | trim }}'), Proto: '{{ protocol }}', Port: '{{ dest_port }}' (FortiGate Service: '{{ fortigate_service_name | trim }}')"
 
     - name: Create FortiGate Source Address Object
       fortinet.fortios.fortios_firewall_address:
         vdom: "root"
         state: present
         firewall_address:
-          name: "{{ src_addr_name }}" # Use new naming
+          name: "{{ src_addr_name | trim }}" # Apply trim
           type: "ipmask"
           subnet: "{{ fortigate_src_subnet }}"
-      delegate_to: "{{ inventory_hostname }}"
 
     - name: Create FortiGate Destination Address Object
       fortinet.fortios.fortios_firewall_address:
         vdom: "root"
         state: present
         firewall_address:
-          name: "{{ dst_addr_name }}" # Use new naming
+          name: "{{ dst_addr_name | trim }}" # Apply trim
           type: "ipmask"
           subnet: "{{ fortigate_dst_subnet }}"
-      delegate_to: "{{ inventory_hostname }}"
 
     - name: Create FortiGate Service Object (TCP/UDP)
       fortinet.fortios.fortios_firewall_service_custom:
         vdom: "root"
         state: present
         firewall_service_custom:
-          name: "{{ fortigate_service_name }}" # Use new naming
+          name: "{{ fortigate_service_name | trim }}" # Apply trim
           protocol: "{{ protocol | lower }}"
           tcp_portrange: ["{{ dest_port }}"]
           comment: "Service for rule {{ rule_id }}"
       when: protocol | lower in ['tcp', 'udp']
-      delegate_to: "{{ inventory_hostname }}"
 
     - name: Create FortiGate ICMP Service Object
       fortinet.fortios.fortios_firewall_service_custom:
         vdom: "root"
         state: present
         firewall_service_custom:
-          name: "{{ fortigate_service_name }}" # Use new naming
+          name: "{{ fortigate_service_name | trim }}" # Apply trim
           protocol: "icmp"
           comment: "ICMP Service"
       when: protocol | lower == 'icmp'
-      delegate_to: "{{ inventory_hostname }}"
 
     - name: Create FortiGate Firewall Policy
       fortinet.fortios.fortios_firewall_policy:
@@ -102,21 +96,20 @@
         state: present
         firewall_policy:
           policyid: "{{ rule_id }}"
-          name: "firework-rule-{{ rule_id }}"
+          name: "firework-{{ rule_id }}"
           srcintf:
-            - name: "port1" # IMPORTANT: Adjust these to your actual FortiGate interface names
+            - name: "port3" # IMPORTANT: Adjust these to your actual FortiGate interface names
           dstintf:
             - name: "port2" # IMPORTANT: Adjust these to your actual FortiGate interface names
           srcaddr:
-            - name: "{{ src_addr_name }}" # Use new naming
+            - name: "{{ src_addr_name | trim }}" # Apply trim
           dstaddr:
-            - name: "{{ dst_addr_name }}" # Use new naming
+            - name: "{{ dst_addr_name | trim }}" # Apply trim
           service:
-            - name: "{{ fortigate_service_name }}" # Use new naming
+            - name: "{{ fortigate_service_name | trim }}" # Apply trim
           action: "accept"
           schedule: "always"
           logtraffic: "all"
           status: "enable"
           nat: "disable" # Adjust NAT as needed
           comment: "{{ rule_description }}"
-      delegate_to: "{{ inventory_hostname }}"

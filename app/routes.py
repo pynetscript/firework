@@ -5,8 +5,6 @@ import json
 import logging # Import logging
 # Import the new NetworkAutomationService
 from app.services.network_automation import NetworkAutomationService
-from datetime import datetime # Import datetime for timestamps
-
 
 routes = Blueprint('routes', __name__)
 
@@ -27,11 +25,6 @@ def request_form():
 @routes.route('/task-results')
 def task_results():
     rules = FirewallRule.query.all()
-    # firewalls_involved is a JSONEncodedList, so it should already be a Python list when accessed.
-    # No explicit json.loads needed here unless JSONEncodedList is not not working as expected.
-    for rule in rules:
-        if rule.firewalls_involved is None:
-            rule.firewalls_involved = [] # Ensure it's an empty list if None
     return render_template('task_results.html', rules=rules)
 
 # --- Helper Validation Functions ---
@@ -268,8 +261,7 @@ def create_request():
             port=int(dest_port), # Store as 'port' in DB model (column name remains 'port')
             status=initial_rule_status, # Set initial status based on pathfinding result
             approval_status=initial_approval_status, # Set initial approval status
-            firewalls_involved=firewalls_in_path, # Store the list of firewalls
-            created_at=datetime.now() # Set created_at timestamp
+            firewalls_involved=firewalls_in_path # Store the list of firewalls
         )
         db.session.add(rule)
         db.session.commit()
@@ -409,11 +401,6 @@ def approvals_list():
     """Displays a list of requests pending approval."""
     # Only show rules that are 'Pending Approval' and 'Pending' in approval_status
     pending_rules = FirewallRule.query.filter_by(status='Pending Approval', approval_status='Pending').all()
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
-    for rule in pending_rules:
-        if rule.firewalls_involved is None:
-            rule.firewalls_involved = [] # Ensure it's an empty list if None
-
     app_logger.info("Viewing list of pending approvals.")
     return render_template('approvals_list.html', rules=pending_rules)
 
@@ -432,7 +419,6 @@ def approve_deny_request(rule_id):
             rule.status = "Approved - Pending Implementation" # Update overall status
             rule.approver_id = current_approver_id
             rule.approver_comment = approver_comment
-            rule.approved_at = datetime.now() # Set approved_at timestamp
             db.session.commit()
             app_logger.info(f"Network request ID {rule_id} approved by {current_approver_id}.")
             # Redirect to approvals list after action
@@ -447,14 +433,11 @@ def approve_deny_request(rule_id):
             # Redirect to approvals list after action
             return redirect(url_for('routes.approvals_list'))
         else:
-            app_logger.warning(f"Invalid action '{action}' for network request ID {rule.id}.")
+            app_logger.warning(f"Invalid action '{action}' for network request ID {rule_id}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
     
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
-    if rule.firewalls_involved is None:
-        rule.firewalls_involved = [] # Ensure it's an empty list if None
-
-    app_logger.info(f"Viewing approval details for network request ID {rule.id}.")
+    # For GET request, display the rule details for approval
+    app_logger.info(f"Viewing approval details for network request ID {rule_id}.")
     return render_template('approval_detail.html', rule=rule)
 
 # --- New Routes for Implementer Workflow ---
@@ -464,11 +447,6 @@ def implementation_list():
     """Displays a list of rules ready for implementation (approved and pending implementation)."""
     # Show rules that are 'Approved - Pending Implementation'
     ready_for_implementation_rules = FirewallRule.query.filter_by(status='Approved - Pending Implementation', approval_status='Approved').all()
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
-    for rule in ready_for_implementation_rules:
-        if rule.firewalls_involved is None:
-            rule.firewalls_involved = [] # Ensure it's an empty list if None
-
     app_logger.info("Viewing list of rules ready for implementation.")
     return render_template('implementation_list.html', rules=ready_for_implementation_rules)
 
@@ -492,17 +470,14 @@ def implement_rule(rule_id):
             rule.approver_comment = (rule.approver_comment or "") + f"\nImplementer Comment: {implementer_comment}"
             rule.approver_id = current_implementer_id # Re-using approver_id for simplicity, ideally separate implementer_id
             db.session.commit()
-            app_logger.info(f"Implementer declined implementation for rule ID {rule.id}.")
+            app_logger.info(f"Implementer declined implementation for rule ID {rule_id}.")
             return redirect(url_for('routes.implementation_list'))
         else:
-            app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule.id}.")
+            app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule_id}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
     
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
-    if rule.firewalls_involved is None:
-        rule.firewalls_involved = [] # Ensure it's an empty list if None
-
-    app_logger.info(f"Viewing implementation details for rule ID {rule.id}.")
+    # For GET request, display the rule details for implementer action
+    app_logger.info(f"Viewing implementation details for rule ID {rule_id}.")
     return render_template('implementation_detail.html', rule=rule)
 
 
@@ -517,7 +492,7 @@ def provision_request(rule_id):
 
     # Check if the rule is in the correct state for provisioning
     if rule.status != "Approved - Pending Implementation" or rule.approval_status != "Approved":
-        app_logger.warning(f"Attempted to provision rule ID {rule.id} which is not in 'Approved - Pending Implementation' state. Current status: {rule.status}, Approval: {rule.approval_status}")
+        app_logger.warning(f"Attempted to provision rule ID {rule_id} which is not in 'Approved - Pending Implementation' state. Current status: {rule.status}, Approval: {rule.approval_status}")
         return jsonify({"status": "error", "message": "Rule is not in 'Approved - Pending Implementation' state for provisioning."}), 400
 
     # Update status to indicate provisioning is in progress
@@ -526,7 +501,9 @@ def provision_request(rule_id):
     app_logger.info(f"Provisioning initiated for rule ID {rule.id}.")
     
     firewalls_to_provision = []
+    provisioning_success = False
     provisioning_message = "Provisioning started."
+    post_check_success = False
 
     try:
         # Use the firewalls_involved stored in the rule, if available
@@ -556,31 +533,38 @@ def provision_request(rule_id):
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'port': rule.port, # *** FIX: Changed 'dest_port' to 'port' as expected by network_automation.py ***
-                'rule_description': f"Rule for ticket #{rule.id}" # Pass rule_description
+                'dest_port': rule.port # Changed 'port' to 'dest_port'
             },
             firewalls=firewalls_to_provision
         )
         
+        provisioning_success = True
         provisioning_message = f"Rule {rule.id} provisioned successfully."
         app_logger.info(f"Rule {rule.id} provisioned successfully. Ansible output: {provision_result_stdout}")
 
         # --- Post-check (5.0) - Only run if provisioning was successful ---
-        post_check_result_stdout = network_automation_service.post_check_rule(
-            rule_data={
-                'rule_id': rule.id,
-                'source_ip': rule.source_ip,
-                'destination_ip': rule.destination_ip,
-                'protocol': rule.protocol,
-                'port': rule.port # *** FIX: Changed 'dest_port' to 'port' as expected by network_automation.py ***
-            },
-            firewalls=firewalls_to_provision
-        )
+        if provisioning_success:
+            post_check_result_stdout = network_automation_service.post_check_rule(
+                rule_data={
+                    'rule_id': rule.id,
+                    'source_ip': rule.source_ip,
+                    'destination_ip': rule.destination_ip,
+                    'protocol': rule.protocol,
+                    'dest_port': rule.port # Changed 'port' to 'dest_port'
+                },
+                firewalls=firewalls_to_provision
+            )
 
-        rule.status = "Completed" # Final status if provisioning and post-check pass
-        rule.implemented_at = datetime.now() # Set implemented_at timestamp
-        provisioning_message += " Configuration verified successfully."
-        app_logger.info(f"Rule {rule.id} post-check successful. Ansible output: {post_check_result_stdout}")
+            post_check_success = True
+            rule.status = "Completed" # Final status if provisioning and post-check pass
+            provisioning_message += " Configuration verified successfully."
+            app_logger.info(f"Rule {rule.id} post-check successful. Ansible output: {post_check_result_stdout}")
+        else:
+            # This else block should theoretically not be hit if RuntimeError is raised for provisioning failure
+            # but is here for logical completeness.
+            rule.status = "Provisioning Failed"
+            provisioning_message = f"Provisioning failed for rule {rule.id}. Post-check skipped. Check logs for ID {rule.id}."
+            app_logger.error(f"Provisioning failed for rule {rule.id}. Post-check skipped.")
 
 
     except RuntimeError as e:
@@ -595,7 +579,6 @@ def provision_request(rule_id):
         db.session.commit() # Ensure status update is saved
 
     if rule.status == "Completed": # Check final status, not just provisioning_success flag
-        return jsonify({"status": "success", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 200
+        return jsonify({"status": "success", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status}), 200
     else:
         return jsonify({"status": "error", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status}), 500
-

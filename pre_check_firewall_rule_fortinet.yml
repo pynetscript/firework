@@ -1,80 +1,91 @@
 ---
 - name: Pre-Check for Existing Firewall Policy on FortiGate
-  hosts: all # This playbook will be delegated to specific FortiGate hosts
+  hosts: "{{ target_hostname }}" # Target specific host passed from Flask
   gather_facts: no
-  connection: network_cli
+  connection: network_cli # This is defined for the host, but the module uses httpapi internally
   collections:
-    - fortinet.fortios
+    - fortinet.fortios # Ensure this collection is installed (ansible-galaxy collection install fortinet.fortios)
 
   vars:
     check_source_ip: "{{ source_ip }}"
     check_destination_ip: "{{ destination_ip }}"
     check_protocol: "{{ protocol }}"
-    check_port: "{{ port }}" # 'port' is the input from Flask
+    check_dest_port: "{{ dest_port }}"
+
+    # Flag to indicate if a policy is found on this firewall
+    policy_found_flag: false
 
     # Define FortiGate Address Object names based on IP type (/32 or network)
-    # Example: 10.0.1.1 -> h-10-0-1-1
-    # Example: 10.0.0.0/24 -> n-10-0-0/24
     check_src_addr_name: >-
-      {% set _src_ip_parts = check_source_ip.split('/') %}
-      {% if _src_ip_parts | length == 2 %}
+      {%- set _src_ip_parts = check_source_ip.split('/') -%}
+      {%- if _src_ip_parts | length == 2 -%}
         n-{{ _src_ip_parts[0] | replace('.', '-') }}/{{ _src_ip_parts[1] }}
-      {% else %}
+      {%- else -%}
         h-{{ check_source_ip | replace('.', '-') }}
-      {% endif %}
+      {%- endif -%}
 
     check_dst_addr_name: >-
-      {% set _dst_ip_parts = check_destination_ip.split('/') %}
-      {% if _dst_ip_parts | length == 2 %}
+      {%- set _dst_ip_parts = check_destination_ip.split('/') -%}
+      {%- if _dst_ip_parts | length == 2 -%}
         n-{{ _dst_ip_parts[0] | replace('.', '-') }}/{{ _dst_ip_parts[1] }}
-      {% else %}
+      {%- else -%}
         h-{{ check_destination_ip | replace('.', '-') }}
-      {% endif %}
+      {%- endif -%}
 
     # Define FortiGate Service Object names based on protocol/port
-    # Example: tcp/443 -> TCP-443
-    # Example: icmp -> ICMP
-    # Example: any -> ALL
     check_service_object_name: >-
-      {% if check_protocol | lower == 'any' %}
+      {%- if check_protocol | lower == 'any' -%}
         ALL
-      {% elif check_protocol | lower == 'icmp' %}
+      {%- elif check_protocol | lower == 'icmp' -%}
         ICMP
-      {% else %}
-        {{ check_protocol | upper }}-{{ check_port }}
-      {% endif %}
+      {%- else -%}
+        {{ check_protocol | upper }}-{{ check_dest_port }}
+      {%- endif -%}
+
+    # Map protocol names to FortiGate numeric values for policy-lookup API
+    # The API expects protocol number, not name, for 'protocol' parameter.
+    # If 'any' is passed, we might need a different lookup or assume it matches.
+    # For simplicity, if 'any', we can use a common protocol like TCP (6) or skip this check if "any" is valid
+    # or handle this as a different lookup that checks for "any" service policies.
+    # Given the example, it implies a specific protocol. Let's use protocol numbers.
+    fortigate_protocol_number: "{{ { 'tcp': 6, 'udp': 17, 'icmp': 1 }.get(check_protocol | lower, check_protocol) }}"
+
 
   tasks:
     - name: Debug Pre-Check variables for FortiGate
       debug:
-        msg: "Pre-checking for existing policy on {{ inventory_hostname }} for Source: {{ check_source_ip }} ({{ check_src_addr_name }}), Dest: {{ check_destination_ip }} ({{ check_dst_addr_name }}), Proto: {{ check_protocol }}, Port: {{ check_port }} ({{ check_service_object_name }})"
-      delegate_to: "{{ inventory_hostname }}"
+        msg: "Pre-checking for existing policy on {{ inventory_hostname }} for Source: '{{ check_source_ip }}' (FortiGate Name: '{{ check_src_addr_name | trim }}'), Dest: '{{ check_destination_ip }}' (FortiGate Name: '{{ check_dst_addr_name | trim }}'), Proto: '{{ check_protocol }}' (FortiGate Proto Num: '{{ fortigate_protocol_number }}'), Port: '{{ check_dest_port }}' (FortiGate Service: '{{ check_service_object_name | trim }}')"
 
-    - name: Get FortiGate Firewall Policies for Pre-Check
+    - name: Perform FortiGate Policy Lookup via API
       fortinet.fortios.fortios_monitor_fact:
-        selector: 'system_policy'
-        vdom: 'root'
-      register: fgt_policies_pre_check
-      delegate_to: "{{ inventory_hostname }}"
+        # Provider details are taken from inventory.yml (ansible_host, ansible_user, ansible_password, ansible_httpapi_use_ssl, ansible_httpapi_validate_certs)
+        # The fortios_monitor_fact module handles the API connection itself.
+        selector: firewall_policy-lookup
+        filters: # These map directly to the API query parameters
+          srcintf: "port3" # Assuming source interface for lookup, adjust if dynamic
+          sourceip: "{{ check_source_ip }}"
+          protocol: "{{ fortigate_protocol_number }}"
+          dest: "{{ check_destination_ip }}"
+          destport: "{{ check_dest_port }}"
+          dstintf: "port2" # Assuming destination interface for lookup, adjust if dynamic
+      register: fgt_policy_lookup_output
       ignore_errors: yes
 
-    - name: Debug FortiGate policies retrieved (full output for pre-check)
+    - name: Debug FortiGate Policy Lookup API Output
       debug:
-        var: fgt_policies_pre_check
-      delegate_to: "{{ inventory_hostname }}"
-      when: fgt_policies_pre_check is defined
+        var: fgt_policy_lookup_output
+      when: fgt_policy_lookup_output is defined
 
-    - name: Check FortiGate policies for match and set flag
+    - name: Set policy_found_flag if FortiGate policy matches (API lookup)
       set_fact:
         policy_found_flag: true
-      loop: "{{ fgt_policies_pre_check.meta.results | default([]) }}"
-      loop_control:
-        label: "Checking FortiGate policy {{ item.name }}"
-      when:
-        - item.srcaddr is defined and (item.srcaddr | map(attribute='name') | list | contains(check_src_addr_name))
-        - item.dstaddr is defined and (item.dstaddr | map(attribute='name') | list | contains(check_dst_addr_name))
-        - item.service is defined and (item.service | map(attribute='name') | list | contains(check_service_object_name))
-      delegate_to: localhost # Set this fact on the Ansible controller
+      when: >-
+        fgt_policy_lookup_output.results is defined and
+        fgt_policy_lookup_output.results.match is defined and
+        fgt_policy_lookup_output.results.match | bool and # Check if 'match' is true
+        fgt_policy_lookup_output.results.policy_id is defined and
+        fgt_policy_lookup_output.results.policy_id | int > 0 # Check if policy_id is > 0
+      delegate_to: localhost # Set this fact on the Ansible controller for the overall result
 
     - name: Indicate if policy was found on FortiGate
       debug:
