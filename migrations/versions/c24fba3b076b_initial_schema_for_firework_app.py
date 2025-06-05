@@ -1,8 +1,8 @@
 """Initial schema for Firework app
 
-Revision ID: b1bde6d978b6
+Revision ID: c24fba3b076b
 Revises: 
-Create Date: 2025-06-05 11:02:31.936262
+Create Date: 2025-06-05 11:35:51.560224
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ from app.models import JSONEncodedList
 
 
 # revision identifiers, used by Alembic.
-revision = 'b1bde6d978b6'
+revision = 'c24fba3b076b'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -40,11 +40,14 @@ def upgrade():
     sa.Column('destination_ip', sa.String(length=50), nullable=False),
     sa.Column('protocol', sa.String(length=10), nullable=False),
     sa.Column('port', sa.Integer(), nullable=False),
-    sa.Column('status', sa.String(length=20), nullable=True),
+    sa.Column('status', sa.String(length=50), nullable=True),
     sa.Column('approval_status', sa.String(length=20), nullable=True),
     sa.Column('approver_id', sa.String(length=50), nullable=True),
     sa.Column('approver_comment', sa.Text(), nullable=True),
     sa.Column('firewalls_involved', JSONEncodedList(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('approved_at', sa.DateTime(), nullable=True),
+    sa.Column('implemented_at', sa.DateTime(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     # ### end Alembic commands ###
