@@ -1,0 +1,52 @@
+---
+- name: Post-Check Firewall Rule Configuration on Palo Alto
+  hosts: "{{ firewalls | join(',') }}" # Dynamically target firewalls passed from Flask app
+  gather_facts: no
+  connection: network_cli
+  collections:
+    - paloaltonetworks.panos
+
+  vars:
+    rule_id: "{{ rule_id }}"
+    source_ip: "{{ source_ip }}"
+    destination_ip: "{{ destination_ip }}"
+    protocol: "{{ protocol }}"
+    dest_port: "{{ dest_port }}" # Renamed 'port' to 'dest_port'
+
+    # Map protocol names to numbers for Palo Alto `test security-policy-match` command
+    # Ensures 'any' protocol doesn't cause an error if it's not a key in the dict
+    pa_protocol_number: "{{ { 'tcp': 6, 'udp': 17, 'icmp': 1 }.get(protocol | lower, protocol) }}"
+
+  tasks:
+    - name: Debug Post-Check variables for Palo Alto
+      debug:
+        msg: "Post-checking Rule ID: {{ rule_id }}, Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}, Firewalls: {{ firewalls }}"
+
+    - name: Run Palo Alto Security Policy Match for Post-Check
+      paloaltonetworks.panos.panos_op:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        cmd: "<test><security-policy-match><source>{{ source_ip }}</source><destination>{{ destination_ip }}</destination>{% if protocol | lower != 'any' %}<protocol>{{ pa_protocol_number }}</protocol>{% endif %}<destination-port>{{ dest_port }}</destination-port></security-policy-match></test>"
+        cmd_is_xml: true
+      register: pa_post_check_output
+      when: inventory_hostname in groups['paloalto'] | default([])
+      ignore_errors: yes
+
+    - name: Debug Palo Alto Post-Check Output
+      debug:
+        var: pa_post_check_output
+      when: inventory_hostname in groups['paloalto'] | default([]) and pa_post_check_output is defined
+
+    - name: Check if Palo Alto security rule matches (Post-Check)
+      fail:
+        msg: "Palo Alto security rule for Rule ID {{ rule_id }} not found or incorrect on {{ inventory_hostname }} during post-check! Output: {{ pa_post_check_output.stdout_xml | default('N/A') }}"
+      when: >-
+        inventory_hostname in groups['paloalto'] | default([]) and
+        pa_post_check_output is defined and
+        pa_post_check_output.stdout_xml is defined and
+        ( (not (pa_post_check_output.stdout_xml | regex_search('<entry name="firework-{{ rule_id }}"'))) or
+          (pa_post_check_output.stdout_xml | regex_search('<entry name="No matching rule found"')) )
+      ignore_errors: yes
