@@ -1,0 +1,153 @@
+---
+- name: Gather network data from Cisco devices
+  hosts: cisco_ios
+  gather_facts: no
+  ignore_unreachable: yes # Continue if a Cisco device is unreachable
+  tasks:
+    - name: Gather interfaces
+      cisco.ios.ios_facts:
+        gather_subset: interfaces
+      register: ios_interfaces
+      ignore_errors: yes # Continue if this task fails for a specific host
+
+    - name: Save interface data
+      copy:
+        content: "{{ ios_interfaces.ansible_facts | to_nice_yaml }}"
+        dest: "outputs/{{ inventory_hostname }}_interfaces.yml"
+      when: ios_interfaces is success # Only save if previous task succeeded
+      ignore_errors: yes
+
+    - name: Get ARP table
+      cisco.ios.ios_command:
+        commands:
+          - show ip arp
+      register: ios_arp
+      ignore_errors: yes
+
+    - name: Save ARP table
+      copy:
+        content: "{{ ios_arp.stdout[0] }}"
+        dest: "outputs/{{ inventory_hostname }}_arp.txt"
+      when: ios_arp is success
+      ignore_errors: yes
+
+    - name: Get routing table
+      cisco.ios.ios_command:
+        commands:
+          - show ip route
+      register: ios_routes
+      ignore_errors: yes
+
+    - name: Save route table
+      copy:
+        content: "{{ ios_routes.stdout[0] }}"
+        dest: "outputs/{{ inventory_hostname }}_routes.txt"
+      when: ios_routes is success
+      ignore_errors: yes
+
+- name: Gather from FortiGate
+  hosts: fortinet
+  gather_facts: no
+  ignore_unreachable: yes # Continue if a FortiGate device is unreachable
+  collections:
+    - fortinet.fortios
+  tasks:
+    - name: Get system interface
+      fortinet.fortios.fortios_monitor_fact: # Fully qualified collection name
+        selector: 'system_interface'
+        vdom: 'root'
+      register: fgt_interfaces
+      ignore_errors: yes
+
+    - name: Save interface info
+      copy:
+        content: "{{ fgt_interfaces | to_nice_yaml }}"
+        dest: "outputs/{{ inventory_hostname }}_interfaces.yml"
+      when: fgt_interfaces is success
+      ignore_errors: yes
+
+    - name: Get ARP table
+      fortinet.fortios.fortios_monitor_fact: # Fully qualified collection name
+        selector: 'network_arp'
+        vdom: 'root'
+      register: fgt_arp
+      ignore_errors: yes
+
+    - name: Save ARP table
+      copy:
+        content: "{{ fgt_arp | to_nice_yaml }}"
+        dest: "outputs/{{ inventory_hostname }}_arp.yml"
+      when: fgt_arp is success
+      ignore_errors: yes
+
+    - name: Get routing table
+      fortinet.fortios.fortios_monitor_fact: # Fully qualified collection name
+        selector: 'router_ipv4'
+        vdom: 'root'
+      register: fgt_routes
+      ignore_errors: yes
+
+    - name: Save routing table
+      copy:
+        content: "{{ fgt_routes | to_nice_yaml }}"
+        dest: "outputs/{{ inventory_hostname }}_routes.yml"
+      when: fgt_routes is success
+      ignore_errors: yes
+
+- name: Gather from Palo Alto
+  hosts: paloalto
+  gather_facts: no
+  ignore_unreachable: yes # Continue if a Palo Alto device is unreachable
+  collections:
+    - paloaltonetworks.panos
+  tasks:
+    - name: Get interfaces
+      paloaltonetworks.panos.panos_facts:
+        ip_address: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        gather_subset:
+          - interfaces
+      register: pa_interfaces
+      ignore_errors: yes
+
+    - name: Save interface info
+      copy:
+        content: "{{ pa_interfaces | to_nice_yaml }}"
+        dest: "outputs/{{ inventory_hostname }}_interfaces.yml"
+      when: pa_interfaces is success
+      ignore_errors: yes
+
+    - name: Get ARP table
+      paloaltonetworks.panos.panos_op:
+        ip_address: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        cmd: "<show><arp><entry name='all'/></arp></show>"
+        cmd_is_xml: true
+      register: pa_arp
+      ignore_errors: yes
+
+    - name: Save ARP table
+      copy:
+        content: "{{ pa_arp.stdout }}"
+        dest: "outputs/{{ inventory_hostname }}_arp.txt"
+      when: pa_arp is success
+      ignore_errors: yes
+
+    - name: Get routing table
+      paloaltonetworks.panos.panos_op:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+        cmd: 'show routing route'
+      register: pa_routes
+      ignore_errors: yes
+
+    - name: Save routing table
+      copy:
+        content: "{{ pa_routes.stdout }}"
+        dest: "outputs/{{ inventory_hostname }}_routes.txt"
+      when: pa_routes is success
+      ignore_errors: yes

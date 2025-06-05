@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8">
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Blacklist Rules</h2>
+
+    <!-- Add New Rule Button -->
+    <div class="flex justify-start mb-6">
+        <a href="{{ url_for('routes.add_blacklist_rule') }}" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+            Add New Rule
+        </a>
+    </div>
+
+    <!-- Delete Selected Button -->
+    <div class="flex justify-end mb-4">
+        <button id="deleteSelectedButton" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 hidden">
+            Delete Selected
+        </button>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table id="blacklistRulesTable" class="min-w-full bg-white rounded-lg overflow-hidden shadow-md table-auto">
+            <thead>
+                <tr class="bg-gray-100 text-gray-700 uppercase text-sm leading-normal">
+                    <th class="py-3 px-6 text-left">
+                        <input type="checkbox" id="selectAllRules" class="form-checkbox h-4 w-4 text-blue-600 rounded">
+                    </th>
+                    <th class="py-3 px-6 text-left">ID</th>
+                    <th class="py-3 px-6 text-left">Sequence</th>
+                    <th class="py-3 px-6 text-left">Rule Name</th>
+                    <th class="py-3 px-6 text-left">Enabled</th>
+                    <th class="py-3 px-6 text-left">Source IP</th>
+                    <th class="py-3 px-6 text-left">Destination IP</th>
+                    <th class="py-3 px-6 text-left">Protocol</th>
+                    <th class="py-3 px-6 text-left">Port</th>
+                    <th class="py-3 px-6 text-left">Description</th>
+                    <th class="py-3 px-6 text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="text-gray-600 text-sm font-light">
+                <!-- Rules will be loaded here by JavaScript -->
+                <tr>
+                    <td colspan="11" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="noRulesMessage" class="text-center text-gray-600 mt-4 hidden">No blacklist rules found.</div>
+
+    <div id="responseMessage" class="mt-4 p-3 rounded-md text-center hidden"></div>
+
+    <div class="text-center mt-8">
+        <a href="{{ url_for('routes.home') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Home</a>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const blacklistRulesTableBody = document.querySelector('#blacklistRulesTable tbody');
+        const selectAllRulesCheckbox = document.getElementById('selectAllRules');
+        const deleteSelectedButton = document.getElementById('deleteSelectedButton');
+        const noRulesMessage = document.getElementById('noRulesMessage');
+        const responseMessageDiv = document.getElementById('responseMessage');
+
+        // Function to load and display blacklist rules
+        async function loadBlacklistRules() {
+            blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td></tr>`;
+            noRulesMessage.classList.add('hidden');
+            deleteSelectedButton.classList.add('hidden'); // Hide delete button initially
+            selectAllRulesCheckbox.checked = false; // Uncheck select all
+            responseMessageDiv.classList.add('hidden'); // Hide any previous messages
+
+            try {
+                const response = await fetch('/api/blacklist_rules'); // Assuming this endpoint exists
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const rules = await response.json();
+                renderRulesTable(rules);
+            } catch (error) {
+                console.error('Error fetching blacklist rules:', error);
+                blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-red-500">Failed to load rules. Please check server logs.</td></tr>`;
+                showResponseMessage('Failed to load rules. Please check server logs.', 'error');
+            }
+        }
+
+        // Function to render the rules table
+        function renderRulesTable(rules) {
+            blacklistRulesTableBody.innerHTML = ''; // Clear existing rows
+            if (rules.length === 0) {
+                noRulesMessage.classList.remove('hidden');
+                blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500">No blacklist rules found.</td></tr>`;
+                return;
+            } else {
+                noRulesMessage.classList.add('hidden');
+            }
+
+            rules.forEach(rule => {
+                const row = document.createElement('tr');
+                row.classList.add('border-b', 'border-gray-200', 'hover:bg-gray-100');
+                row.innerHTML = `
+                    <td class="py-3 px-6 text-left">
+                        <input type="checkbox" class="rule-checkbox form-checkbox h-4 w-4 text-blue-600 rounded" data-rule-id="${rule.id}">
+                    </td>
+                    <td class="py-3 px-6 text-left whitespace-nowrap">
+                        <a href="{{ url_for('routes.blacklist_rule_detail', rule_id=0) | replace('0', 'RULE_ID_PLACEHOLDER') }}" class="text-blue-600 hover:text-blue-800 hover:underline font-medium" data-rule-id="${rule.id}">
+                            ${rule.id}
+                        </a>
+                    </td>
+                    <td class="py-3 px-6 text-left">${rule.sequence}</td>
+                    <td class="py-3 px-6 text-left">${rule.rule_name}</td>
+                    <td class="py-3 px-6 text-left">${rule.enabled ? 'Yes' : 'No'}</td>
+                    <td class="py-3 px-6 text-left">${rule.source_ip || 'Any'}</td>
+                    <td class="py-3 px-6 text-left">${rule.destination_ip || 'Any'}</td>
+                    <td class="py-3 px-6 text-left">${rule.protocol || 'Any'}</td>
+                    <td class="py-3 px-6 text-left">${rule.destination_port || 'Any'}</td>
+                    <td class="py-3 px-6 text-left">${rule.description || 'N/A'}</td>
+                    <td class="py-3 px-6 text-center">
+                        <button class="edit-rule-btn bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded-md text-xs transition duration-300 ease-in-out transform hover:scale-105 mr-2" data-rule-id="${rule.id}">Edit</button>
+                        <button class="delete-rule-btn bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-xs transition duration-300 ease-in-out transform hover:scale-105" data-rule-id="${rule.id}">Delete</button>
+                    </td>
+                `;
+                // Replace the placeholder with the actual rule.id for the link
+                row.querySelector('a[data-rule-id]').href = row.querySelector('a[data-rule-id]').href.replace('RULE_ID_PLACEHOLDER', rule.id);
+                blacklistRulesTableBody.appendChild(row);
+            });
+            updateDeleteSelectedButtonVisibility();
+        }
+
+        // Handle Select All checkbox
+        selectAllRulesCheckbox.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.rule-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            updateDeleteSelectedButtonVisibility();
+        });
+
+        // Handle individual rule checkbox change
+        blacklistRulesTableBody.addEventListener('change', function(event) {
+            if (event.target.classList.contains('rule-checkbox')) {
+                updateDeleteSelectedButtonVisibility();
+                // If any individual checkbox is unchecked, uncheck "Select All"
+                if (!event.target.checked) {
+                    selectAllRulesCheckbox.checked = false;
+                } else {
+                    // If all individual checkboxes are checked, check "Select All"
+                    const allCheckboxes = document.querySelectorAll('.rule-checkbox');
+                    const allChecked = Array.from(allCheckboxes).every(cb => cb.checked);
+                    selectAllRulesCheckbox.checked = allChecked;
+                }
+            }
+        });
+
+        // Update visibility of "Delete Selected" button
+        function updateDeleteSelectedButtonVisibility() {
+            const checkedCheckboxes = document.querySelectorAll('.rule-checkbox:checked');
+            if (checkedCheckboxes.length > 0) {
+                deleteSelectedButton.classList.remove('hidden');
+            } else {
+                deleteSelectedButton.classList.add('hidden');
+            }
+        }
+
+        // Handle Delete Selected Button
+        deleteSelectedButton.addEventListener('click', async function() {
+            const selectedRuleIds = Array.from(document.querySelectorAll('.rule-checkbox:checked'))
+                                       .map(cb => cb.dataset.ruleId);
+            if (selectedRuleIds.length === 0) {
+                showResponseMessage('Please select at least one rule to delete.', 'error');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete ${selectedRuleIds.length} selected rule(s)?`)) { // Replace with custom modal later
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/blacklist_rules', { // Assuming this endpoint handles bulk delete
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ ids: selectedRuleIds })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    showResponseMessage(result.message, 'success');
+                    loadBlacklistRules(); // Reload rules after deletion
+                } else {
+                    showResponseMessage(result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting selected rules:', error);
+                showResponseMessage('Network error: Could not connect to the server.', 'error');
+            }
+        });
+
+        // Handle individual Edit/Delete buttons using event delegation
+        blacklistRulesTableBody.addEventListener('click', async function(event) {
+            if (event.target.classList.contains('delete-rule-btn')) {
+                const ruleId = event.target.dataset.ruleId;
+                if (confirm(`Are you sure you want to delete rule ID ${ruleId}?`)) { // Replace with custom modal later
+                    try {
+                        const response = await fetch(`/api/blacklist_rules/${ruleId}`, { // Assuming this endpoint handles single delete
+                            method: 'DELETE'
+                        });
+                        const result = await response.json();
+                        if (response.ok) {
+                            showResponseMessage(result.message, 'success');
+                            loadBlacklistRules(); // Reload rules
+                        } else {
+                            showResponseMessage(result.message, 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error deleting rule:', error);
+                        showResponseMessage('Network error: Could not connect to the server.', 'error');
+                    }
+                }
+            } else if (event.target.classList.contains('edit-rule-btn')) {
+                const ruleId = event.target.dataset.ruleId;
+                // Redirect to an edit page or open a modal for editing
+                alert(`Edit functionality for Rule ID ${ruleId} is not yet implemented.`); // Replace with actual edit logic
+                // window.location.href = `/admin/edit-blacklist-rule/${ruleId}`; // Example: redirect to edit page
+            }
+        });
+
+        // Helper function to display messages
+        function showResponseMessage(message, type) {
+            responseMessageDiv.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800');
+            if (type === 'success') {
+                responseMessageDiv.classList.add('bg-green-100', 'text-green-800');
+            } else if (type === 'error') {
+                responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
+            }
+            responseMessageDiv.innerHTML = `<p class="font-bold">${type.charAt(0).toUpperCase() + type.slice(1)}:</p><p>${message}</p>`;
+            responseMessageDiv.classList.remove('hidden');
+        }
+
+        // Initial load of rules
+        loadBlacklistRules();
+    });
+</script>
+{% endblock %}

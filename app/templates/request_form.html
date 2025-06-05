@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 max-w-md">
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Create New Network Request</h2>
+
+    <form id="requestForm" class="space-y-4">
+        <div>
+            <label for="source_ip" class="block text-gray-700 text-sm font-bold mb-2">Source IP:</label>
+            <input type="text" id="source_ip" name="source_ip" required
+                   class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+        </div>
+
+        <div>
+            <label for="destination_ip" class="block text-gray-700 text-sm font-bold mb-2">Destination IP:</label>
+            <input type="text" id="destination_ip" name="destination_ip" required
+                   class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+        </div>
+
+        <div>
+            <label for="protocol" class="block text-gray-700 text-sm font-bold mb-2">Protocol (e.g., tcp, udp, icmp, any, or number):</label>
+            <input type="text" id="protocol" name="protocol" required
+                   class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+        </div>
+
+        <div>
+            <label for="port" class="block text-gray-700 text-sm font-bold mb-2">Port (e.g., 80, 8000-8999, any):</label>
+            <input type="text" id="port" name="port" required
+                   class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+        </div>
+
+        <div class="flex justify-center">
+            <button type="submit" id="submitButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center">
+                <span id="buttonText">Submit Request</span>
+                <svg id="loadingSpinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </button>
+        </div>
+    </form>
+
+    <div id="responseMessage" class="mt-6 p-3 rounded-md text-center hidden"></div>
+
+    <div class="text-center mt-8">
+        <a href="{{ url_for('routes.home') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Home</a>
+    </div>
+</div>
+
+<script>
+    document.getElementById('requestForm').addEventListener('submit', async function(event) {
+        event.preventDefault(); // Prevent default form submission
+
+        const form = event.target;
+        const formData = new FormData(form);
+        const responseMessageDiv = document.getElementById('responseMessage');
+        const submitButton = document.getElementById('submitButton');
+        const buttonText = document.getElementById('buttonText');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+
+        // Show loading state
+        submitButton.disabled = true;
+        buttonText.textContent = 'Submitting...';
+        loadingSpinner.classList.remove('hidden');
+        responseMessageDiv.classList.add('hidden'); // Hide previous messages
+
+        try {
+            const response = await fetch('/api/request', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            responseMessageDiv.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800', 'bg-blue-100', 'text-blue-800'); // Added bg-blue-100, text-blue-800
+
+            if (response.ok) {
+                // Check the 'status' field from the JSON response for custom handling
+                if (result.status === "success") {
+                    responseMessageDiv.classList.add('bg-green-100', 'text-green-800');
+                    responseMessageDiv.innerHTML = `
+                        <p class="font-bold">Request Created Successfully!</p>
+                        <p>Rule ID: ${result.rule_id}</p>
+                        <p>Status: ${result.status_detail}</p>
+                        <p>Firewalls Involved: ${result.firewalls_involved.length > 0 ? result.firewalls_involved.join(', ') : 'None'}</p>
+                        <p class="mt-2"><a href="{{ url_for('routes.task_results') }}" class="text-green-700 underline hover:no-underline">View All Task Results</a></p>
+                        <p><a href="{{ url_for('routes.approvals_list') }}" class="text-green-700 underline hover:no-underline">Go to Approvals</a></p>
+                    `;
+                    form.reset(); // Clear form fields on success
+                } else if (result.status === "info") {
+                    responseMessageDiv.classList.add('bg-blue-100', 'text-blue-800'); // Use blue for info messages
+                    responseMessageDiv.innerHTML = `<p class="font-bold">Information:</p><p>${result.message}</p>`;
+                } else {
+                    // Fallback for unexpected successful responses
+                    responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
+                    responseMessageDiv.innerHTML = `<p class="font-bold">Unexpected Success Response:</p><p>${result.message}</p>`;
+                }
+            } else if (response.status === 403) {
+                responseMessageDiv.classList.add('bg-yellow-100', 'text-yellow-800');
+                responseMessageDiv.innerHTML = `<p class="font-bold">Request Denied:</p><p>${result.message}</p>`;
+            } else {
+                responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
+                let errorsHtml = '';
+                if (result.errors && result.errors.length > 0) {
+                    errorsHtml = '<ul>' + result.errors.map(err => `<li>${err}</li>`).join('') + '</ul>';
+                }
+                responseMessageDiv.innerHTML = `<p class="font-bold">Error Creating Request:</p><p>${result.message}</p>${errorsHtml}`;
+            }
+        } catch (error) {
+            console.error('Fetch error:', error);
+            responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
+            responseMessageDiv.innerHTML = `<p class="font-bold">Network Error:</p><p>Could not connect to the server or an unexpected error occurred.</p>`;
+        } finally {
+            // Revert button state
+            submitButton.disabled = false;
+            buttonText.textContent = 'Submit Request';
+            loadingSpinner.classList.add('hidden');
+            responseMessageDiv.classList.remove('hidden');
+        }
+    });
+</script>
+{% endblock %}

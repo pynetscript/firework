@@ -1,0 +1,100 @@
+---
+- name: Pre-Check for Existing Firewall Policy
+  hosts: "{{ firewalls | join(',') }}" # Target firewalls identified in the path
+  gather_facts: no
+  connection: network_cli # Default, adjust per task if needed
+  collections:
+    - fortinet.fortios
+    - paloaltonetworks.panos
+
+  vars:
+    check_source_ip: "{{ source_ip }}"
+    check_destination_ip: "{{ destination_ip }}"
+    check_protocol: "{{ protocol }}"
+    check_port: "{{ port }}" # Keep 'port' for now, warning is minor
+
+    # Define object names based on rule parameters for consistency
+    check_src_addr_name: "HOST_{{ check_source_ip | replace('.', '_') }}"
+    check_dst_addr_name: "HOST_{{ check_destination_ip | replace('.', '_') }}"
+    check_service_name: "SVC_{{ check_protocol | upper }}_{{ check_port }}"
+
+    # Flag to indicate if a policy is found on any firewall
+    policy_found_flag: false
+
+  tasks:
+    - name: Debug Pre-Check variables
+      debug:
+        msg: "Pre-checking for existing policy on {{ inventory_hostname }} for Source: {{ check_source_ip }}, Dest: {{ check_destination_ip }}, Proto: {{ check_protocol }}, Port: {{ check_port }}"
+
+    # --- FortiGate Policy Check (remains as before) ---
+    - name: Get FortiGate Firewall Policies
+      fortinet.fortios.fortios_firewall_policy:
+        vdom: "root"
+        state: info
+      register: fgt_policies
+      when: inventory_hostname in groups['fortinet'] | default([])
+      ignore_errors: yes
+
+    - name: Debug FortiGate policies retrieved (full output)
+      debug:
+        var: fgt_policies
+      when: inventory_hostname in groups['fortinet'] | default([]) and fgt_policies is defined
+
+    - name: Check FortiGate policies for match and set flag
+      set_fact:
+        policy_found_flag: true
+      loop: "{{ fgt_policies.meta.results | default([]) }}"
+      loop_control:
+        label: "Checking FortiGate policy {{ item.name }}"
+      when:
+        - inventory_hostname in groups['fortinet'] | default([])
+        - item.srcaddr is defined and (item.srcaddr | map(attribute='name') | list | contains(check_src_addr_name) or check_source_ip in item.srcaddr | map(attribute='name') | list)
+        - item.dstaddr is defined and (item.dstaddr | map(attribute='name') | list | contains(check_dst_addr_name) or check_destination_ip in item.dstaddr | map(attribute='name') | list)
+        - (check_protocol | lower == 'any' and item.service is defined and item.service | map(attribute='name') | list | contains('ALL')) or
+          (check_protocol | lower != 'any' and item.service is defined and item.service | map(attribute='name') | list | contains(check_service_name))
+      run_once: true
+      delegate_to: localhost
+
+    # --- Palo Alto Policy Check using 'test security-policy-match' ---
+    - name: Set Palo Alto protocol number
+      set_fact:
+        pa_protocol_number: "{{ { 'tcp': 6, 'udp': 17, 'icmp': 1, 'any': 'any' }[check_protocol | lower] | default(check_protocol) }}"
+      when: inventory_hostname in groups['paloalto'] | default([])
+
+    - name: Run Palo Alto Security Policy Match
+      paloaltonetworks.panos.panos_op:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        cmd: "<test><security-policy-match><source>{{ check_source_ip }}</source><destination>{{ check_destination_ip }}</destination><protocol>{{ pa_protocol_number }}</protocol><destination-port>{{ check_port }}</destination-port></security-policy-match></test>"
+        cmd_is_xml: true
+      register: pa_policy_match_output
+      when: inventory_hostname in groups['paloalto'] | default([])
+      ignore_errors: yes
+
+    - name: Debug Palo Alto Policy Match Output
+      debug:
+        var: pa_policy_match_output
+      when: inventory_hostname in groups['paloalto'] | default([]) and pa_policy_match_output is defined
+
+    - name: Set policy_found_flag if Palo Alto policy matches
+      set_fact:
+        policy_found_flag: true
+      when:
+        - inventory_hostname in groups['paloalto'] | default([])
+        - pa_policy_match_output is defined
+        - pa_policy_match_output.stdout_xml is defined # Corrected from stdout to stdout_xml
+        # Check if the output contains a rule name that is NOT "No matching rule found"
+        - pa_policy_match_output.stdout_xml | regex_search('<entry name="([^"]+)"') # Corrected from stdout to stdout_xml
+        - not (pa_policy_match_output.stdout_xml | regex_search('<entry name="No matching rule found"')) # Corrected from stdout to stdout_xml
+      run_once: true
+      delegate_to: localhost
+
+    - name: Indicate if policy was found
+      debug:
+        msg: "POLICY_EXISTS"
+      when: policy_found_flag
+      run_once: true
+      delegate_to: localhost

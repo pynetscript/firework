@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Task Results</h2>
+{% if rules %}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Source IP</th>
+            <th>Destination IP</th>
+            <th>Protocol</th>
+            <th>Port</th>
+            <th>Status</th>
+            <th>Approval Status</th> {# Added Approval Status column #}
+            <th>Firewalls Involved</th> {# Added Firewalls Involved column #}
+        </tr>
+    </thead>
+    <tbody>
+        {% for rule in rules %}
+        <tr>
+            <td>{{ rule.id }}</td>
+            <td>{{ rule.source_ip }}</td>
+            <td>{{ rule.destination_ip }}</td>
+            <td>{{ rule.protocol }}</td>
+            <td>{{ rule.port }}</td>
+            <td>{{ rule.status }}</td>
+            <td>{{ rule.approval_status }}</td> {# Display Approval Status #}
+            <td>
+                {% if rule.firewalls_involved %}
+                    {{ rule.firewalls_involved | join(', ') }}
+                {% else %}
+                    N/A
+                {% endif %}
+            </td> {# Display Firewalls Involved #}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No task results available yet.</p>
+{% endif %}
+{% endblock %}

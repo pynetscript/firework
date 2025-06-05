@@ -1,0 +1,25 @@
+# Python specific
+*.pyc
+__pycache__/
+venv/
+.env
+
+# Database files
+*.db
+migrations/ # If you manage migrations through Flask-Migrate, you generally don't commit the migration scripts themselves, but rather the process to generate them.
+# However, if you *do* want to keep migration scripts for rollbacks, you might comment this out.
+# For simplicity and typical development, let's keep them ignored for now, assuming you regenerate if needed.
+
+# Output files from Ansible/Collectors
+outputs/
+
+# Logs
+*.log
+
+# Ansible specific
+.ansible/
+*.retry
+*.vault
+
+# Flask specific
+instance/
