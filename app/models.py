@@ -27,13 +27,23 @@ class FirewallRule(db.Model):
     destination_ip = db.Column(db.String(50), nullable=False)
     protocol = db.Column(db.String(10), nullable=False)
     port = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(20), default="Pending")
+    status = db.Column(db.String(50), default="Pending") # Increased length for statuses like 'Approved - Pending Implementation'
+    
     # New fields for Approval Workflow
     approval_status = db.Column(db.String(20), default="Pending") # Can be 'Pending', 'Approved', 'Denied'
     approver_id = db.Column(db.String(50), nullable=True) # Placeholder for approver's identifier
     approver_comment = db.Column(db.Text, nullable=True)
+
     # New field to store firewalls involved in the path
     firewalls_involved = db.Column(JSONEncodedList, nullable=True) # Stores list of firewall hostnames as JSON
+
+    # New timestamp fields (will default to OS local time if not specified as UTC)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    implemented_at = db.Column(db.DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<FirewallRule {self.id}: {self.source_ip} to {self.destination_ip}:{self.port}/{self.protocol} Status: {self.status}>"
 
 class BlacklistRule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -50,3 +60,4 @@ class BlacklistRule(db.Model):
 
     def __repr__(self):
         return f"<BlacklistRule {self.sequence}: {self.rule_name}>"
+

@@ -1,42 +1,59 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Task Results</h2>
-{% if rules %}
-<table>
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Source IP</th>
-            <th>Destination IP</th>
-            <th>Protocol</th>
-            <th>Port</th>
-            <th>Status</th>
-            <th>Approval Status</th> {# Added Approval Status column #}
-            <th>Firewalls Involved</th> {# Added Firewalls Involved column #}
-        </tr>
-    </thead>
-    <tbody>
-        {% for rule in rules %}
-        <tr>
-            <td>{{ rule.id }}</td>
-            <td>{{ rule.source_ip }}</td>
-            <td>{{ rule.destination_ip }}</td>
-            <td>{{ rule.protocol }}</td>
-            <td>{{ rule.port }}</td>
-            <td>{{ rule.status }}</td>
-            <td>{{ rule.approval_status }}</td> {# Display Approval Status #}
-            <td>
-                {% if rule.firewalls_involved %}
-                    {{ rule.firewalls_involved | join(', ') }}
-                {% else %}
-                    N/A
-                {% endif %}
-            </td> {# Display Firewalls Involved #}
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p>No task results available yet.</p>
-{% endif %}
+<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 max-w-7xl"> {# Increased max-width to accommodate new columns #}
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Task Results</h2>
+
+    {% if rules %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full bg-white rounded-lg overflow-hidden shadow-md">
+            <thead>
+                <tr class="bg-gray-100 text-gray-700 uppercase text-sm leading-normal">
+                    <th class="py-3 px-6 text-left">ID</th>
+                    <th class="py-3 px-6 text-left">Source IP</th>
+                    <th class="py-3 px-6 text-left">Destination IP</th>
+                    <th class="py-3 px-6 text-left">Protocol</th>
+                    <th class="py-3 px-6 text-left">Port</th>
+                    <th class="py-3 px-6 text-left">Status</th>
+                    <th class="py-3 px-6 text-left">Approval Status</th>
+                    <th class="py-3 px-6 text-left">Firewalls Involved</th>
+                    <th class="py-3 px-6 text-left whitespace-nowrap">Created At</th> {# New Column #}
+                    <th class="py-3 px-6 text-left whitespace-nowrap">Approved At</th> {# New Column #}
+                    <th class="py-3 px-6 text-left whitespace-nowrap">Implemented At</th> {# New Column #}
+                </tr>
+            </thead>
+            <tbody class="text-gray-600 text-sm font-light">
+                {% for rule in rules %}
+                <tr class="border-b border-gray-200 hover:bg-gray-100">
+                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.id }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.source_ip }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.destination_ip }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.protocol }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.port }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.status }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.approval_status }}</td>
+                    <td class="py-3 px-6 text-left">
+                        {% if rule.firewalls_involved %}
+                            {{ rule.firewalls_involved | join(', ') }}
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                    {# Display timestamps, formatted, and handle None values #}
+                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</td>
+                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td>
+                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-center text-gray-600 mt-4">No task results available yet.</p>
+    {% endif %}
+
+    <div class="text-center mt-8">
+        <a href="{{ url_for('routes.home') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Home</a>
+    </div>
+</div>
 {% endblock %}
+
