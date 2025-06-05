@@ -1,67 +1,57 @@
 from flask import Flask
-from app.models import db
-from app.routes import routes
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+from flask_login import LoginManager
+
+from app.models import db, User
+
+OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'outputs')
+if not os.path.exists(OUTPUTS_DIR):
+    os.makedirs(OUTPUTS_DIR)
 
 def create_app():
-    # Determine the project root (one level up from 'app' directory)
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
-    # Define the absolute path for the SQLite database
-    db_path = os.path.join(project_root, 'network.db')
-
-    app = Flask(
-        __name__,
-        static_folder=os.path.join(project_root, 'static'),
-        static_url_path='/static'
-    )
-    # Use the absolute path for SQLALCHEMY_DATABASE_URI
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app = Flask(__name__)
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'you-will-never-guess-this-secret-key-super-secure'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.root_path, '..', 'network.db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    # Set a secret key for session management (required for flash messages)
-    # In a production environment, this should be a strong, randomly generated string
-    # and ideally loaded from an environment variable or secure config.
-    app.config['SECRET_KEY'] = 'your_super_secret_key_here_change_this_in_production' 
 
     db.init_app(app)
+    migrate = Migrate(app, db)
+
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = 'auth.login'
+    login_manager.login_message = 'Please log in to access this page.'
+    login_manager.login_message_category = 'warning'
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        return User.query.get(int(user_id))
+
+    log_file_path = os.path.join(app.root_path, '..', 'firework_app.log')
+    handler = RotatingFileHandler(log_file_path, maxBytes=100000, backupCount=10)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.INFO)
+    logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+
+    app.logger.info('Firework application started and comprehensive file logging configured successfully.')
+    app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    app.logger.info(f"Current working directory: {app.root_path}")
+
+    from app.routes import routes
     app.register_blueprint(routes)
 
-    # --- Configure File Logging ---
-    log_dir = '/var/log/firework'
-    if not os.path.exists(log_dir):
-        try:
-            os.makedirs(log_dir)
-        except OSError as e:
-            print(f"ERROR: Failed to create log directory {log_dir}: {e}")
-            pass
+    from app.auth_routes import auth as auth_blueprint
+    app.register_blueprint(auth_blueprint)
 
-    try:
-        file_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'app.log'),
-            maxBytes=1024 * 1024,
-            backupCount=5
-        )
-        formatter = logging.Formatter(
-            '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-        )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(logging.INFO)
-
-        app.logger.addHandler(file_handler)
-        app.logger.setLevel(logging.INFO)
-
-        werkzeug_logger = logging.getLogger('werkzeug')
-        werkzeug_logger.addHandler(file_handler)
-        werkzeug_logger.setLevel(logging.INFO)
-
-        app.logger.info("Firework application started and comprehensive file logging configured successfully.")
-        app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
-        app.logger.info(f"Current working directory: {os.getcwd()}")
-
-    except Exception as e:
-        app.logger.error(f"Failed to set up file logging: {e}")
-    # --- End File Logging Configuration ---
+    # Register the new admin blueprint
+    from app.admin_routes import admin_bp as admin_blueprint
+    app.register_blueprint(admin_blueprint)
 
     return app
+

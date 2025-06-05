@@ -67,11 +67,39 @@ echo "Migration file edited successfully."
 echo "Applying database migrations..."
 flask db upgrade
 
-# 13. Verify database tables
+# 13. Create super_admin user
+echo "Creating super_admin user..."
+# Create a temporary Python script for user creation
+cat << EOF > create_superadmin.py
+from app import create_app, db
+from app.models import User
+from datetime import datetime
+import os
+
+app = create_app()
+with app.app_context():
+    if not User.query.filter_by(username='super_admin').first():
+        super_admin_user = User(username='super_admin', email='superadmin@firework.dev', role='superadmin', created_at=datetime.utcnow())
+        super_admin_user.set_password('super_admin') # Set the password
+        db.session.add(super_admin_user)
+        db.session.commit()
+        print("Super admin user 'super_admin' created successfully with password 'super_admin'.")
+    else:
+        print("Super admin user 'super_admin' already exists.")
+EOF
+
+# Execute the temporary script
+python create_superadmin.py
+
+# Clean up the temporary script
+rm create_superadmin.py
+echo "Super admin user creation process completed."
+
+# 14. Verify database tables
 echo "Verifying database tables in network.db..."
 sqlite3 network.db ".tables"
 
-# 14. Start Flask application
+# 15. Start Flask application
 echo "Starting Flask..."
 ./run.py
 

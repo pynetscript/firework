@@ -1,40 +1,54 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
-from app.models import FirewallRule, BlacklistRule, db
+from app.models import FirewallRule, BlacklistRule, db, User # Import User model
 import ipaddress
 import json
-import logging # Import logging
-# Import the new NetworkAutomationService
+import logging
+from datetime import datetime
+from flask_login import login_required, current_user # Import current_user
 from app.services.network_automation import NetworkAutomationService
-from datetime import datetime # Import datetime for timestamps
+from app.decorators import roles_required, no_self_approval # Import custom decorators
 
 
 routes = Blueprint('routes', __name__)
 
-# Initialize the NetworkAutomationService
 network_automation_service = NetworkAutomationService()
 
-# Get the Flask app logger
 app_logger = logging.getLogger(__name__)
 
 @routes.route('/')
 def home():
-    return render_template('index.html')
+    if not current_user.is_authenticated:
+        return redirect(url_for('auth.login'))
+    # Redirect authenticated users to a default dashboard page
+    return redirect(url_for('routes.task_results'))
+
 
 @routes.route('/request-form')
+@login_required
+@roles_required('superadmin', 'admin', 'requester') # Only these roles can create requests
 def request_form():
     return render_template('request_form.html')
 
+
 @routes.route('/task-results')
+@login_required
+@roles_required('superadmin', 'admin', 'implementer', 'approver', 'requester') # All roles can see task results, but content varies
 def task_results():
-    rules = FirewallRule.query.all()
-    # firewalls_involved is a JSONEncodedList, so it should already be a Python list when accessed.
-    # No explicit json.loads needed here unless JSONEncodedList is not working as expected.
+    if current_user.role == 'requester':
+        # Requesters only see their own requests
+        rules = FirewallRule.query.filter_by(requester_id=current_user.id).all()
+        app_logger.info(f"Requester {current_user.username} viewing their own task results.")
+    else:
+        # Other roles see all requests
+        rules = FirewallRule.query.all()
+        app_logger.info(f"User {current_user.username} (Role: {current_user.role}) viewing all task results.")
+
     for rule in rules:
         if rule.firewalls_involved is None:
-            rule.firewalls_involved = [] # Ensure it's an empty list if None
+            rule.firewalls_involved = []
     return render_template('task_results.html', rules=rules)
 
-# --- Helper Validation Functions ---
+# --- Helper Validation Functions (unchanged) ---
 def validate_ip_address(ip_str, field_name):
     """Validates if a string is a valid IPv4 address or network."""
     if not ip_str:
@@ -98,7 +112,7 @@ def validate_port(port_value):
             return False, f"Invalid port format: '{port_value}'. Must be an integer, 'start-end', or 'any'."
 
 
-# --- Blacklist Logic ---
+# --- Blacklist Logic (unchanged for now, will apply roles later) ---
 def check_blacklist(source_ip, destination_ip, protocol, destination_port):
     """
     Checks if a given request matches any active blacklist rules.
@@ -174,13 +188,15 @@ def check_blacklist(source_ip, destination_ip, protocol, destination_port):
     return False, None
 
 @routes.route('/api/request', methods=['POST'])
+@login_required # Ensure user is logged in to make a request
+@roles_required('superadmin', 'admin', 'requester') # Only these roles can make a request
 def create_request():
     data = request.form
 
     source_ip = data.get('source_ip')
     destination_ip = data.get('destination_ip')
     protocol = data.get('protocol')
-    dest_port = data.get('port') # Renamed 'port' to 'dest_port' from form data
+    dest_port = data.get('port')
 
     errors = []
 
@@ -191,7 +207,7 @@ def create_request():
     if not is_valid: errors.append(error_msg)
     is_valid, error_msg = validate_protocol(protocol)
     if not is_valid: errors.append(error_msg)
-    is_valid, error_msg = validate_port(dest_port) # Use dest_port for validation
+    is_valid, error_msg = validate_port(dest_port)
     if not is_valid: errors.append(error_msg)
 
     if errors:
@@ -199,12 +215,12 @@ def create_request():
         return jsonify({"status": "error", "message": "Validation failed", "errors": errors}), 400
 
     # 2.2 Pre-check: Run requested rule against blacklist db
-    is_blacklisted, rule_name = check_blacklist(source_ip, destination_ip, protocol, dest_port) # Use dest_port for blacklist check
+    is_blacklisted, rule_name = check_blacklist(source_ip, destination_ip, protocol, dest_port)
     if is_blacklisted:
-        app_logger.warning(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} denied by blacklist rule: '{rule_name}'")
+        app_logger.warning(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} denied by blacklist rule: '{rule_name}' for user {current_user.username}.")
         return jsonify({"status": "denied", "message": f"Request denied: Matches blacklist rule '{rule_name}'"}), 403
     else:
-        app_logger.info(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} passed blacklist check.")
+        app_logger.info(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} passed blacklist check for user {current_user.username}.")
 
 
     # --- Pre-check 2.3 & 2.4: Network Path & Firewall Identification using service ---
@@ -229,7 +245,7 @@ def create_request():
         if firewalls_in_path:
             # --- NEW: Check if policy already exists on identified firewalls ---
             policy_already_exists = network_automation_service.check_policy_existence(
-                source_ip, destination_ip, protocol, dest_port, firewalls_in_path # Use dest_port
+                source_ip, destination_ip, protocol, dest_port, firewalls_in_path
             )
             if policy_already_exists:
                 app_logger.info(f"Existing policy found for {source_ip} to {destination_ip}:{dest_port}/{protocol}. Request marked as already implemented.")
@@ -265,30 +281,34 @@ def create_request():
             source_ip=source_ip,
             destination_ip=destination_ip,
             protocol=protocol,
-            port=int(dest_port), # Store as 'port' in DB model (column name remains 'port')
-            status=initial_rule_status, # Set initial status based on pathfinding result
-            approval_status=initial_approval_status, # Set initial approval status
-            firewalls_involved=firewalls_in_path, # Store the list of firewalls
-            created_at=datetime.now() # Set created_at timestamp
+            port=int(dest_port),
+            status=initial_rule_status,
+            approval_status=initial_approval_status,
+            firewalls_involved=firewalls_in_path,
+            requester_id=current_user.id # Set the requester ID
         )
         db.session.add(rule)
         db.session.commit()
-        app_logger.info(f"Network request ID {rule.id} created successfully with status '{rule.status}'.")
+        app_logger.info(f"Network request ID {rule.id} created successfully by user {current_user.username} with status '{rule.status}'.")
         return jsonify({"status": "success", "message": "Request created successfully", "rule_id": rule.id, "status_detail": rule.status, "firewalls_involved": firewalls_in_path}), 201
     except Exception as e:
         db.session.rollback()
-        app_logger.error(f"Failed to create request for {source_ip} to {destination_ip}: {str(e)}")
+        app_logger.error(f"Failed to create request for {source_ip} to {destination_ip} by user {current_user.username}: {str(e)}")
         return jsonify({"status": "error", "message": f"Failed to create request: {str(e)}"}), 500
 
 
 # --- Blacklist Management Routes ---
 
 @routes.route('/admin/blacklist', methods=['GET'])
+@login_required
+@roles_required('superadmin', 'admin', 'implementer') # Admins/Superadmins can manage, Implementers can view
 def blacklist_rules_list():
     """Displays a list of all blacklist rules."""
     return render_template('blacklist_rules_list.html')
 
 @routes.route('/admin/blacklist/add', methods=['GET', 'POST'])
+@login_required
+@roles_required('superadmin', 'admin') # Only superadmin and admin can add blacklist rules
 def add_blacklist_rule():
     """Displays the form to add a new blacklist rule and handles its submission."""
     if request.method == 'POST':
@@ -298,8 +318,8 @@ def add_blacklist_rule():
             # Check for existing sequence
             if BlacklistRule.query.filter_by(sequence=sequence).first():
                 flash(f"Rule with sequence {sequence} already exists. Please choose a different sequence.", 'error')
-                app_logger.warning(f"Attempted to add blacklist rule with duplicate sequence: {sequence}")
-                return redirect(url_for('routes.add_blacklist_rule')) # Redirect back to the form
+                app_logger.warning(f"Attempted by {current_user.username} to add blacklist rule with duplicate sequence: {sequence}")
+                return redirect(url_for('routes.add_blacklist_rule'))
             
             new_rule = BlacklistRule(
                 sequence=sequence,
@@ -314,31 +334,34 @@ def add_blacklist_rule():
             db.session.add(new_rule)
             db.session.commit()
             flash("Blacklist rule added successfully!", 'success')
-            app_logger.info(f"Blacklist rule '{new_rule.rule_name}' (ID: {new_rule.id}, Sequence: {new_rule.sequence}) added successfully.")
-            return redirect(url_for('routes.blacklist_rules_list')) # Redirect to the list page
+            app_logger.info(f"Blacklist rule '{new_rule.rule_name}' (ID: {new_rule.id}, Sequence: {new_rule.sequence}) added successfully by {current_user.username}.")
+            return redirect(url_for('routes.blacklist_rules_list'))
         except ValueError:
             db.session.rollback()
             flash("Invalid sequence number. Must be an integer.", 'error')
-            app_logger.error(f"Failed to add blacklist rule: Invalid sequence number provided.")
-            return redirect(url_for('routes.add_blacklist_rule')) # Redirect back to the form
+            app_logger.error(f"Failed to add blacklist rule by {current_user.username}: Invalid sequence number provided.")
+            return redirect(url_for('routes.add_blacklist_rule'))
         except Exception as e:
             db.session.rollback()
             flash(f"Failed to add blacklist rule: {str(e)}", 'error')
-            app_logger.error(f"Failed to add blacklist rule: {str(e)}")
-            return redirect(url_for('routes.add_blacklist_rule')) # Redirect back to the form
+            app_logger.error(f"Failed to add blacklist rule by {current_user.username}: {str(e)}")
+            return redirect(url_for('routes.add_blacklist_rule'))
     
-    # For GET request, render the dedicated form
     return render_template('add_blacklist_form.html')
 
 @routes.route('/admin/blacklist/<int:rule_id>', methods=['GET'])
+@login_required
+@roles_required('superadmin', 'admin', 'implementer') # Admins/Superadmins/Implementers can view
 def blacklist_rule_detail(rule_id):
     """Displays the details of a specific blacklist rule."""
     rule = BlacklistRule.query.get_or_404(rule_id)
-    app_logger.info(f"Viewing details for blacklist rule ID: {rule_id}")
+    app_logger.info(f"User {current_user.username} viewing details for blacklist rule ID: {rule_id}")
     return render_template('blacklist_rule_detail.html', rule=rule)
 
 # --- API Endpoints for Blacklist Rules (for AJAX calls) ---
 @routes.route('/api/blacklist_rules', methods=['GET'])
+@login_required
+@roles_required('superadmin', 'admin', 'implementer') # All who can view the list can fetch data
 def get_blacklist_rules_api():
     """API endpoint to get all blacklist rules."""
     rules = BlacklistRule.query.order_by(BlacklistRule.sequence).all()
@@ -354,13 +377,15 @@ def get_blacklist_rules_api():
             'protocol': rule.protocol,
             'destination_port': rule.destination_port,
             'description': rule.description,
-            'created_at': rule.created_at.isoformat() if rule.created_at else None, # Include timestamps
-            'updated_at': rule.updated_at.isoformat() if rule.updated_at else None  # Include timestamps
+            'created_at': rule.created_at.isoformat() if rule.created_at else None,
+            'updated_at': rule.updated_at.isoformat() if rule.updated_at else None
         })
-    app_logger.info("Fetched all blacklist rules via API.")
+    app_logger.info(f"User {current_user.username} fetched all blacklist rules via API.")
     return jsonify(rules_data), 200
 
 @routes.route('/api/blacklist_rules/<int:rule_id>', methods=['DELETE'])
+@login_required
+@roles_required('superadmin', 'admin') # Only superadmin and admin can delete blacklist rules
 def delete_blacklist_rule_api(rule_id):
     """API endpoint to delete a single blacklist rule."""
     rule = BlacklistRule.query.get(rule_id)
@@ -368,22 +393,24 @@ def delete_blacklist_rule_api(rule_id):
         try:
             db.session.delete(rule)
             db.session.commit()
-            app_logger.info(f"Blacklist rule ID {rule_id} deleted successfully via API.")
+            app_logger.info(f"Blacklist rule ID {rule_id} deleted successfully by {current_user.username} via API.")
             return jsonify({"status": "success", "message": f"Rule ID {rule_id} deleted successfully."}), 200
         except Exception as e:
             db.session.rollback()
-            app_logger.error(f"Failed to delete blacklist rule ID {rule_id} via API: {str(e)}")
+            app_logger.error(f"Failed to delete blacklist rule ID {rule_id} by {current_user.username} via API: {str(e)}")
             return jsonify({"status": "error", "message": f"Failed to delete rule ID {rule_id}: {str(e)}"}), 500
-    app_logger.warning(f"Attempted to delete non-existent blacklist rule ID {rule_id} via API.")
+    app_logger.warning(f"Attempted to delete non-existent blacklist rule ID {rule_id} by {current_user.username} via API.")
     return jsonify({"status": "error", "message": f"Rule ID {rule_id} not found."}), 404
 
 @routes.route('/api/blacklist_rules', methods=['DELETE'])
+@login_required
+@roles_required('superadmin', 'admin') # Only superadmin and admin can delete multiple blacklist rules
 def delete_multiple_blacklist_rules_api():
     """API endpoint to delete multiple blacklist rules."""
     data = request.get_json()
     rule_ids = data.get('ids', [])
     if not rule_ids:
-        app_logger.warning("Attempted to delete multiple blacklist rules, but no IDs were provided.")
+        app_logger.warning(f"Attempted to delete multiple blacklist rules by {current_user.username}, but no IDs were provided.")
         return jsonify({"status": "error", "message": "No rule IDs provided for deletion."}), 400
 
     try:
@@ -394,30 +421,29 @@ def delete_multiple_blacklist_rules_api():
                 db.session.delete(rule)
                 deleted_count += 1
         db.session.commit()
-        app_logger.info(f"Successfully deleted {deleted_count} blacklist rule(s) via API. IDs: {rule_ids}")
+        app_logger.info(f"Successfully deleted {deleted_count} blacklist rule(s) by {current_user.username} via API. IDs: {rule_ids}")
         return jsonify({"status": "success", "message": f"Successfully deleted {deleted_count} rule(s)."}), 200
     except Exception as e:
         db.session.rollback()
-        app_logger.error(f"Failed to delete multiple blacklist rules via API (IDs: {rule_ids}): {str(e)}")
+        app_logger.error(f"Failed to delete multiple blacklist rules by {current_user.username} via API (IDs: {rule_ids}): {str(e)}")
         return jsonify({"status": "error", "message": f"Failed to delete rules: {str(e)}"}), 500
 
 
 # --- Routes for Approval Workflow ---
 
 @routes.route('/approvals')
+@login_required
+@roles_required('superadmin', 'admin', 'approver') # Superadmin, Admin, Approver can see approvals
 def approvals_list():
     """Displays a list of requests pending approval."""
-    # Only show rules that are 'Pending Approval' and 'Pending' in approval_status
     pending_rules = FirewallRule.query.filter_by(status='Pending Approval', approval_status='Pending').all()
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
-    for rule in pending_rules:
-        if rule.firewalls_involved is None:
-            rule.firewalls_involved = [] # Ensure it's an empty list if None
-
-    app_logger.info("Viewing list of pending approvals.")
+    app_logger.info(f"User {current_user.username} viewing list of pending approvals.")
     return render_template('approvals_list.html', rules=pending_rules)
 
 @routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
+@login_required
+@roles_required('superadmin', 'admin', 'approver') # Superadmin, Admin, Approver can approve/deny
+@no_self_approval # Prevent approver from approving their own requests
 def approve_deny_request(rule_id):
     """Allows an approver to view details and approve/deny a specific request."""
     rule = FirewallRule.query.get_or_404(rule_id)
@@ -425,88 +451,92 @@ def approve_deny_request(rule_id):
     if request.method == 'POST':
         action = request.form.get('action') # 'approve' or 'deny'
         approver_comment = request.form.get('approver_comment')
-        current_approver_id = "approver_user_123" # Placeholder for actual approver ID
-
+        
+        # Approver ID is now current_user.id
+        current_approver_id = current_user.id 
+        
         if action == 'approve':
             rule.approval_status = "Approved"
-            rule.status = "Approved - Pending Implementation" # Update overall status
+            rule.status = "Approved - Pending Implementation"
             rule.approver_id = current_approver_id
             rule.approver_comment = approver_comment
-            rule.approved_at = datetime.now() # Set approved_at timestamp
+            rule.approved_at = datetime.utcnow()
             db.session.commit()
-            app_logger.info(f"Network request ID {rule_id} approved by {current_approver_id}.")
-            # Redirect to approvals list after action
+            flash('Request approved successfully!', 'success')
+            app_logger.info(f"Network request ID {rule_id} approved by {current_user.username} (ID: {current_user.id}).")
             return redirect(url_for('routes.approvals_list'))
         elif action == 'deny':
             rule.approval_status = "Denied"
-            rule.status = "Denied by Approver" # Update overall status
+            rule.status = "Denied by Approver"
             rule.approver_id = current_approver_id
             rule.approver_comment = approver_comment
             db.session.commit()
-            app_logger.info(f"Network request ID {rule_id} denied by {current_approver_id}.")
-            # Redirect to approvals list after action
+            flash('Request denied.', 'info')
+            app_logger.info(f"Network request ID {rule_id} denied by {current_user.username} (ID: {current_user.id}).")
             return redirect(url_for('routes.approvals_list'))
         else:
-            app_logger.warning(f"Invalid action '{action}' for network request ID {rule.id}.")
+            app_logger.warning(f"Invalid action '{action}' for network request ID {rule.id} by {current_user.username}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
     
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
     if rule.firewalls_involved is None:
-        rule.firewalls_involved = [] # Ensure it's an empty list if None
+        rule.firewalls_involved = []
 
-    app_logger.info(f"Viewing approval details for network request ID {rule.id}.")
+    app_logger.info(f"User {current_user.username} viewing approval details for network request ID {rule.id}.")
     return render_template('approval_detail.html', rule=rule)
 
-# --- New Routes for Implementer Workflow ---
+# --- Routes for Implementer Workflow ---
 
 @routes.route('/implementation')
+@login_required
+@roles_required('superadmin', 'admin', 'implementer') # Superadmin, Admin, Implementer can see implementation list
 def implementation_list():
     """Displays a list of rules ready for implementation (approved and pending implementation)."""
-    # Show rules that are 'Approved - Pending Implementation'
     ready_for_implementation_rules = FirewallRule.query.filter_by(status='Approved - Pending Implementation', approval_status='Approved').all()
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
+    app_logger.info(f"User {current_user.username} viewing list of rules ready for implementation.")
     for rule in ready_for_implementation_rules:
         if rule.firewalls_involved is None:
-            rule.firewalls_involved = [] # Ensure it's an empty list if None
-
-    app_logger.info("Viewing list of rules ready for implementation.")
+            rule.firewalls_involved = []
     return render_template('implementation_list.html', rules=ready_for_implementation_rules)
 
 @routes.route('/implementation/<int:rule_id>', methods=['GET', 'POST'])
+@login_required
+@roles_required('superadmin', 'admin', 'implementer') # Superadmin, Admin, Implementer can trigger implementation
 def implement_rule(rule_id):
     """Allows an implementer to view details and provision/decline a specific rule."""
     rule = FirewallRule.query.get_or_404(rule_id)
 
     if request.method == 'POST':
-        action = request.form.get('action') # 'provision' or 'decline_implementation'
-        implementer_comment = request.form.get('implementer_comment') # New comment field for implementer
-        current_implementer_id = "implementer_user_456" # Placeholder for actual implementer ID
+        action = request.form.get('action')
+        implementer_comment = request.form.get('implementer_comment')
+        current_implementer_id = current_user.id # Use current_user.id for implementer
 
         if action == 'provision':
-            app_logger.info(f"Implementer triggered provisioning for rule ID {rule_id}.")
-            # Logic for provisioning (already in provision_request, we'll call it)
-            # This route will handle the provisioning logic
-            return provision_request(rule_id) # Call the existing provisioning function
+            app_logger.info(f"Implementer {current_user.username} triggered provisioning for rule ID {rule_id}.")
+            return provision_request(rule_id)
         elif action == 'decline_implementation':
             rule.status = "Declined by Implementer"
-            rule.approver_comment = (rule.approver_comment or "") + f"\nImplementer Comment: {implementer_comment}"
-            rule.approver_id = current_implementer_id # Re-using approver_id for simplicity, ideally separate implementer_id
+            # Append implementer comment to existing comments
+            existing_comments = rule.approver_comment if rule.approver_comment else ""
+            rule.approver_comment = f"{existing_comments}\nImplementer ({current_user.username}) Comment: {implementer_comment}"
+            rule.approver_id = current_implementer_id # This should ideally be a separate implementer_id column
             db.session.commit()
-            app_logger.info(f"Implementer declined implementation for rule ID {rule_id}.")
+            flash('Implementation declined.', 'info')
+            app_logger.info(f"Implementer {current_user.username} declined implementation for rule ID {rule_id}.")
             return redirect(url_for('routes.implementation_list'))
         else:
-            app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule_id}.")
+            app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule_id} by {current_user.username}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
     
-    # When displaying, ensure firewalls_involved is deserialized if it exists and is a string
     if rule.firewalls_involved is None:
-        rule.firewalls_involved = [] # Ensure it's an empty list if None
+        rule.firewalls_involved = []
 
-    app_logger.info(f"Viewing implementation details for rule ID {rule.id}.")
+    app_logger.info(f"User {current_user.username} viewing implementation details for rule ID {rule.id}.")
     return render_template('implementation_detail.html', rule=rule)
 
 
 @routes.route('/provision/<int:rule_id>', methods=['POST'])
+@login_required
+@roles_required('superadmin', 'admin', 'implementer') # Only these roles can provision
 def provision_request(rule_id):
     """
     Triggers the Ansible provisioning playbook for an approved firewall rule.
@@ -515,32 +545,24 @@ def provision_request(rule_id):
     """
     rule = FirewallRule.query.get_or_404(rule_id)
 
-    # Check if the rule is in the correct state for provisioning
     if rule.status != "Approved - Pending Implementation" or rule.approval_status != "Approved":
-        app_logger.warning(f"Attempted to provision rule ID {rule.id} which is not in 'Approved - Pending Implementation' state. Current status: {rule.status}, Approval: {rule.approval_status}")
+        app_logger.warning(f"Attempted to provision rule ID {rule_id} by {current_user.username} which is not in 'Approved - Pending Implementation' state. Current status: {rule.status}, Approval: {rule.approval_status}")
         return jsonify({"status": "error", "message": "Rule is not in 'Approved - Pending Implementation' state for provisioning."}), 400
 
-    # Update status to indicate provisioning is in progress
     rule.status = "Provisioning In Progress"
     db.session.commit()
-    app_logger.info(f"Provisioning initiated for rule ID {rule.id}.")
+    app_logger.info(f"Provisioning initiated by {current_user.username} for rule ID {rule.id}.")
     
     firewalls_to_provision = []
-    provisioning_success = False
     provisioning_message = "Provisioning started."
-    post_check_success = False
 
     try:
-        # Use the firewalls_involved stored in the rule, if available
-        # If not available (e.g., old rule, or error during initial pathfinding),
-        # re-run pathfinder as a fallback.
         if rule.firewalls_involved:
             firewalls_to_provision = rule.firewalls_involved
             app_logger.info(f"Using stored firewalls for provisioning rule {rule.id}: {firewalls_to_provision}")
         else:
             app_logger.info(f"Stored firewalls_involved not found for rule {rule.id}. Re-running pathfinder...")
             firewalls_to_provision = network_automation_service.find_path_and_firewalls(rule.source_ip, rule.destination_ip)
-            # The find_path_and_firewalls method already raises RuntimeError on error, so no need for if path_result["status"] == "error"
             app_logger.info(f"Firewalls identified for provisioning rule {rule.id} via pathfinder: {firewalls_to_provision}")
 
 
@@ -548,64 +570,54 @@ def provision_request(rule_id):
             rule.status = "Provisioning Failed - No Firewalls in Path"
             provisioning_message = "No firewalls found in the path for this rule. Cannot provision."
             db.session.commit()
-            app_logger.error(f"Provisioning failed for rule {rule.id}: No firewalls found in path.")
+            app_logger.error(f"Provisioning failed for rule {rule.id} by {current_user.username}: No firewalls found in path.")
             return jsonify({"status": "error", "message": provisioning_message}), 400
 
-        # Call Ansible provisioning playbook via service
         provision_result_stdout = network_automation_service.provision_rule(
             rule_data={
                 'rule_id': rule.id,
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'dest_port': rule.port # Use 'port' from FirewallRule, it's passed as dest_port to playbook
+                'port': rule.port,
+                'rule_description': f"Rule for ticket #{rule.id}"
             },
             firewalls=firewalls_to_provision
         )
         
-        provisioning_success = True
         provisioning_message = f"Rule {rule.id} provisioned successfully."
-        app_logger.info(f"Rule {rule.id} provisioned successfully. Ansible output: {provision_result_stdout}")
+        app_logger.info(f"Rule {rule.id} provisioned successfully by {current_user.username}. Ansible output: {provision_result_stdout}")
 
-        # --- Post-check (5.0) - Only run if provisioning was successful ---
-        if provisioning_success:
-            post_check_result_stdout = network_automation_service.post_check_rule(
-                rule_data={
-                    'rule_id': rule.id,
-                    'source_ip': rule.source_ip,
-                    'destination_ip': rule.destination_ip,
-                    'protocol': rule.protocol,
-                    'dest_port': rule.port # Use 'port' from FirewallRule, it's passed as dest_port to playbook
-                },
-                firewalls=firewalls_to_provision
-            )
+        post_check_result_stdout = network_automation_service.post_check_rule(
+            rule_data={
+                'rule_id': rule.id,
+                'source_ip': rule.source_ip,
+                'destination_ip': rule.destination_ip,
+                'protocol': rule.protocol,
+                'port': rule.port
+            },
+            firewalls=firewalls_to_provision
+        )
 
-            post_check_success = True
-            rule.status = "Completed" # Final status if provisioning and post-check pass
-            rule.implemented_at = datetime.now() # Set implemented_at timestamp
-            provisioning_message += " Configuration verified successfully."
-            app_logger.info(f"Rule {rule.id} post-check successful. Ansible output: {post_check_result_stdout}")
-        else:
-            # This else block should theoretically not be hit if RuntimeError is raised for provisioning failure
-            # but is here for logical completeness.
-            rule.status = "Provisioning Failed"
-            provisioning_message = f"Provisioning failed for rule {rule.id}. Post-check skipped. Check logs for ID {rule.id}."
-            app_logger.error(f"Provisioning failed for rule {rule.id}. Post-check skipped.")
+        rule.status = "Completed"
+        rule.implemented_at = datetime.utcnow()
+        provisioning_message += " Configuration verified successfully."
+        app_logger.info(f"Rule {rule.id} post-check successful by {current_user.username}. Ansible output: {post_check_result_stdout}")
 
 
     except RuntimeError as e:
         rule.status = "Provisioning Failed"
         provisioning_message = f"Provisioning failed for rule {rule.id}: {e}. Check logs for ID {rule.id}."
-        app_logger.error(f"Provisioning RuntimeError for rule {rule.id}: {e}")
+        app_logger.error(f"Provisioning RuntimeError for rule {rule.id} by {current_user.username}: {e}")
     except Exception as e:
         rule.status = "Provisioning Failed"
         provisioning_message = f"An unexpected error occurred during provisioning/post-check for rule {rule.id}: {e}. Check logs for ID {rule.id}."
-        app_logger.critical(f"An unexpected error occurred during provisioning for rule {rule.id}: {e}", exc_info=True)
+        app_logger.critical(f"An unexpected error occurred during provisioning for rule {rule.id} by {current_user.username}: {e}", exc_info=True)
     finally:
-        db.session.commit() # Ensure status update is saved
+        db.session.commit()
 
-    if rule.status == "Completed": # Check final status, not just provisioning_success flag
-        return jsonify({"status": "success", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status}), 200
+    if rule.status == "Completed":
+        return jsonify({"status": "success", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 200
     else:
         return jsonify({"status": "error", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status}), 500
 

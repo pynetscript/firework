@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firework</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Darker blue-gray, same as header */
+            color: #f3f4f6; /* Light text for contrast */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Full viewport height */
+            margin: 0;
+        }
+        .login-container {
+            background-color: #2d3748; /* Slightly lighter dark gray for the form card */
+            border-radius: 0.75rem; /* rounded-lg */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 2.5rem; /* p-10 */
+            width: 100%;
+            max-width: 24rem; /* max-w-sm */
+            text-align: center;
+        }
+        .login-container h2 {
+            font-size: 2.5rem; /* text-4xl */
+            font-weight: 700; /* font-bold */
+            color: #4299e1; /* Blue color for Firework */
+            margin-bottom: 1.5rem; /* mb-6 */
+        }
+        .flash-message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            text-align: left; /* Align flash messages to the left */
+        }
+        .flash-success {
+            background-color: #d4edda; /* green-100 */
+            color: #155724; /* green-800 */
+            border: 1px solid #c3e6cb;
+        }
+        .flash-error, .flash-danger {
+            background-color: #f8d7da; /* red-100 */
+            color: #721c24; /* red-800 */
+            border: 1px solid #f5c6cb;
+        }
+        .flash-info {
+            background-color: #d1ecf1; /* blue-100 */
+            color: #0c5460; /* blue-800 */
+            border: 1px solid #bee5eb;
+        }
+        .flash-warning {
+            background-color: #fff3cd; /* yellow-100 */
+            color: #856404; /* yellow-800 */
+            border: 1px solid #ffeeba;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2 class="italic">Firework</h2>
+
+        {# Flash messages display here #}
+        {%- with messages = get_flashed_messages(with_categories=true) -%}
+            {%- if messages -%}
+                <div class="mb-4">
+                    {%- for category, message in messages -%}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {%- endfor -%}
+                </div>
+            {%- endif -%}
+        {%- endwith -%}
+
+        <form method="POST" action="{{ url_for('auth.login') }}" class="space-y-4">
+            <div>
+                <label for="username" class="block text-gray-200 text-sm font-bold mb-2 text-left">Username:</label>
+                <input type="text" id="username" name="username" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 text-white"
+                       value="{{ username if username else '' }}">
+            </div>
+
+            <div>
+                <label for="password" class="block text-gray-200 text-sm font-bold mb-2 text-left">Password:</label>
+                <input type="password" id="password" name="password" required
+                       class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-700 text-white">
+            </div>
+            
+            <div class="flex justify-center pt-2">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Login</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
