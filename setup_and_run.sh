@@ -67,33 +67,47 @@ echo "Migration file edited successfully."
 echo "Applying database migrations..."
 flask db upgrade
 
-# 13. Create super_admin user
-echo "Creating super_admin user..."
+# 13. Create sefault users
+echo "Creating default user..."
 # Create a temporary Python script for user creation
-cat << EOF > create_superadmin.py
+cat << EOF > create_default_users.py
 from app import create_app, db
 from app.models import User
 from datetime import datetime
-import os
 
 app = create_app()
 with app.app_context():
-    if not User.query.filter_by(username='super_admin').first():
-        super_admin_user = User(username='super_admin', email='superadmin@firework.dev', role='superadmin', created_at=datetime.utcnow())
-        super_admin_user.set_password('super_admin') # Set the password
-        db.session.add(super_admin_user)
-        db.session.commit()
-        print("Super admin user 'super_admin' created successfully with password 'super_admin'.")
-    else:
-        print("Super admin user 'super_admin' already exists.")
-EOF
+    # Define users to create
+    users_to_create = [
+        {'username': 'super_admin', 'password': 'super_admin', 'email': 'superadmin@firework.dev', 'role': 'superadmin'},
+        {'username': 'admin', 'password': 'admin', 'email': 'admin@firework.dev', 'role': 'admin'},
+        {'username': 'implementer', 'password': 'implementer', 'email': 'implementer@firework.dev', 'role': 'implementer'},
+        {'username': 'approver', 'password': 'approver', 'email': 'approver@firework.dev', 'role': 'approver'},
+        {'username': 'requester', 'password': 'requester', 'email': 'requester@firework.dev', 'role': 'requester'}
+    ]
 
+    for user_data in users_to_create:
+        username = user_data['username']
+        password = user_data['password']
+        email = user_data['email']
+        role = user_data['role']
+
+        if not User.query.filter_by(username=username).first():
+            new_user = User(username=username, email=email, role=role, created_at=datetime.utcnow())
+            new_user.set_password(password)
+            db.session.add(new_user)
+            db.session.commit()
+            print(f"User '{username}' created successfully with password '{password}' and role '{role}'.")
+        else:
+            print(f"User '{username}' already exists.")
+
+EOF
 # Execute the temporary script
-python create_superadmin.py
+python create_default_users.py
 
 # Clean up the temporary script
-rm create_superadmin.py
-echo "Super admin user creation process completed."
+rm create_default_users.py
+echo "Default user creation process completed."
 
 # 14. Verify database tables
 echo "Verifying database tables in network.db..."

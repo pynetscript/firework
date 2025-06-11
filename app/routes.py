@@ -230,7 +230,7 @@ def create_request():
     source_ip = data.get('source_ip')
     destination_ip = data.get('destination_ip')
     protocol = data.get('protocol')
-    dest_port = data.get('port')
+    dest_port = data.get('dest_port')
 
     errors = []
 
@@ -307,7 +307,7 @@ def create_request():
             source_ip=source_ip,
             destination_ip=destination_ip,
             protocol=protocol,
-            port=int(dest_port),
+            dest_port=int(dest_port),
             status=initial_rule_status,
             approval_status=initial_approval_status,
             firewalls_involved=firewalls_in_path,
@@ -605,7 +605,7 @@ def provision_request(rule_id):
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'port': rule.port,
+                'dest_port': rule.dest_port,
                 'rule_description': f"Rule for ticket #{rule.id}"
             },
             firewalls=firewalls_to_provision
@@ -620,7 +620,7 @@ def provision_request(rule_id):
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'port': rule.port
+                'dest_port': rule.dest_port
             },
             firewalls=firewalls_to_provision
         )

@@ -11,7 +11,7 @@
     check_source_ip: "{{ source_ip }}"
     check_destination_ip: "{{ destination_ip }}"
     check_protocol: "{{ protocol }}"
-    check_port: "{{ port }}" # Keep 'port' for now, warning is minor
+    check_port: "{{ dest_port }}" # Keep 'port' for now, warning is minor
 
     # Define object names based on rule parameters for consistency
     check_src_addr_name: "HOST_{{ check_source_ip | replace('.', '_') }}"

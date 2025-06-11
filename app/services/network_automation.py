@@ -87,14 +87,14 @@ class NetworkAutomationService:
             'source_ip': source_ip,
             'destination_ip': destination_ip,
             'protocol': protocol,
-            'port': dest_port, # This 'port' is from Flask, will be mapped to dest_port in playbook
+            'dest_port': dest_port, 
             'firewalls': firewalls # Target these firewalls for the check
         }
         extra_vars_json = json.dumps(extra_vars)
 
         cmd = [
             'ansible-playbook',
-            ANSIBLE_PRE_CHECK_PLAYBOOK, # Updated to use the new variable name
+            ANSIBLE_PRE_CHECK_PLAYBOOK,
             '-i', ANSIBLE_INVENTORY,
             '--extra-vars', extra_vars_json
         ]
@@ -129,7 +129,7 @@ class NetworkAutomationService:
             'source_ip': rule_data['source_ip'],
             'destination_ip': rule_data['destination_ip'],
             'protocol': rule_data['protocol'],
-            'dest_port': rule_data['dest_port'], # Changed 'port' to 'dest_port'
+            'dest_port': rule_data['dest_port'],
             'firewalls': firewalls, # THIS IS THE CRITICAL KEY
             'rule_description': f"Rule for ticket #{rule_data['rule_id']}"
         }
@@ -156,7 +156,7 @@ class NetworkAutomationService:
             'source_ip': rule_data['source_ip'],
             'destination_ip': rule_data['destination_ip'],
             'protocol': rule_data['protocol'],
-            'dest_port': rule_data['dest_port'], # Changed 'port' to 'dest_port'
+            'dest_port': rule_data['dest_port'],
             'firewalls': firewalls # THIS IS THE CRITICAL KEY
         }
         extra_vars_json = json.dumps(extra_vars)
