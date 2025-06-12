@@ -36,3 +36,4 @@ instance/
 *~
 .DS_Store # macOS specific
 Thumbs.db # Windows specific
+trash/

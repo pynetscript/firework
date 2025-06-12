@@ -15,7 +15,7 @@
     check_src_addr_name: "HOST_{{ check_source_ip | replace('.', '_') }}"
     check_dst_addr_name: "HOST_{{ check_destination_ip | replace('.', '_') }}"
     check_service_name: "SVC_{{ check_protocol | upper }}_{{ check_port }}"
-    
+
     # Flag to indicate if a policy is found
     policy_found_flag: false
 

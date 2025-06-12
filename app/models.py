@@ -56,6 +56,11 @@ class FirewallRule(db.Model):
     approver_id = db.Column(db.String(50), nullable=True)
     approver_comment = db.Column(db.Text, nullable=True)
     firewalls_involved = db.Column(JSONEncodedList, nullable=True)
+    
+    # NEW FIELDS: To store which firewalls need provisioning and which are already configured
+    firewalls_to_provision = db.Column(JSONEncodedList, nullable=True)
+    firewalls_already_configured = db.Column(JSONEncodedList, nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     implemented_at = db.Column(db.DateTime, nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)

@@ -1,8 +1,8 @@
 """Initial schema for Firework app
 
-Revision ID: 9b894678421c
+Revision ID: b9243ea6896a
 Revises: 
-Create Date: 2025-06-12 10:09:02.457397
+Create Date: 2025-06-12 21:48:42.410162
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ from app.models import JSONEncodedList
 
 
 # revision identifiers, used by Alembic.
-revision = '9b894678421c'
+revision = 'b9243ea6896a'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -59,6 +59,8 @@ def upgrade():
     sa.Column('approver_id', sa.String(length=50), nullable=True),
     sa.Column('approver_comment', sa.Text(), nullable=True),
     sa.Column('firewalls_involved', JSONEncodedList(), nullable=True),
+    sa.Column('firewalls_to_provision', JSONEncodedList(), nullable=True),
+    sa.Column('firewalls_already_configured', JSONEncodedList(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('implemented_at', sa.DateTime(), nullable=True),
     sa.Column('approved_at', sa.DateTime(), nullable=True),

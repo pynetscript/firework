@@ -21,6 +21,22 @@
                     <span class="text-gray-500">N/A (Pathfinding might not have identified firewalls or an error occurred)</span>
                 {% endif %}
             </p>
+            
+            {# NEW: Display firewalls to provision and already configured #}
+            <p class="text-gray-600 mt-2"><strong>Firewalls Requiring Provisioning:</strong> 
+                {% if rule.firewalls_to_provision %}
+                    <span class="font-semibold text-red-600">{{ rule.firewalls_to_provision | join(', ') }}</span>
+                {% else %}
+                    <span class="text-gray-500">None</span>
+                {% endif %}
+            </p>
+            <p class="text-gray-600"><strong>Firewalls Already Configured:</strong> 
+                {% if rule.firewalls_already_configured %}
+                    <span class="font-semibold text-green-600">{{ rule.firewalls_already_configured | join(', ') }}</span>
+                {% else %}
+                    <span class="text-gray-500">None</span>
+                {% endif %}
+            </p>
         </div>
     </div>
 
@@ -37,11 +53,14 @@
             <button type="submit" name="action" value="deny" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Deny</button>
         </div>
     </form>
+    {# Adjusting text and button visibility based on the new logic for 'Approved - No Provisioning Needed' #}
     {% elif rule.status == 'Approved - Pending Implementation' %}
         <p class="text-center text-lg text-green-700 mb-4">This request has been approved and is ready for provisioning.</p>
         <form method="POST" action="{{ url_for('routes.provision_request', rule_id=rule.id) }}" class="flex justify-center">
             <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Trigger Provisioning</button>
         </form>
+    {% elif rule.status == 'Completed - No Provisioning Needed' %}
+        <p class="text-center text-lg text-green-700 mb-4">This request was approved and identified as not requiring any provisioning. It is now completed.</p>
     {% else %}
         <p class="text-center text-lg text-gray-600">This request is {{ rule.status }}. No further approval/provisioning action is available here.</p>
     {% endif %}

@@ -77,13 +77,14 @@ from datetime import datetime
 
 app = create_app()
 with app.app_context():
-    # Define users to create
     users_to_create = [
         {'username': 'super_admin', 'password': 'super_admin', 'email': 'superadmin@firework.dev', 'role': 'superadmin'},
         {'username': 'admin', 'password': 'admin', 'email': 'admin@firework.dev', 'role': 'admin'},
         {'username': 'implementer', 'password': 'implementer', 'email': 'implementer@firework.dev', 'role': 'implementer'},
         {'username': 'approver', 'password': 'approver', 'email': 'approver@firework.dev', 'role': 'approver'},
-        {'username': 'requester', 'password': 'requester', 'email': 'requester@firework.dev', 'role': 'requester'}
+        {'username': 'requester', 'password': 'requester', 'email': 'requester@firework.dev', 'role': 'requester'},
+        {'username': 'requester1', 'password': 'requester1', 'email': 'requester1@firework.dev', 'role': 'requester'},
+        {'username': 'requester2', 'password': 'requester2', 'email': 'requester2@firework.dev', 'role': 'requester'}
     ]
 
     for user_data in users_to_create:

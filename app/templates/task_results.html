@@ -1,47 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 w-full max-w-screen-2xl"> {# Adjusted width for wider table #}
+<div class="container mx-auto p-4 bg-white rounded-lg shadow-lg my-8 w-full max-w-full"> {# Adjusted padding and removed max-w-screen-2xl to allow full width #}
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Task Results</h2>
 
     {% if rules %}
-    <div class="overflow-x-auto">
-        <table class="min-w-full bg-white rounded-lg overflow-hidden shadow-md">
+    {# Removed overflow-x-auto to prevent horizontal scroll #}
+    <div class="block">
+        <table class="w-full bg-white rounded-lg overflow-hidden shadow-md table-auto text-sm"> {# Changed min-w-full to w-full and added text-sm #}
             <thead>
-                <tr class="bg-gray-100 text-gray-700 uppercase text-sm leading-normal">
-                    <th class="py-3 px-6 text-left">ID</th>
-                    <th class="py-3 px-6 text-left">Source IP</th>
-                    <th class="py-3 px-6 text-left">Destination IP</th>
-                    <th class="py-3 px-6 text-left">Protocol</th>
-                    <th class="py-3 px-6 text-left">Port</th>
-                    <th class="py-3 px-6 text-left">Status</th>
-                    <th class="py-3 px-6 text-left">Approval Status</th>
-                    <th class="py-3 px-6 text-left">Firewalls Involved</th>
-                    <th class="py-3 px-6 text-left whitespace-nowrap">Created At</th> {# New Column #}
-                    <th class="py-3 px-6 text-left whitespace-nowrap">Approved At</th> {# New Column #}
-                    <th class="py-3 px-6 text-left whitespace-nowrap">Implemented At</th> {# New Column #}
+                <tr class="bg-gray-100 text-gray-700 uppercase text-xs leading-normal"> {# Changed text-sm to text-xs for header #}
+                    <th class="py-2 px-2 text-left">ID</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Source IP</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Destination IP</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Protocol</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Port</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Status</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Approval Status</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Firewalls Involved</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">FWs to Provision</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">FWs Configured</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Created At</th> {# Reduced padding and removed whitespace-nowrap #}
+                    <th class="py-2 px-2 text-left">Approved At</th> {# Reduced padding and removed whitespace-nowrap #}
+                    <th class="py-2 px-2 text-left">Implemented At</th> {# Reduced padding and removed whitespace-nowrap #}
                 </tr>
             </thead>
-            <tbody class="text-gray-600 text-sm font-light">
+            <tbody class="text-gray-600 text-xs font-light"> {# Changed text-sm to text-xs for body #}
                 {% for rule in rules %}
                 <tr class="border-b border-gray-200 hover:bg-gray-100">
-                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.id }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.source_ip }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.destination_ip }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.protocol }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.port }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.status }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.approval_status }}</td>
-                    <td class="py-3 px-6 text-left">
-                        {% if rule.firewalls_involved %}
-                            {{ rule.firewalls_involved | join(', ') }}
-                        {% else %}
-                            N/A
-                        {% endif %}
+                    <td class="py-2 px-2 text-left">{{ rule.id }}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left break-all">{{ rule.source_ip }}</td> {# Reduced padding, added break-all #}
+                    <td class="py-2 px-2 text-left break-all">{{ rule.destination_ip }}</td> {# Reduced padding, added break-all #}
+                    <td class="py-2 px-2 text-left break-words">{{ rule.protocol }}</td> {# Reduced padding, added break-words #}
+                    <td class="py-2 px-2 text-left break-words">{{ rule.port }}</td> {# Reduced padding, added break-words #}
+                    <td class="py-2 px-2 text-left break-words">{{ rule.status }}</td> {# Reduced padding, added break-words #}
+                    <td class="py-2 px-2 text-left break-words">{{ rule.approval_status }}</td> {# Reduced padding, added break-words #}
+                    <td class="py-2 px-2 text-left break-words"> {# Reduced padding, removed whitespace-nowrap #}
+                        {% if rule.firewalls_involved %}{{ rule.firewalls_involved | join(', ') }}{% else %}N/A{% endif %}
                     </td>
-                    {# Display timestamps, formatted, and handle None values #}
-                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</td>
-                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td>
-                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td>
+                    <td class="py-2 px-2 text-left break-words"> {# Reduced padding #}
+                        {% if rule.firewalls_to_provision %}<span class="text-red-600">{{ rule.firewalls_to_provision | join(', ') }}</span>{% else %}None{% endif %}
+                    </td>
+                    <td class="py-2 px-2 text-left break-words"> {# Reduced padding #}
+                        {% if rule.firewalls_already_configured %}<span class="text-green-600">{{ rule.firewalls_already_configured | join(', ') }}</span>{% else %}None{% endif %}
+                    </td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</td> {# Reduced padding, removed whitespace-nowrap, added break-words #}
+                    <td class="py-2 px-2 text-left break-words">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td> {# Reduced padding, removed whitespace-nowrap, added break-words #}
+                    <td class="py-2 px-2 text-left break-words">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td> {# Reduced padding, removed whitespace-nowrap, added break-words #}
                 </tr>
                 {% endfor %}
             </tbody>

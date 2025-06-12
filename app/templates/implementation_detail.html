@@ -18,7 +18,23 @@
                 {% if rule.firewalls_involved %}
                     <span class="font-semibold text-gray-800">{{ rule.firewalls_involved | join(', ') }}</span>
                 {% else %}
-                    <span class="text-gray-500">N/A (Pathfinding might not have identified firewalls or an error occurred)</span>
+                    <span class="text-gray-500">N/A</span>
+                {% endif %}
+            </p>
+
+            {# NEW: Display firewalls to provision and already configured #}
+            <p class="text-gray-600 mt-2"><strong>Firewalls Requiring Provisioning:</strong> 
+                {% if rule.firewalls_to_provision %}
+                    <span class="font-semibold text-red-600">{{ rule.firewalls_to_provision | join(', ') }}</span>
+                {% else %}
+                    <span class="text-gray-500">None (Policy is already on all firewalls in path, or no firewalls involved)</span>
+                {% endif %}
+            </p>
+            <p class="text-gray-600"><strong>Firewalls Already Configured:</strong> 
+                {% if rule.firewalls_already_configured %}
+                    <span class="font-semibold text-green-600">{{ rule.firewalls_already_configured | join(', ') }}</span>
+                {% else %}
+                    <span class="text-gray-500">None</span>
                 {% endif %}
             </p>
         </div>
@@ -26,6 +42,8 @@
 
     <h3 class="text-2xl font-semibold text-gray-700 mb-4 text-center">Implementer Action</h3>
     {% if rule.status == 'Approved - Pending Implementation' %}
+    {# Only show the form if there are firewalls that *actually need* provisioning #}
+    {% if rule.firewalls_to_provision %}
     <form method="POST" action="{{ url_for('routes.implement_rule', rule_id=rule.id) }}" class="space-y-4">
         <div>
             <label for="implementer_comment" class="block text-gray-700 text-sm font-bold mb-2">Implementer Comments (Optional):</label>
@@ -37,6 +55,10 @@
             <button type="submit" name="action" value="decline_implementation" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Decline Implementation</button>
         </div>
     </form>
+    {% else %}
+        <p class="text-center text-lg text-green-700">This rule has been approved, and no firewalls require provisioning. It's already completed or awaiting final status update.</p>
+        {# Add a button to manually mark as complete if needed, or rely on system to do it #}
+    {% endif %}
     {% else %}
         <p class="text-center text-lg text-gray-600">This rule is currently {{ rule.status }}. No implementation action is available here.</p>
     {% endif %}

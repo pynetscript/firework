@@ -1,7 +1,7 @@
 import subprocess
 import os
 import json
-import logging # Import the logging module
+import logging
 
 # Get a logger for this module
 app_logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class NetworkAutomationService:
             return {"status": "error", "message": f"Database build failed: {e.stderr or e.stdout}"}
         except FileNotFoundError:
             app_logger.critical("Python interpreter or build_db.py script not found.")
-            raise RuntimeError("Database builder script or Python interpreter not found.")
+            return {"status": "error", "message": "Database builder script or Python interpreter not found."}
         except Exception as e:
             app_logger.critical(f"An unexpected error occurred during database build: {e}")
             return {"status": "error", "message": f"An unexpected error occurred during database build: {e}"}
@@ -162,70 +162,44 @@ class NetworkAutomationService:
     def check_policy_existence(self, source_ip, destination_ip, protocol, port, firewalls):
         """
         Checks if a given policy already exists on the specified firewalls.
-        Returns a dictionary with lists of 'firewalls_to_provision' and 'firewalls_already_configured'.
+        Returns True if policy exists on ANY firewall, False otherwise.
         """
         app_logger.info(f"Checking policy existence for {source_ip} to {destination_ip}:{port}/{protocol} on firewalls: {firewalls}")
-        
-        firewalls_to_provision = []
-        firewalls_already_configured = []
-
-        if not firewalls:
-            app_logger.info("No firewalls in path. No policies to check.")
-            # If no firewalls, then effectively all "needed" policies are "configured"
-            return {
-                "firewalls_to_provision": [],
-                "firewalls_already_configured": [],
-                "all_policies_exist": True # Implicitly true if no firewalls
-            }
-
+        # Iterate through each firewall and check policy existence
         for firewall_name in firewalls:
             extra_vars = {
-                'firewall_name': firewall_name,
+                'firewall_name': firewall_name, # Pass the single firewall name
                 'source_ip': source_ip,
                 'destination_ip': destination_ip,
                 'protocol': protocol,
                 'port': port
             }
 
-            playbook = None
-            if 'pafw' in firewall_name.lower():
+            # Determine playbook based on firewall_name
+            if 'pafw' in firewall_name.lower(): # Example for Palo Alto
                 playbook = 'pre_check_firewall_rule_paloalto.yml'
-            elif 'fgt' in firewall_name.lower():
+            elif 'fgt' in firewall_name.lower(): # Example for Fortinet
                 playbook = 'pre_check_firewall_rule_fortinet.yml'
             else:
-                app_logger.warning(f"Unknown firewall type for {firewall_name}. Cannot perform pre-check.")
-                firewalls_to_provision.append(firewall_name) # Treat as needs provisioning if unable to check
-                continue # Skip to next firewall
-
-            try:
-                stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
-                
-                if "POLICY_EXISTS" in stdout:
-                    app_logger.info(f"Policy EXISTS on {firewall_name}.")
-                    firewalls_already_configured.append(firewall_name)
-                else:
-                    app_logger.info(f"Policy DOES NOT exist on {firewall_name}.")
-                    firewalls_to_provision.append(firewall_name)
-
-            except RuntimeError as e:
-                app_logger.error(f"Pre-check for policy existence failed on {firewall_name}: {e}. Assuming needs provisioning.")
-                firewalls_to_provision.append(firewall_name) # If check fails, assume it needs provisioning
-            except Exception as e:
-                app_logger.critical(f"Unexpected error during policy existence check on {firewall_name}: {e}. Assuming needs provisioning.")
-                firewalls_to_provision.append(firewall_name) # If unexpected error, assume it needs provisioning
-        
-        all_policies_exist_flag = len(firewalls_to_provision) == 0
-
-        if all_policies_exist_flag:
-            app_logger.info("Policy confirmed to exist on ALL specified firewalls in the path.")
-        else:
-            app_logger.info(f"Policy does NOT exist on all specified firewalls. Firewalls to provision: {firewalls_to_provision}")
+                app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping pre-check.")
+                continue
             
-        return {
-            "firewalls_to_provision": firewalls_to_provision,
-            "firewalls_already_configured": firewalls_already_configured,
-            "all_policies_exist": all_policies_exist_flag
-        }
+            try:
+                # Use a specific playbook for checking policy existence
+                stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
+                # The playbook should output "POLICY_EXISTS" or similar if found
+                if "POLICY_EXISTS" in stdout:
+                    app_logger.info(f"Policy already exists on {firewall_name}.")
+                    return True # Policy exists on at least one firewall
+            except RuntimeError as e:
+                app_logger.error(f"Pre-check for policy existence failed on {firewall_name}: {e}")
+                # Continue to next firewall, or re-raise if this is a critical failure
+            except Exception as e:
+                app_logger.critical(f"Unexpected error during policy existence check on {firewall_name}: {e}")
+                # Continue or re-raise
+
+        app_logger.info("Policy does not exist on any of the specified firewalls (or check failed for some).")
+        return False
 
 
     def provision_rule(self, rule_data, firewalls):
@@ -254,8 +228,6 @@ class NetworkAutomationService:
                 playbook = 'provision_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping provisioning.")
-                # This should ideally raise an error as provisioning requires all firewalls to succeed.
-                # For now, it skips and allows the loop to continue, but the overall check will fail if needed.
                 continue
 
             app_logger.info(f"Provisioning rule {rule_data['rule_id']} on {firewall_name} using {playbook}...")

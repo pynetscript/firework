@@ -48,6 +48,10 @@ def task_results():
     for rule in rules:
         if rule.firewalls_involved is None:
             rule.firewalls_involved = []
+        if rule.firewalls_to_provision is None: # Ensure these are lists for rendering
+            rule.firewalls_to_provision = []
+        if rule.firewalls_already_configured is None: # Ensure these are lists for rendering
+            rule.firewalls_already_configured = []
     return render_template('task_results.html', rules=rules)
 
 
@@ -231,7 +235,7 @@ def create_request():
     source_ip = data.get('source_ip')
     destination_ip = data.get('destination_ip')
     protocol = data.get('protocol')
-    dest_port = data.get('port') # Correctly retrieves 'port' from form
+    dest_port = data.get('port')
 
     errors = []
 
@@ -241,7 +245,7 @@ def create_request():
     if not is_valid: errors.append(error_msg)
     is_valid, error_msg = validate_protocol(protocol)
     if not is_valid: errors.append(error_msg)
-    is_valid, error_msg = validate_port(dest_port) # This call was the issue
+    is_valid, error_msg = validate_port(dest_port)
     if not is_valid: errors.append(error_msg)
 
     if errors:
@@ -257,6 +261,8 @@ def create_request():
 
 
     firewalls_in_path = []
+    firewalls_to_provision = []
+    firewalls_already_configured = []
     initial_rule_status = "Pending"
     initial_approval_status = "Pending"
 
@@ -273,16 +279,26 @@ def create_request():
         firewalls_in_path = network_automation_service.find_path_and_firewalls(source_ip, destination_ip)
         
         if firewalls_in_path:
-            policy_already_exists = network_automation_service.check_policy_existence(
+            precheck_result = network_automation_service.check_policy_existence(
                 source_ip, destination_ip, protocol, dest_port, firewalls_in_path
             )
-            if policy_already_exists:
-                app_logger.info(f"Existing policy found for {source_ip} to {destination_ip}:{dest_port}/{protocol}. Request marked as already implemented.")
-                return jsonify({"status": "info", "message": "Requested access is already implemented on one or more firewalls in the path."}), 200
+            firewalls_to_provision = precheck_result["firewalls_to_provision"]
+            firewalls_already_configured = precheck_result["firewalls_already_configured"]
+            all_policies_exist = precheck_result["all_policies_exist"]
 
-            initial_rule_status = "Pending Approval"
-            initial_approval_status = "Pending"
-            app_logger.info(f"Path found for {source_ip} to {destination_ip}. Firewalls involved: {firewalls_in_path}. Request set to 'Pending Approval'.")
+            if all_policies_exist:
+                app_logger.info(f"Existing policy found for {source_ip} to {destination_ip}:{dest_port}/{protocol} on ALL firewalls. Request marked as already implemented.")
+                return jsonify({"status": "info", "message": "Requested access is already implemented on all firewalls in the path."}), 200
+            elif firewalls_already_configured:
+                # If some are configured, but not all, still proceed to approval
+                app_logger.info(f"Policy partially configured. Firewalls already configured: {firewalls_already_configured}. Firewalls to provision: {firewalls_to_provision}. Proceeding to approval.")
+                initial_rule_status = "Pending Approval"
+                initial_approval_status = "Pending"
+            else:
+                # No firewalls configured, all need provisioning
+                app_logger.info(f"No existing policy found on any firewall. Firewalls to provision: {firewalls_to_provision}. Proceeding to approval.")
+                initial_rule_status = "Pending Approval"
+                initial_approval_status = "Pending"
         else:
             initial_rule_status = "No Firewall Involved"
             initial_approval_status = "N/A"
@@ -315,6 +331,8 @@ def create_request():
             status=initial_rule_status,
             approval_status=initial_approval_status,
             firewalls_involved=firewalls_in_path,
+            firewalls_to_provision=firewalls_to_provision, # Store the new lists
+            firewalls_already_configured=firewalls_already_configured, # Store the new lists
             requester_id=current_user.id
         )
         db.session.add(rule)
@@ -465,11 +483,17 @@ def delete_multiple_blacklist_rules_api():
 @roles_required('superadmin', 'admin', 'approver')
 def approvals_list():
     """Displays a list of requests pending approval."""
+    # Only show rules that are 'Pending Approval' and not yet denied
     pending_rules = FirewallRule.query.filter_by(status='Pending Approval', approval_status='Pending').all()
     app_logger.info(f"User {current_user.username} viewing list of pending approvals.")
     for rule in pending_rules:
+        # Ensure lists are initialized for rendering if None
         if rule.firewalls_involved is None:
             rule.firewalls_involved = []
+        if rule.firewalls_to_provision is None:
+            rule.firewalls_to_provision = []
+        if rule.firewalls_already_configured is None:
+            rule.firewalls_already_configured = []
     return render_template('approvals_list.html', rules=pending_rules)
 
 @routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
@@ -488,13 +512,20 @@ def approve_deny_request(rule_id):
         
         if action == 'approve':
             rule.approval_status = "Approved"
-            rule.status = "Approved - Pending Implementation"
+            # Set status to 'Approved - Pending Implementation' ONLY if there are firewalls to provision
+            # Otherwise, if all are already configured, mark as 'Completed'
+            if rule.firewalls_to_provision:
+                rule.status = "Approved - Pending Implementation"
+            else:
+                rule.status = "Completed - No Provisioning Needed" # New status for clarity
+                rule.implemented_at = datetime.utcnow() # Mark as implemented immediately
+            
             rule.approver_id = current_approver_id
             rule.approver_comment = approver_comment
             rule.approved_at = datetime.utcnow()
             db.session.commit()
             flash('Request approved successfully!', 'success')
-            app_logger.info(f"Network request ID {rule_id} approved by {current_user.username} (ID: {current_user.id}).")
+            app_logger.info(f"Network request ID {rule_id} approved by {current_user.username} (ID: {current_user.id}). Status set to '{rule.status}'.")
             return redirect(url_for('routes.approvals_list'))
         elif action == 'deny':
             rule.approval_status = "Denied"
@@ -509,8 +540,13 @@ def approve_deny_request(rule_id):
             app_logger.warning(f"Invalid action '{action}' for network request ID {rule.id} by {current_user.username}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
     
+    # Ensure lists are initialized for rendering if None
     if rule.firewalls_involved is None:
         rule.firewalls_involved = []
+    if rule.firewalls_to_provision is None:
+        rule.firewalls_to_provision = []
+    if rule.firewalls_already_configured is None:
+        rule.firewalls_already_configured = []
 
     app_logger.info(f"User {current_user.username} viewing approval details for network request ID {rule.id}.")
     return render_template('approval_detail.html', rule=rule)
@@ -522,11 +558,17 @@ def approve_deny_request(rule_id):
 @roles_required('superadmin', 'admin', 'implementer')
 def implementation_list():
     """Displays a list of rules ready for implementation (approved and pending implementation)."""
+    # Only show rules that are 'Approved - Pending Implementation'
     ready_for_implementation_rules = FirewallRule.query.filter_by(status='Approved - Pending Implementation', approval_status='Approved').all()
     app_logger.info(f"User {current_user.username} viewing list of rules ready for implementation.")
     for rule in ready_for_implementation_rules:
+        # Ensure lists are initialized for rendering if None
         if rule.firewalls_involved is None:
             rule.firewalls_involved = []
+        if rule.firewalls_to_provision is None:
+            rule.firewalls_to_provision = []
+        if rule.firewalls_already_configured is None:
+            rule.firewalls_already_configured = []
     return render_template('implementation_list.html', rules=ready_for_implementation_rules)
 
 @routes.route('/implementation/<int:rule_id>', methods=['GET', 'POST'])
@@ -546,9 +588,10 @@ def implement_rule(rule_id):
             return provision_request(rule_id)
         elif action == 'decline_implementation':
             rule.status = "Declined by Implementer"
+            # Append implementer's comment to existing approver comments
             existing_comments = rule.approver_comment if rule.approver_comment else ""
             rule.approver_comment = f"{existing_comments}\nImplementer ({current_user.username}) Comment: {implementer_comment}"
-            rule.approver_id = current_implementer_id
+            rule.approver_id = current_implementer_id # Implementer also recorded as the last action user
             db.session.commit()
             flash('Implementation declined.', 'info')
             app_logger.info(f"Implementer {current_user.username} declined implementation for rule ID {rule_id}.")
@@ -557,8 +600,13 @@ def implement_rule(rule_id):
             app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule_id} by {current_user.username}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
     
+    # Ensure lists are initialized for rendering if None
     if rule.firewalls_involved is None:
         rule.firewalls_involved = []
+    if rule.firewalls_to_provision is None:
+        rule.firewalls_to_provision = []
+    if rule.firewalls_already_configured is None:
+        rule.firewalls_already_configured = []
 
     app_logger.info(f"User {current_user.username} viewing implementation details for rule ID {rule.id}.")
     return render_template('implementation_detail.html', rule=rule)
@@ -579,29 +627,27 @@ def provision_request(rule_id):
         app_logger.warning(f"Attempted to provision rule ID {rule_id} by {current_user.username} which is not in 'Approved - Pending Implementation' state. Current status: {rule.status}, Approval: {rule.approval_status}")
         return jsonify({"status": "error", "message": "Rule is not in 'Approved - Pending Implementation' state for provisioning."}), 400
 
+    if not rule.firewalls_to_provision:
+        # This case should ideally not happen if logic in create_request/approve is correct
+        # But as a safeguard: if there are no firewalls to provision, mark as completed
+        rule.status = "Completed - No Provisioning Needed"
+        rule.implemented_at = datetime.utcnow()
+        db.session.commit()
+        app_logger.info(f"Rule {rule.id} had no firewalls to provision. Marked as 'Completed - No Provisioning Needed'.")
+        return jsonify({"status": "info", "message": "No firewalls required provisioning for this rule. Status updated.", "redirect_url": url_for('routes.implementation_list')}), 200
+
+
     rule.status = "Provisioning In Progress"
     db.session.commit()
     app_logger.info(f"Provisioning initiated by {current_user.username} for rule ID {rule.id}.")
     
-    firewalls_to_provision = []
     provisioning_message = "Provisioning started."
 
     try:
-        if rule.firewalls_involved:
-            firewalls_to_provision = rule.firewalls_involved
-            app_logger.info(f"Using stored firewalls for provisioning rule {rule.id}: {firewalls_to_provision}")
-        else:
-            app_logger.info(f"Stored firewalls_involved not found for rule {rule.id}. Re-running pathfinder...")
-            firewalls_to_provision = network_automation_service.find_path_and_firewalls(rule.source_ip, rule.destination_ip)
-            app_logger.info(f"Firewalls identified for provisioning rule {rule.id} via pathfinder: {firewalls_to_provision}")
-
-
-        if not firewalls_to_provision:
-            rule.status = "Provisioning Failed - No Firewalls in Path"
-            provisioning_message = "No firewalls found in the path for this rule. Cannot provision."
-            db.session.commit()
-            app_logger.error(f"Provisioning failed for rule {rule.id} by {current_user.username}: No firewalls found in path.")
-            return jsonify({"status": "error", "message": provisioning_message}), 400
+        # Use firewalls_to_provision from the rule object
+        firewalls_for_ansible_provision = rule.firewalls_to_provision
+        
+        app_logger.info(f"Provisioning only on firewalls that require it for rule {rule.id}: {firewalls_for_ansible_provision}")
 
         provision_result_stdout = network_automation_service.provision_rule(
             rule_data={
@@ -612,27 +658,34 @@ def provision_request(rule_id):
                 'port': rule.port,
                 'rule_description': f"Rule for ticket #{rule.id}"
             },
-            firewalls=firewalls_to_provision
+            firewalls=firewalls_for_ansible_provision # Pass only firewalls that need provisioning
         )
         
-        provisioning_message = f"Rule {rule.id} provisioned successfully."
+        provisioning_message = f"Rule {rule.id} provisioned successfully on required firewalls."
         app_logger.info(f"Rule {rule.id} provisioned successfully by {current_user.username}. Ansible output: {provision_result_stdout}")
 
-        post_check_result_stdout = network_automation_service.post_check_rule(
-            rule_data={
-                'rule_id': rule.id,
-                'source_ip': rule.source_ip,
-                'destination_ip': rule.destination_ip,
-                'protocol': rule.protocol,
-                'port': rule.port
-            },
-            firewalls=firewalls_to_provision
+        # After successful provisioning, run post-check only on the firewalls that were just provisioned
+        # and re-verify any that were already configured (optional, but good for full check)
+        firewalls_for_ansible_post_check = rule.firewalls_involved # Post-check all firewalls in path
+        
+        post_check_result = network_automation_service.check_policy_existence( # Re-run full check
+            rule.source_ip, rule.destination_ip, rule.protocol, rule.port, firewalls_for_ansible_post_check
         )
-
-        rule.status = "Completed"
-        rule.implemented_at = datetime.utcnow()
-        provisioning_message += " Configuration verified successfully."
-        app_logger.info(f"Rule {rule.id} post-check successful by {current_user.username}. Ansible output: {post_check_result_stdout}")
+        # Update the rule with the latest check results
+        rule.firewalls_to_provision = post_check_result["firewalls_to_provision"]
+        rule.firewalls_already_configured = post_check_result["firewalls_already_configured"]
+        
+        if not rule.firewalls_to_provision: # If no firewalls left to provision after this run
+            rule.status = "Completed"
+            rule.implemented_at = datetime.utcnow()
+            provisioning_message += " All configurations verified successfully."
+            app_logger.info(f"Rule {rule.id} post-check successful by {current_user.username}. All firewalls now configured.")
+        else:
+            # This scenario indicates that even after provisioning, some firewalls still don't have the policy.
+            # This is an error state that requires attention.
+            rule.status = "Partially Implemented - Requires Attention"
+            provisioning_message += f" However, policy could not be verified on: {rule.firewalls_to_provision}. Manual intervention may be required."
+            app_logger.error(f"Rule {rule.id} partially implemented. Policy not verified on: {rule.firewalls_to_provision}.")
 
 
     except RuntimeError as e:
@@ -646,7 +699,8 @@ def provision_request(rule_id):
     finally:
         db.session.commit()
 
-    if rule.status == "Completed":
+    if rule.status in ["Completed", "Completed - No Provisioning Needed"]:
         return jsonify({"status": "success", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 200
     else:
-        return jsonify({"status": "error", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status}), 500
+        # For 'Provisioning Failed' or 'Partially Implemented'
+        return jsonify({"status": "error", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 500
