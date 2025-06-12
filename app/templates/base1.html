@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firework</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+            color: #333;
+        }
+        header {
+            background-color: #1a202c; /* Darker blue-gray for header */
+            color: white;
+            padding: 1rem 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex; /* Use flexbox for layout */
+            justify-content: space-between; /* Space out items */
+            align-items: center; /* Vertically align items */
+            padding-left: 2rem; /* Add padding to the left */
+            padding-right: 2rem; /* Add padding to the right */
+        }
+        header .header-left {
+            display: flex;
+            align-items: center;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #4299e1; /* Blue color for Firework */
+        }
+        header .version {
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+            padding: 0.2rem 0.5rem;
+            background-color: #4a5568; /* Darker gray */
+            border-radius: 9999px; /* Pill shape */
+        }
+        header nav {
+            flex-grow: 1; /* Allow nav to take available space */
+            display: flex;
+            justify-content: center; /* Center navigation links */
+        }
+        header nav a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem; /* rounded-md */
+            transition: background-color 0.3s ease;
+        }
+        header nav a:hover {
+            background-color: #4a5568; /* Darker gray on hover */
+        }
+        .flash-message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+        }
+        .flash-success {
+            background-color: #d4edda; /* green-100 */
+            color: #155724; /* green-800 */
+            border: 1px solid #c3e6cb;
+        }
+        .flash-error, .flash-danger { /* Added .flash-danger */
+            background-color: #f8d7da; /* red-100 */
+            color: #721c24; /* red-800 */
+            border: 1px solid #f5c6cb;
+        }
+        .flash-info {
+            background-color: #d1ecf1; /* blue-100 */
+            color: #0c5460; /* blue-800 */
+            border: 1px solid #bee5eb;
+        }
+        .flash-warning {
+            background-color: #fff3cd; /* yellow-100 */
+            color: #856404; /* yellow-800 */
+            border: 1px solid #ffeeba;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1><i>Firework</i></h1>
+            <span class="version">0.1beta</span>
+        </div>
+        
+        <nav>
+            {%- if current_user.is_authenticated -%}
+                <a href="{{ url_for('routes.home') }}">Home</a>
+                
+                {%- if current_user.has_role('superadmin', 'admin', 'implementer', 'approver', 'requester') -%}
+                    <a href="{{ url_for('routes.request_form') }}">Create Request</a>
+                {%- endif -%}
+
+                {%- if current_user.has_role('superadmin', 'admin', 'implementer', 'approver', 'requester') -%}
+                    <a href="{{ url_for('routes.task_results') }}">Task Results</a>
+                {%- endif -%}
+
+                {%- if current_user.has_role('superadmin', 'admin', 'approver') -%}
+                    <a href="{{ url_for('routes.approvals_list') }}">Approvals</a>
+                {%- endif -%}
+
+                {%- if current_user.has_role('superadmin', 'admin', 'implementer') -%}
+                    <a href="{{ url_for('routes.implementation_list') }}">Implementation</a>
+                {%- endif -%}
+
+                {%- if current_user.has_role('superadmin', 'admin') -%}
+                    <a href="{{ url_for('routes.blacklist_rules_list') }}">Blacklist Rules</a>
+                {%- endif -%}
+
+                {%- if current_user.has_role('superadmin') -%}
+                    <a href="{{ url_for('admin.users_list') }}">Users</a>
+                {%- endif -%}
+            {%- endif -%}
+        </nav>
+
+        <div class="header-right flex items-center space-x-4">
+            {%- if current_user.is_authenticated -%}
+                {# Make the user info section a clickable link to profile page #}
+                <a href="{{ url_for('routes.profile') }}" class="flex items-center text-white text-sm hover:text-blue-200 transition duration-300 ease-in-out">
+                    <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 12V3a1 1 0 00-1-1H4a1 1 0 00-1 1v18h18z"></path></svg>
+                    Logged in as: <span class="font-bold ml-1">{{ current_user.username }}</span> ({{ current_user.role | capitalize }})
+                </a>
+                <a href="{{ url_for('auth.logout') }}" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-sm">
+                    Logout
+                </a>
+            {%- endif -%}
+        </div>
+    </header>
+    <main>
+        {# Flash messages display here #}
+        {%- with messages = get_flashed_messages(with_categories=true) -%}
+            {%- if messages -%}
+                <div class="container mx-auto px-6 max-w-4xl mt-4">
+                    {%- for category, message in messages -%}
+                        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                    {%- endfor -%}
+                </div>
+            {%- endif -%}
+        {%- endwith -%}
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

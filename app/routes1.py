@@ -28,7 +28,7 @@ def home():
 @routes.route('/request-form')
 @login_required # Ensures user is logged in
 # Changed roles: Now includes 'approver' and 'implementer'
-@roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
+@roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer') 
 def request_form():
     return render_template('request_form.html')
 
@@ -68,7 +68,7 @@ def profile():
         user.email = request.form.get('email', user.email) # Email from form, fallback to current
         user.first_name = request.form.get('first_name')
         user.last_name = request.form.get('last_name')
-
+        
         new_password = request.form.get('password')
         if new_password:
             user.set_password(new_password)
@@ -266,7 +266,6 @@ def create_request():
     firewalls_already_configured = []
     initial_rule_status = "Pending"
     initial_approval_status = "Pending"
-    response_message_detail = "" # New variable for specific messages
 
     try:
         collection_result = network_automation_service.run_collector()
@@ -290,42 +289,35 @@ def create_request():
 
             if all_policies_exist:
                 app_logger.info(f"Existing policy found for {source_ip} to {destination_ip}:{dest_port}/{protocol} on ALL firewalls. Request marked as already implemented.")
-                # Specific message for already implemented
-                return jsonify({"status": "info", "message": "Request is already implemented. Access is allowed."}), 200
+                return jsonify({"status": "info", "message": "Requested access is already implemented on all firewalls in the path."}), 200
             elif firewalls_already_configured:
                 # If some are configured, but not all, still proceed to approval
                 app_logger.info(f"Policy partially configured. Firewalls already configured: {firewalls_already_configured}. Firewalls to provision: {firewalls_to_provision}. Proceeding to approval.")
                 initial_rule_status = "Pending Approval"
                 initial_approval_status = "Pending"
-                response_message_detail = "and is now pending approval."
             else:
                 # No firewalls configured, all need provisioning
                 app_logger.info(f"No existing policy found on any firewall. Firewalls to provision: {firewalls_to_provision}. Proceeding to approval.")
                 initial_rule_status = "Pending Approval"
                 initial_approval_status = "Pending"
-                response_message_detail = "and is now pending approval."
         else:
             initial_rule_status = "No Firewall Involved"
             initial_approval_status = "N/A"
             app_logger.info(f"No firewalls found in path for {source_ip} to {destination_ip}. Request set to 'No Firewall Involved'.")
-            response_message_detail = "and doesn't require implementation as there are no firewalls in the path."
-
 
     except RuntimeError as e:
         app_logger.error(f"Network automation service failed during pre-check for {source_ip} to {destination_ip}: {e}")
         initial_rule_status = "Pathfinding Failed"
         initial_approval_status = "Failed"
         errors.append(f"Network automation pre-check failed: {e}")
-        response_message_detail = "due to a network automation pre-check failure."
     except Exception as e:
         app_logger.error(f"An unexpected error occurred during network automation pre-check for {source_ip} to {destination_ip}: {e}")
         initial_rule_status = "Pathfinding Failed"
         initial_approval_status = "Failed"
         errors.append(f"An internal error occurred during network automation pre-check: {e}")
-        response_message_detail = "due to an unexpected internal error during pre-check."
     
     if errors:
-        return jsonify({"status": "error", "message": f"Pre-check failed {response_message_detail}", "errors": errors, "path_status": initial_rule_status}), 500
+        return jsonify({"status": "error", "message": "Pre-check failed", "errors": errors, "path_status": initial_rule_status}), 500
 
 
     try:
@@ -346,31 +338,8 @@ def create_request():
         )
         db.session.add(rule)
         db.session.commit()
-        
-        # Construct the overall success message based on response_message_detail
-        final_success_message = f"Request created successfully {response_message_detail}"
         app_logger.info(f"Network request ID {rule.id} created successfully by user {current_user.username} with status '{rule.status}'.")
-        
-        # Only return redirect_url for roles that can view the approval details
-        if current_user.has_role('superadmin', 'admin', 'approver', 'implementer') and rule.status == "Pending Approval":
-            redirect_to_approval = url_for('routes.approve_deny_request', rule_id=rule.id)
-            return jsonify({
-                "status": "success",
-                "message": final_success_message,
-                "rule_id": rule.id,
-                "status_detail": rule.status,
-                "firewalls_involved": firewalls_in_path,
-                "redirect_url": redirect_to_approval # Provide redirect URL for permitted roles
-            }), 201
-        else:
-            return jsonify({
-                "status": "success",
-                "message": final_success_message,
-                "rule_id": rule.id,
-                "status_detail": rule.status,
-                "firewalls_involved": firewalls_in_path
-            }), 201
-
+        return jsonify({"status": "success", "message": "Request created successfully", "rule_id": rule.id, "status_detail": rule.status, "firewalls_involved": firewalls_in_path}), 201
     except Exception as e:
         db.session.rollback()
         app_logger.error(f"Failed to create request for {source_ip} to {destination_ip} by user {current_user.username}: {str(e)}")
@@ -539,9 +508,9 @@ def approve_deny_request(rule_id):
     if request.method == 'POST':
         action = request.form.get('action')
         approver_comment = request.form.get('approver_comment')
-
-        current_approver_id = current_user.id
-
+        
+        current_approver_id = current_user.id 
+        
         if action == 'approve':
             rule.approval_status = "Approved"
             # Set status to 'Approved - Pending Implementation' ONLY if there are firewalls to provision
@@ -551,7 +520,7 @@ def approve_deny_request(rule_id):
             else:
                 rule.status = "Completed - No Provisioning Needed" # New status for clarity
                 rule.implemented_at = datetime.utcnow() # Mark as implemented immediately
-
+            
             rule.approver_id = current_approver_id
             rule.approver_comment = approver_comment
             rule.approved_at = datetime.utcnow()
@@ -571,7 +540,7 @@ def approve_deny_request(rule_id):
         else:
             app_logger.warning(f"Invalid action '{action}' for network request ID {rule.id} by {current_user.username}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
-
+    
     # Ensure lists are initialized for rendering if None
     if rule.firewalls_involved is None:
         rule.firewalls_involved = []
@@ -629,9 +598,9 @@ def implement_rule(rule_id):
             app_logger.info(f"Implementer {current_user.username} declined implementation for rule ID {rule_id}.")
             return redirect(url_for('routes.implementation_list'))
         else:
-            app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule.id} by {current_user.username}.")
+            app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule_id} by {current_user.username}.")
             return jsonify({"status": "error", "message": "Invalid action specified."}), 400
-
+    
     # Ensure lists are initialized for rendering if None
     if rule.firewalls_involved is None:
         rule.firewalls_involved = []
@@ -736,40 +705,3 @@ def provision_request(rule_id):
     else:
         # For 'Provisioning Failed' or 'Partially Implemented'
         return jsonify({"status": "error", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 500
-
-# --- Request Cancellation Route ---
-@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
-@login_required
-@roles_required('superadmin', 'admin', 'requester') # Only superadmin, admin, and requester can cancel
-def cancel_request(rule_id):
-    """Allows a requester (or admin/superadmin) to cancel their own network request."""
-    rule = FirewallRule.query.get_or_404(rule_id)
-
-    # Authorization check: Only the requester or an admin/superadmin can cancel the request
-    if current_user.id != rule.requester_id and not current_user.has_role('superadmin', 'admin'):
-        app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule ID {rule_id} owned by {rule.requester_id}.")
-        return jsonify({"status": "error", "message": "You are not authorized to cancel this request."}), 403
-
-    # Check if the rule is in a state that can be cancelled
-    # If it's already completed, denied, or declined, it cannot be cancelled via this method.
-    if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
-        app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}.")
-        return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
-    
-    try:
-        rule.status = "Cancelled by Requester"
-        rule.approval_status = "Cancelled" # Update approval status as well
-        # Optionally, add a comment indicating who cancelled it
-        if rule.approver_comment:
-            rule.approver_comment += f"\nRequest cancelled by {current_user.username}."
-        else:
-            rule.approver_comment = f"Request cancelled by {current_user.username}."
-
-        db.session.commit()
-        app_logger.info(f"Network request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
-        return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
-    except Exception as e:
-        db.session.rollback()
-        app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {str(e)}"}), 500
-

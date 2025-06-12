@@ -1,51 +1,64 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mx-auto p-4 bg-white rounded-lg shadow-lg my-8 w-full max-w-full"> {# Adjusted padding and removed max-w-screen-2xl to allow full width #}
+<div class="container mx-auto p-4 bg-white rounded-lg shadow-lg my-8 w-full max-w-full">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Task Results</h2>
 
     {% if rules %}
-    {# Removed overflow-x-auto to prevent horizontal scroll #}
     <div class="block">
-        <table class="w-full bg-white rounded-lg overflow-hidden shadow-md table-auto text-sm"> {# Changed min-w-full to w-full and added text-sm #}
+        <table class="w-full bg-white rounded-lg overflow-hidden shadow-md table-auto text-sm">
             <thead>
-                <tr class="bg-gray-100 text-gray-700 uppercase text-xs leading-normal"> {# Changed text-sm to text-xs for header #}
-                    <th class="py-2 px-2 text-left">ID</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Source IP</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Destination IP</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Protocol</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Port</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Status</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Approval Status</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Firewalls Involved</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">FWs to Provision</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">FWs Configured</th> {# Reduced padding #}
-                    <th class="py-2 px-2 text-left">Created At</th> {# Reduced padding and removed whitespace-nowrap #}
-                    <th class="py-2 px-2 text-left">Approved At</th> {# Reduced padding and removed whitespace-nowrap #}
-                    <th class="py-2 px-2 text-left">Implemented At</th> {# Reduced padding and removed whitespace-nowrap #}
+                <tr class="bg-gray-100 text-gray-700 uppercase text-xs leading-normal">
+                    <th class="py-2 px-2 text-left">ID</th>
+                    <th class="py-2 px-2 text-left">Source IP</th>
+                    <th class="py-2 px-2 text-left">Destination IP</th>
+                    <th class="py-2 px-2 text-left">Protocol</th>
+                    <th class="py-2 px-2 text-left">Port</th>
+                    <th class="py-2 px-2 text-left">Status</th>
+                    <th class="py-2 px-2 text-left">Approval Status</th>
+                    <th class="py-2 px-2 text-left">Firewalls Involved</th>
+                    <th class="py-2 px-2 text-left">FWs to Provision</th>
+                    <th class="py-2 px-2 text-left">FWs Configured</th>
+                    <th class="py-2 px-2 text-left">Created At</th>
+                    <th class="py-2 px-2 text-left">Approved At</th>
+                    <th class="py-2 px-2 text-left">Implemented At</th>
+                    <th class="py-2 px-2 text-center">Actions</th> {# New column for actions #}
                 </tr>
             </thead>
-            <tbody class="text-gray-600 text-xs font-light"> {# Changed text-sm to text-xs for body #}
+            <tbody class="text-gray-600 text-xs font-light">
                 {% for rule in rules %}
                 <tr class="border-b border-gray-200 hover:bg-gray-100">
-                    <td class="py-2 px-2 text-left">{{ rule.id }}</td> {# Reduced padding #}
-                    <td class="py-2 px-2 text-left break-all">{{ rule.source_ip }}</td> {# Reduced padding, added break-all #}
-                    <td class="py-2 px-2 text-left break-all">{{ rule.destination_ip }}</td> {# Reduced padding, added break-all #}
-                    <td class="py-2 px-2 text-left break-words">{{ rule.protocol }}</td> {# Reduced padding, added break-words #}
-                    <td class="py-2 px-2 text-left break-words">{{ rule.port }}</td> {# Reduced padding, added break-words #}
-                    <td class="py-2 px-2 text-left break-words">{{ rule.status }}</td> {# Reduced padding, added break-words #}
-                    <td class="py-2 px-2 text-left break-words">{{ rule.approval_status }}</td> {# Reduced padding, added break-words #}
-                    <td class="py-2 px-2 text-left break-words"> {# Reduced padding, removed whitespace-nowrap #}
+                    <td class="py-2 px-2 text-left">{{ rule.id }}</td>
+                    <td class="py-2 px-2 text-left break-all">{{ rule.source_ip }}</td>
+                    <td class="py-2 px-2 text-left break-all">{{ rule.destination_ip }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.protocol }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.port }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.status }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.approval_status }}</td>
+                    <td class="py-2 px-2 text-left break-words">
                         {% if rule.firewalls_involved %}{{ rule.firewalls_involved | join(', ') }}{% else %}N/A{% endif %}
                     </td>
-                    <td class="py-2 px-2 text-left break-words"> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left break-words">
                         {% if rule.firewalls_to_provision %}<span class="text-red-600">{{ rule.firewalls_to_provision | join(', ') }}</span>{% else %}None{% endif %}
                     </td>
-                    <td class="py-2 px-2 text-left break-words"> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left break-words">
                         {% if rule.firewalls_already_configured %}<span class="text-green-600">{{ rule.firewalls_already_configured | join(', ') }}</span>{% else %}None{% endif %}
                     </td>
-                    <td class="py-2 px-2 text-left break-words">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</td> {# Reduced padding, removed whitespace-nowrap, added break-words #}
-                    <td class="py-2 px-2 text-left break-words">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td> {# Reduced padding, removed whitespace-nowrap, added break-words #}
-                    <td class="py-2 px-2 text-left break-words">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td> {# Reduced padding, removed whitespace-nowrap, added break-words #}
+                    <td class="py-2 px-2 text-left break-words">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td>
+                    <td class="py-2 px-2 text-center whitespace-nowrap">
+                        {# Show Cancel button only if the current user is the requester AND the rule is in a cancellable state #}
+                        {% if current_user.id == rule.requester_id and 
+                              rule.status in ['Pending Approval', 'Pending', 'No Firewall Involved', 'Pathfinding Failed'] and
+                              rule.approval_status not in ['Denied', 'Declined'] %}
+                            <button type="button" onclick="confirmCancel({{ rule.id }}, '{{ rule.source_ip }}', '{{ rule.destination_ip }}')"
+                               class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                                Cancel
+                            </button>
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -59,4 +72,92 @@
         <a href="{{ url_for('routes.home') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Home</a>
     </div>
 </div>
+
+<!-- Cancel Confirmation Modal -->
+<div id="cancelModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3 text-center">
+            <h3 class="text-lg leading-6 font-medium text-gray-900">Confirm Cancellation</h3>
+            <div class="mt-2 px-7 py-3">
+                <p class="text-sm text-gray-500">
+                    Are you sure you want to cancel request <span id="cancelRuleId" class="font-bold"></span> 
+                    (Source: <span id="cancelSourceIP" class="font-bold"></span>, Dest: <span id="cancelDestIP" class="font-bold"></span>)?
+                    This action cannot be undone and will prevent further processing.
+                </p>
+            </div>
+            <div class="items-center px-4 py-3">
+                <button id="confirmCancelButton" class="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                    Confirm Cancel
+                </button>
+                <button id="closeCancelModalButton" class="mt-3 px-4 py-2 bg-gray-300 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2">
+                    No, Keep Request
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const cancelModal = document.getElementById('cancelModal');
+        const confirmCancelButton = document.getElementById('confirmCancelButton');
+        const closeCancelModalButton = document.getElementById('closeCancelModalButton');
+        const cancelRuleIdSpan = document.getElementById('cancelRuleId');
+        const cancelSourceIPSpan = document.getElementById('cancelSourceIP');
+        const cancelDestIPSpan = document.getElementById('cancelDestIP');
+        let ruleIdToCancel = null;
+
+        window.confirmCancel = function(ruleId, sourceIP, destIP) {
+            ruleIdToCancel = ruleId;
+            cancelRuleIdSpan.textContent = ruleId;
+            cancelSourceIPSpan.textContent = sourceIP;
+            cancelDestIPSpan.textContent = destIP;
+            cancelModal.classList.remove('hidden');
+        };
+
+        function closeCancelModal() {
+            cancelModal.classList.add('hidden');
+            ruleIdToCancel = null;
+            cancelRuleIdSpan.textContent = '';
+            cancelSourceIPSpan.textContent = '';
+            cancelDestIPSpan.textContent = '';
+        }
+
+        closeCancelModalButton.addEventListener('click', closeCancelModal);
+
+        confirmCancelButton.addEventListener('click', async function() {
+            if (ruleIdToCancel) {
+                try {
+                    // Show a temporary "Cancelling..." message or spinner
+                    confirmCancelButton.disabled = true;
+                    confirmCancelButton.textContent = 'Cancelling...';
+
+                    const response = await fetch(`/cancel-request/${ruleIdToCancel}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        // No body needed for a simple ID cancellation
+                    });
+
+                    const result = await response.json();
+                    if (response.ok) {
+                        alert(result.message); // Use alert for simplicity, replace with custom message box
+                        window.location.reload(); // Reload the page to update the list
+                    } else {
+                        alert(result.message || 'Failed to cancel request.');
+                        console.error('Error cancelling request:', result);
+                    }
+                } catch (error) {
+                    console.error('Network error during request cancellation:', error);
+                    alert('Network error: Could not connect to the server.');
+                } finally {
+                    closeCancelModal();
+                    confirmCancelButton.disabled = false;
+                    confirmCancelButton.textContent = 'Confirm Cancel';
+                }
+            }
+        });
+    });
+</script>
 {% endblock %}
