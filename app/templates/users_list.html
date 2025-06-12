@@ -4,7 +4,6 @@
 <div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Manage Users</h2>
 
-    <!-- Add New User Button -->
     <div class="flex justify-start mb-6">
         <a href="{{ url_for('admin.add_user') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
             Add New User
@@ -19,7 +18,8 @@
                     <th class="py-3 px-6 text-left">ID</th>
                     <th class="py-3 px-6 text-left">Username</th>
                     <th class="py-3 px-6 text-left">Email</th>
-                    <th class="py-3 px-6 text-left">Full Name</th>
+                    <th class="py-3 px-6 text-left">First Name</th>
+                    <th class="py-3 px-6 text-left">Last Name</th>
                     <th class="py-3 px-6 text-left">Role</th>
                     <th class="py-3 px-6 text-left">Created At</th>
                     <th class="py-3 px-6 text-left">Last Login</th>
@@ -27,26 +27,23 @@
                 </tr>
             </thead>
             <tbody class="text-gray-600 text-sm font-light">
-                {% for user_item in users %} {# Renamed loop variable to avoid conflict with 'user' in base.html #}
+                {% for user in users %}
                 <tr class="border-b border-gray-200 hover:bg-gray-100">
-                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ user_item.id }}</td>
-                    <td class="py-3 px-6 text-left">{{ user_item.username }}</td>
-                    <td class="py-3 px-6 text-left">{{ user_item.email }}</td>
-                    <td class="py-3 px-6 text-left">{{ user_item.first_name if user_item.first_name else 'N/A' }} {{ user_item.last_name if user_item.last_name else 'N/A' }}</td>
-                    <td class="py-3 px-6 text-left">{{ user_item.role | capitalize }}</td>
-                    <td class="py-3 px-6 text-left">{{ user_item.created_at.strftime('%Y-%m-%d %H:%M') if user_item.created_at else 'N/A' }}</td>
-                    <td class="py-3 px-6 text-left">{{ user_item.last_login.strftime('%Y-%m-%d %H:%M') if user_item.last_login else 'Never' }}</td>
-                    <td class="py-3 px-6 text-center">
-                        <div class="flex item-center justify-center space-x-2">
-                            <a href="{{ url_for('admin.edit_user', user_id=user_item.id) }}" 
-                               class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
-                                Edit
-                            </a>
-                            <button onclick="confirmDelete('{{ user_item.id }}', '{{ user_item.username }}')"
-                                    class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
-                                Delete
-                            </button>
-                        </div>
+                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ user.id }}</td>
+                    <td class="py-3 px-6 text-left">{{ user.username }}</td>
+                    <td class="py-3 px-6 text-left">{{ user.email }}</td>
+                    <td class="py-3 px-6 text-left">{{ user.first_name if user.first_name else 'N/A' }}</td>
+                    <td class="py-3 px-6 text-left">{{ user.last_name if user.last_name else 'N/A' }}</td>
+                    <td class="py-3 px-6 text-left">{{ user.role | capitalize }}</td>
+                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else 'N/A' }}</td>
+                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ user.last_login.strftime('%Y-%m-%d %H:%M:%S') if user.last_login else 'N/A' }}</td>
+                    <td class="py-3 px-6 text-center whitespace-nowrap">
+                        <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                            Edit
+                        </a>
+                        <button type="button" onclick="confirmDelete({{ user.id }}, '{{ user.username }}')" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105 ml-2">
+                            Delete
+                        </button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -62,21 +59,20 @@
     </div>
 </div>
 
-<!-- Delete Confirmation Modal -->
 <div id="deleteModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
     <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
         <div class="mt-3 text-center">
             <h3 class="text-lg leading-6 font-medium text-gray-900">Confirm Deletion</h3>
             <div class="mt-2 px-7 py-3">
-                <p class="text-sm text-gray-500" id="deleteModalText">
-                    Are you sure you want to delete user <span class="font-bold" id="usernameToDelete"></span>? This action cannot be undone.
+                <p class="text-sm text-gray-500">
+                    Are you sure you want to delete user <span id="usernameToDelete" class="font-bold"></span>? This action cannot be undone.
                 </p>
             </div>
             <div class="items-center px-4 py-3">
-                <button id="confirmDeleteButton" class="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 transition duration-300">
+                <button id="confirmDeleteButton" class="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
                     Delete
                 </button>
-                <button onclick="closeDeleteModal()" class="mt-3 px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition duration-300">
+                <button id="cancelDeleteButton" class="mt-3 px-4 py-2 bg-gray-300 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2">
                     Cancel
                 </button>
             </div>
@@ -85,49 +81,58 @@
 </div>
 
 <script>
-    let userIdToDelete = null;
+    document.addEventListener('DOMContentLoaded', function() {
+        const deleteModal = document.getElementById('deleteModal');
+        const confirmDeleteButton = document.getElementById('confirmDeleteButton');
+        const cancelDeleteButton = document.getElementById('cancelDeleteButton');
+        const usernameToDeleteSpan = document.getElementById('usernameToDelete');
+        let userIdToDelete = null;
 
-    function confirmDelete(userId, username) {
-        userIdToDelete = userId;
-        document.getElementById('usernameToDelete').textContent = username;
-        document.getElementById('deleteModal').classList.remove('hidden');
-    }
+        window.confirmDelete = function(userId, username) {
+            userIdToDelete = userId;
+            usernameToDeleteSpan.textContent = username;
+            deleteModal.classList.remove('hidden');
+        };
 
-    function closeDeleteModal() {
-        userIdToDelete = null;
-        document.getElementById('deleteModal').classList.add('hidden');
-    }
-
-    document.getElementById('confirmDeleteButton').addEventListener('click', async () => {
-        if (userIdToDelete) {
-            try {
-                const response = await fetch(`/admin/users/delete/${userIdToDelete}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        // Flask expects CSRF token on POST requests if CSRFProtect is enabled.
-                        // For simplicity in this example, we're omitting CSRF token handling in JS,
-                        // but for production, you'd need to include it.
-                    },
-                    // No body needed for a simple ID deletion
-                });
-
-                const result = await response.json();
-                if (response.ok) {
-                    // Success, refresh the page to update the list
-                    window.location.reload();
-                } else {
-                    // Handle errors
-                    alert(result.message || 'Failed to delete user.'); // Using alert for simplicity here, replace with a custom message box
-                    console.error('Error deleting user:', result);
-                }
-            } catch (error) {
-                console.error('Network error during user deletion:', error);
-                alert('Network error: Could not connect to the server.'); // Using alert for simplicity here, replace with a custom message box
-            } finally {
-                closeDeleteModal();
-            }
+        function closeDeleteModal() {
+            deleteModal.classList.add('hidden');
+            userIdToDelete = null;
+            usernameToDeleteSpan.textContent = '';
         }
+
+        cancelDeleteButton.addEventListener('click', closeDeleteModal);
+
+        confirmDeleteButton.addEventListener('click', async function() {
+            if (userIdToDelete) {
+                try {
+                    const response = await fetch(`/admin/users/delete/${userIdToDelete}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            // Flask expects CSRF token on POST requests if CSRFProtect is enabled.
+                            // For simplicity in this example, we're omitting CSRF token handling in JS,
+                            // but for production, you'd need to include it.
+                        },
+                        // No body needed for a simple ID deletion
+                    });
+
+                    const result = await response.json();
+                    if (response.ok) {
+                        // Success, refresh the page to update the list
+                        window.location.reload();
+                    } else {
+                        // Handle errors
+                        alert(result.message || 'Failed to delete user.'); // Using alert for simplicity here, replace with a custom message box
+                        console.error('Error deleting user:', result);
+                    }
+                } catch (error) {
+                    console.error('Network error during user deletion:', error);
+                    alert('Network error: Could not connect to the server.'); // Using alert for simplicity here, replace with a custom message box
+                } finally {
+                    closeDeleteModal();
+                }
+            }
+        });
     });
 </script>
 {% endblock %}

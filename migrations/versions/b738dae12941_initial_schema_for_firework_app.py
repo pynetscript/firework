@@ -1,8 +1,8 @@
 """Initial schema for Firework app
 
-Revision ID: 1a03a20b5caa
+Revision ID: b738dae12941
 Revises: 
-Create Date: 2025-06-12 22:48:30.513515
+Create Date: 2025-06-12 22:51:42.772538
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ from app.models import JSONEncodedList
 
 
 # revision identifiers, used by Alembic.
-revision = '1a03a20b5caa'
+revision = 'b738dae12941'
 down_revision = None
 branch_labels = None
 depends_on = None
