@@ -1,7 +1,7 @@
 import subprocess
 import os
 import json
-import logging # Import the logging module
+import logging
 
 # Get a logger for this module
 app_logger = logging.getLogger(__name__)
