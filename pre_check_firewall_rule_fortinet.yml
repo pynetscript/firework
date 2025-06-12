@@ -1,0 +1,53 @@
+---
+- name: FortiGate Pre-Check for Existing Firewall Policy
+  hosts: "{{ firewall_name }}" # Target a single firewall
+  gather_facts: no
+  connection: httpapi # Use httpapi for FortiGate
+  collections:
+    - fortinet.fortios
+
+  vars:
+    check_source_ip: "{{ source_ip }}"
+    check_destination_ip: "{{ destination_ip }}"
+    check_protocol: "{{ protocol }}"
+    check_port: "{{ port }}"
+
+    check_src_addr_name: "HOST_{{ check_source_ip | replace('.', '_') }}"
+    check_dst_addr_name: "HOST_{{ check_destination_ip | replace('.', '_') }}"
+    check_service_name: "SVC_{{ check_protocol | upper }}_{{ check_port }}"
+    
+    # Flag to indicate if a policy is found
+    policy_found_flag: false
+
+  tasks:
+    - name: Debug FortiGate Pre-Check variables
+      debug:
+        msg: "Pre-checking for existing policy on {{ inventory_hostname }} (FortiGate) for Source: {{ check_source_ip }}, Dest: {{ check_destination_ip }}, Proto: {{ check_protocol }}, Port: {{ check_port }}"
+
+    - name: Get FortiGate Firewall Policies
+      fortinet.fortios.fortios_firewall_policy:
+        vdom: "root"
+        state: info
+      register: fgt_policies
+      ignore_errors: yes # Allow to continue if policy info cannot be retrieved
+
+    - name: Check FortiGate policies for match and set flag
+      set_fact:
+        policy_found_flag: true
+      loop: "{{ fgt_policies.meta.results | default([]) }}"
+      loop_control:
+        label: "Checking FortiGate policy {{ item.name }}"
+      when:
+        - item.srcaddr is defined and (item.srcaddr | map(attribute='name') | list | contains(check_src_addr_name) or check_source_ip in item.srcaddr | map(attribute='name') | list)
+        - item.dstaddr is defined and (item.dstaddr | map(attribute='name') | list | contains(check_dst_addr_name) or check_destination_ip in item.dstaddr | map(attribute='name') | list)
+        - (check_protocol | lower == 'any' and item.service is defined and item.service | map(attribute='name') | list | contains('ALL')) or
+          (check_protocol | lower != 'any' and item.service is defined and item.service | map(attribute='name') | list | contains(check_service_name))
+      run_once: true
+      delegate_to: localhost # Run this locally to update the flag once
+
+    - name: Indicate if policy was found (FortiGate)
+      debug:
+        msg: "POLICY_EXISTS"
+      when: policy_found_flag
+      run_once: true
+      delegate_to: localhost # Run this locally to ensure message is printed once for the run

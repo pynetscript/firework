@@ -1,0 +1,54 @@
+---
+- name: Palo Alto Pre-Check for Existing Firewall Policy
+  hosts: "{{ firewall_name }}" # Target a single firewall
+  gather_facts: no
+  connection: httpapi # Use httpapi for Palo Alto
+  collections:
+    - paloaltonetworks.panos
+
+  vars:
+    check_source_ip: "{{ source_ip }}"
+    check_destination_ip: "{{ destination_ip }}"
+    check_protocol: "{{ protocol }}"
+    check_port: "{{ port }}"
+
+    # Map protocol names to numbers for Palo Alto `test security-policy-match` command
+    pa_protocol_number: "{{ { 'tcp': 6, 'udp': 17, 'icmp': 1, 'any': 'any' }[check_protocol | lower] | default(check_protocol) }}"
+
+    # Flag to indicate if a policy is found
+    policy_found_flag: false
+
+  tasks:
+    - name: Debug Palo Alto Pre-Check variables
+      debug:
+        msg: "Pre-checking for existing policy on {{ inventory_hostname }} (Palo Alto) for Source: {{ check_source_ip }}, Dest: {{ check_destination_ip }}, Proto: {{ check_protocol }}, Port: {{ check_port }}"
+
+    - name: Run Palo Alto Security Policy Match
+      paloaltonetworks.panos.panos_op:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        cmd: "<test><security-policy-match><source>{{ check_source_ip }}</source><destination>{{ check_destination_ip }}</destination><protocol>{{ pa_protocol_number }}</protocol><destination-port>{{ check_port }}</destination-port></security-policy-match></test>"
+        cmd_is_xml: true
+      register: pa_policy_match_output
+      ignore_errors: yes # Allow to continue if policy match fails
+
+    - name: Set policy_found_flag if Palo Alto policy matches
+      set_fact:
+        policy_found_flag: true
+      when:
+        - pa_policy_match_output is defined
+        - pa_policy_match_output.stdout_xml is defined
+        - pa_policy_match_output.stdout_xml | regex_search('<entry name="([^"]+)"')
+        - not (pa_policy_match_output.stdout_xml | regex_search('<entry name="No matching rule found"'))
+      run_once: true
+      delegate_to: localhost # Run this locally to update the flag once
+
+    - name: Indicate if policy was found (Palo Alto)
+      debug:
+        msg: "POLICY_EXISTS"
+      when: policy_found_flag
+      run_once: true
+      delegate_to: localhost # Run this locally to ensure message is printed once for the run

@@ -1,0 +1,49 @@
+---
+- name: Palo Alto Post-Check Firewall Rule Configuration
+  hosts: "{{ firewall_name }}" # Target a single firewall
+  gather_facts: no
+  connection: httpapi # Use httpapi for Palo Alto
+  collections:
+    - paloaltonetworks.panos
+
+  vars:
+    rule_id: "{{ rule_id }}"
+    source_ip: "{{ source_ip }}"
+    destination_ip: "{{ destination_ip }}"
+    protocol: "{{ protocol }}"
+    dest_port: "{{ dest_port }}"
+
+    # Map protocol names to numbers for Palo Alto `test security-policy-match` command
+    pa_protocol_number: "{{ { 'tcp': 6, 'udp': 17, 'icmp': 1 }.get(protocol | lower, protocol) }}"
+
+  tasks:
+    - name: Debug Palo Alto Post-Check variables
+      debug:
+        msg: "Post-checking Rule ID: {{ rule_id }} on {{ inventory_hostname }} (Palo Alto) for Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}"
+
+    - name: Run Palo Alto Security Policy Match for Post-Check
+      paloaltonetworks.panos.panos_op:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        cmd: "<test><security-policy-match><source>{{ source_ip }}</source><destination>{{ destination_ip }}</destination>{% if protocol | lower != 'any' %}<protocol>{{ pa_protocol_number }}</protocol>{% endif %}<destination-port>{{ dest_port }}</destination-port></security-policy-match></test>"
+        cmd_is_xml: true
+      register: pa_post_check_output
+      ignore_errors: yes # Allow to continue if policy match fails
+
+    - name: Check if Palo Alto security rule matches (Post-Check)
+      fail:
+        msg: "Palo Alto security rule for Rule ID {{ rule_id }} not found or incorrect on {{ inventory_hostname }} during post-check! Output: {{ pa_post_check_output.stdout_xml | default('N/A') }}"
+      when: >-
+        pa_post_check_output is defined and
+        pa_post_check_output.stdout_xml is defined and
+        ( (not (pa_post_check_output.stdout_xml | regex_search('<entry name="firework-{{ rule_id }}"'))) or
+          (pa_post_check_output.stdout_xml | regex_search('<entry name="No matching rule found"')) )
+      ignore_errors: yes # Allow the playbook to finish even if check fails
+
+    - name: Indicate if policy was verified (Palo Alto)
+      debug:
+        msg: "POLICY_VERIFIED"
+      when: not ansible_failed_result is defined or not ansible_failed_result.msg.startswith('Palo Alto security rule') # Only if the previous 'fail' task did not fail for policy reasons

@@ -1,0 +1,97 @@
+---
+- name: Palo Alto Provision Firewall Rule
+  hosts: "{{ firewall_name }}" # Target a single firewall
+  gather_facts: no
+  connection: httpapi # Use httpapi for Palo Alto
+  collections:
+    - paloaltonetworks.panos
+  any_errors_fatal: true # IMPORTANT: This will cause the playbook to fail immediately if any task fails.
+
+  vars:
+    rule_id: "{{ rule_id }}"
+    source_ip: "{{ source_ip }}"
+    destination_ip: "{{ destination_ip }}"
+    protocol: "{{ protocol }}"
+    dest_port: "{{ dest_port }}"
+    rule_description: "{{ rule_description }}"
+
+    # Define object names based on rule parameters for consistency
+    src_addr_name: "h-{{ source_ip }}"
+    dst_addr_name: "h-{{ destination_ip }}"
+
+    # Define Palo Alto service name based on protocol and dest_port
+    pa_service_name: "{{ 'any' if protocol | lower == 'any' else ('ICMP' if protocol | lower == 'icmp' else (protocol | upper) + '-' + (dest_port | string)) }}"
+
+    # Define Palo Alto protocol for service object (needs to be name, not number)
+    pa_protocol_for_service_object: "{{ protocol | lower | trim if protocol | string not in ['6', '17', '1'] else ({'6':'tcp', '17':'udp', '1':'icmp'}[protocol | string]) }}"
+
+  tasks:
+    - name: Debug Palo Alto Provisioning variables
+      debug:
+        msg: "Provisioning Rule ID: {{ rule_id }} on {{ inventory_hostname }} (Palo Alto) for Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}"
+
+    # --- Palo Alto Object Creation (Address & Service) ---
+    - name: Create Palo Alto Source Address Object
+      paloaltonetworks.panos.panos_address_object:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        name: "{{ src_addr_name }}"
+        address_type: "ip-netmask"
+        value: "{{ source_ip }}/32" # Use /32 for host addresses
+        state: present
+
+    - name: Create Palo Alto Destination Address Object
+      paloaltonetworks.panos.panos_address_object:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        name: "{{ dst_addr_name }}"
+        address_type: "ip-netmask"
+        value: "{{ destination_ip }}/32" # Use /32 for host addresses
+        state: present
+
+    - name: Create Palo Alto Service Object
+      paloaltonetworks.panos.panos_service_object:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        name: "{{ pa_service_name }}"
+        protocol: "{{ pa_protocol_for_service_object }}"
+        destination_port: "{{ dest_port }}"
+        state: present
+      when: protocol | lower != 'any' # Only create specific service if not 'any'
+
+    # --- Palo Alto Security Rule Creation ---
+    - name: Create Palo Alto Security Rule
+      paloaltonetworks.panos.panos_security_rule:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"
+        rule_name: "firework-{{ rule_id }}"
+        description: "{{ rule_description }}"
+        source_zone: ["any"]
+        destination_zone: ["any"]
+        source_ip: ["{{ src_addr_name }}"] # Referencing address object by name
+        destination_ip: ["{{ dst_addr_name }}"] # Referencing address object by name
+        application: ["any"]
+        service: "{{ pa_service_name }}"
+        action: allow
+        log_start: true
+        log_end: true
+
+    - name: Commit changes on Palo Alto
+      paloaltonetworks.panos.panos_commit_firewall:
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          api_key: "{{ ansible_api_key | default(omit) }}"

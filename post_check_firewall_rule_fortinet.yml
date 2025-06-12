@@ -1,0 +1,56 @@
+---
+- name: FortiGate Post-Check Firewall Rule Configuration
+  hosts: "{{ firewall_name }}" # Target a single firewall
+  gather_facts: no
+  connection: httpapi # Use httpapi for FortiGate
+  collections:
+    - fortinet.fortios
+
+  vars:
+    rule_id: "{{ rule_id }}"
+    source_ip: "{{ source_ip }}"
+    destination_ip: "{{ destination_ip }}"
+    protocol: "{{ protocol }}"
+    dest_port: "{{ dest_port }}"
+
+    src_addr_name: "HOST_{{ source_ip | replace('.', '_') }}"
+    dst_addr_name: "HOST_{{ destination_ip | replace('.', '_') }}"
+
+    fortigate_service_name: >-
+      {% if protocol | lower == 'any' %}
+      ALL
+      {% elif protocol | lower == 'icmp' %}
+      SVC_ICMP
+      {% else %}
+      SVC_{{ protocol | upper }}_{{ dest_port }}
+      {% endif %}
+
+  tasks:
+    - name: Debug FortiGate Post-Check variables
+      debug:
+        msg: "Post-checking Rule ID: {{ rule_id }} on {{ inventory_hostname }} (FortiGate) for Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}"
+
+    - name: Verify FortiGate Firewall Policy
+      fortinet.fortios.fortios_firewall_policy:
+        vdom: "root"
+        state: info
+        policyid: "{{ rule_id }}"
+      register: policy_info
+      ignore_errors: yes
+
+    - name: Check if FortiGate policy exists and matches criteria
+      fail:
+        msg: "FortiGate policy FIREWORK-RULE-{{ rule_id }} not found or parameters mismatch on {{ inventory_hostname }}!"
+      when:
+        - not policy_info.meta.results # No policy found
+        - not (policy_info.meta.results | first is defined and
+               (policy_info.meta.results | first).name == "FIREWORK-RULE-{{ rule_id }}" and
+               (policy_info.meta.results | first).srcaddr | map(attribute='name') | list | contains(src_addr_name) and
+               (policy_info.meta.results | first).dstaddr | map(attribute='name') | list | contains(dst_addr_name) and
+               (policy_info.meta.results | first).service | map(attribute='name') | list | contains(fortigate_service_name) )
+      ignore_errors: yes # Allow the playbook to finish even if check fails
+
+    - name: Indicate if policy was verified (FortiGate)
+      debug:
+        msg: "POLICY_VERIFIED"
+      when: not ansible_failed_result is defined or not ansible_failed_result.msg.startswith('FortiGate policy') # Only if the previous 'fail' task did not fail for policy reasons
