@@ -116,13 +116,14 @@ def validate_protocol(protocol_str):
 
 def validate_port(port_value):
     """Validates if a value is a valid port number (1-65535) or a port range (e.g., 8000-8999) or 'any'."""
-    if isinstance(port_value, int):
-        if 0 < port_value <= 65535:
-            return True, None
-        else:
-            return False, f"Invalid port: {port_value}. Must be an integer between 1 and 65535."
-    
+    # Handle None or empty string input upfront
+    if port_value is None or port_value == '':
+        return False, "Port cannot be empty."
+
+    # Now port_value is guaranteed not to be None or empty string
+    # Convert to string and normalize for comparison/parsing
     port_str = str(port_value).strip().lower()
+    
     if port_str == 'any':
         return True, None
 
@@ -137,7 +138,7 @@ def validate_port(port_value):
             return False, f"Invalid port range format: '{port_value}'. Use 'start-end' (e.g., '8000-8999')."
     else:
         try:
-            port_num = int(port_value)
+            port_num = int(port_str) # Corrected to use port_str here
             if 0 < port_num <= 65535:
                 return True, None
             else:
@@ -230,7 +231,7 @@ def create_request():
     source_ip = data.get('source_ip')
     destination_ip = data.get('destination_ip')
     protocol = data.get('protocol')
-    dest_port = data.get('dest_port')
+    dest_port = data.get('port') # Correctly retrieves 'port' from form
 
     errors = []
 
@@ -240,7 +241,7 @@ def create_request():
     if not is_valid: errors.append(error_msg)
     is_valid, error_msg = validate_protocol(protocol)
     if not is_valid: errors.append(error_msg)
-    is_valid, error_msg = validate_port(dest_port)
+    is_valid, error_msg = validate_port(dest_port) # This call was the issue
     if not is_valid: errors.append(error_msg)
 
     if errors:
@@ -303,11 +304,14 @@ def create_request():
 
 
     try:
+        # Convert dest_port to int only after successful validation if it's not 'any' or a range
+        final_port_value = int(dest_port) if str(dest_port).isdigit() else dest_port
+
         rule = FirewallRule(
             source_ip=source_ip,
             destination_ip=destination_ip,
             protocol=protocol,
-            dest_port=int(dest_port),
+            port=final_port_value, # Use the potentially converted integer or string
             status=initial_rule_status,
             approval_status=initial_approval_status,
             firewalls_involved=firewalls_in_path,
@@ -605,7 +609,7 @@ def provision_request(rule_id):
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'dest_port': rule.dest_port,
+                'port': rule.port,
                 'rule_description': f"Rule for ticket #{rule.id}"
             },
             firewalls=firewalls_to_provision
@@ -620,7 +624,7 @@ def provision_request(rule_id):
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'dest_port': rule.dest_port
+                'port': rule.port
             },
             firewalls=firewalls_to_provision
         )
@@ -646,4 +650,3 @@ def provision_request(rule_id):
         return jsonify({"status": "success", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 200
     else:
         return jsonify({"status": "error", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status}), 500
-

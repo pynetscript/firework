@@ -1,7 +1,7 @@
 import subprocess
 import os
 import json
-import logging # Import the logging module
+import logging
 
 # Get a logger for this module
 app_logger = logging.getLogger(__name__)
@@ -80,7 +80,6 @@ class NetworkAutomationService:
         """Runs the Python script to build the network topology database."""
         app_logger.info("Building network topology database (build_db.py)...")
         try:
-            # Assuming build_db.py is in the same directory as this service or accessible via path
             build_db_script_path = os.path.join(self.playbook_dir, 'build_db.py')
             if not os.path.exists(build_db_script_path):
                 app_logger.error(f"Database builder script not found: {build_db_script_path}")
@@ -121,9 +120,9 @@ class NetworkAutomationService:
             if not os.path.exists(pathfinder_script_path):
                 app_logger.error(f"Pathfinder script not found: {pathfinder_script_path}")
                 raise FileNotFoundError(f"Pathfinder script not found: {pathfinder_script_path}")
-                
+
             process = subprocess.run(
-                ['python3', pathfinder_script_path, source_ip, destination_ip, '--json-output'], # Added --json-output here
+                ['python3', pathfinder_script_path, source_ip, destination_ip, '--json-output'],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -139,7 +138,7 @@ class NetworkAutomationService:
                 except json.JSONDecodeError:
                     app_logger.error(f"Pathfinder output is not valid JSON: {process.stdout.strip()}")
                     firewalls = []
-            
+
             app_logger.info(f"Pathfinder completed. Firewalls found: {firewalls}")
             app_logger.debug(f"STDOUT from pathfinder.py:\n{process.stdout}")
             if process.stderr:
@@ -195,7 +194,7 @@ class NetworkAutomationService:
     def provision_rule(self, rule_data, firewalls):
         """Provisions a firewall rule using Ansible based on identified firewalls."""
         app_logger.info(f"Initiating provisioning for rule ID {rule_data['rule_id']} on firewalls: {firewalls}")
-        
+
         provision_stdout = ""
         provision_stderr = ""
 
@@ -207,15 +206,15 @@ class NetworkAutomationService:
                 'source_ip': rule_data['source_ip'],
                 'destination_ip': rule_data['destination_ip'],
                 'protocol': rule_data['protocol'],
-                'dest_port': rule_data['port'], # FIX: Changed from rule_data['dest_port'] to rule_data['port']
+                'dest_port': rule_data['port'],
                 'rule_description': rule_data['rule_description']
             }
-            
-            # Determine playbook based on firewall_name (or other logic from inventory/DB)
-            # This is a simplified example; in a real scenario, you'd fetch firewall type from inventory/DB
+
+            # Determine playbook based on firewall_name
+            # In a real scenario, we would get device type from CMDB/NMS
             if 'pafw' in firewall_name.lower(): # Example for Palo Alto
                 playbook = 'provision_firewall_rule_paloalto.yml'
-            elif 'ftnt' in firewall_name.lower(): # Example for Fortinet
+            elif 'fgt' in firewall_name.lower(): # Example for Fortinet
                 playbook = 'provision_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping provisioning.")
@@ -237,7 +236,7 @@ class NetworkAutomationService:
     def post_check_rule(self, rule_data, firewalls):
         """Performs a post-check on a provisioned firewall rule using Ansible."""
         app_logger.info(f"Initiating post-check for rule ID {rule_data['rule_id']} on firewalls: {firewalls}")
-        
+
         post_check_stdout = ""
         post_check_stderr = ""
 
@@ -248,12 +247,12 @@ class NetworkAutomationService:
                 'source_ip': rule_data['source_ip'],
                 'destination_ip': rule_data['destination_ip'],
                 'protocol': rule_data['protocol'],
-                'dest_port': rule_data['port'] # FIX: Changed from rule_data['dest_port'] to rule_data['port']
+                'dest_port': rule_data['port']
             }
 
             if 'pafw' in firewall_name.lower():
                 playbook = 'post_check_firewall_rule_paloalto.yml'
-            elif 'ftnt' in firewall_name.lower():
+            elif 'fgt' in firewall_name.lower():
                 playbook = 'post_check_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping post-check.")
@@ -264,7 +263,7 @@ class NetworkAutomationService:
                 stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
                 post_check_stdout += f"\n--- {firewall_name} STDOUT ---\n" + stdout
                 post_check_stderr += f"\n--- {firewall_name} STDERR ---\n" + stderr
-                
+
                 # Check for a specific string in stdout indicating successful post-check
                 if "POLICY_VERIFIED" in stdout: # Playbook should output this if verification passes
                     app_logger.info(f"Rule {rule_data['rule_id']} successfully verified on {firewall_name}.")

@@ -8,7 +8,7 @@ import os
 # Define the base directory for output files
 OUTPUTS_DIR = "outputs"
 
-def create_db_and_tables(db_name="network.db"): # <-- ENSURE THIS IS "network.db"
+def create_db_and_tables(db_name="network.db"):
     """
     Creates the SQLite database and necessary tables for network inventory.
     Drops existing inventory tables first to ensure schema is up-to-date.
@@ -214,7 +214,7 @@ def parse_cisco_route_data(route_output):
     """Parses Cisco route data from plain text."""
     routes = []
     lines = route_output.strip().split('\n')
-    
+
     # Regex for static/connected/local routes and OSPF
     # Captures: route_type, destination_network, admin_distance, metric, next_hop, interface_name
     # Group 1: Route Code (e.g., S*, C, O)
@@ -227,7 +227,7 @@ def parse_cisco_route_data(route_output):
     route_pattern = re.compile(
         r'^\s*([CSOLDRBEIiaNnEe]\*?)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)(?: \[\s*(\d+)\s*/\s*(\d+)\s*\])?(?: via (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?:, \S+)?(?:, (\S+))?)?'
     )
-    
+
     # Specific pattern for directly connected routes that don't have 'via' next-hop
     direct_connected_pattern = re.compile(
         r'^\s*([CL])\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)\s+is directly connected,\s+(\S+)'
@@ -257,7 +257,7 @@ def parse_cisco_route_data(route_output):
         match = route_pattern.match(line)
         if match:
             route_type_code, dest_net, admin_distance, metric, next_hop, iface_name = match.groups()
-            
+
             # Map common codes to more descriptive types
             route_type = {
                 'S': 'static', 'S*': 'static default',
@@ -379,13 +379,13 @@ def process_device_data(db_name, hostname, device_type, interface_filename, arp_
             interface_file_path = os.path.join(OUTPUTS_DIR, interface_filename)
             with open(interface_file_path, 'r') as f:
                 iface_content = yaml.safe_load(f)
-            
+
             interfaces_data = []
-            if device_type == "Router" or device_type == "Switch": # Cisco devices
+            if device_type == "Router" or device_type == "Switch": # Cisco
                 interfaces_data = parse_cisco_interface_data(iface_content.get('ansible_net_interfaces', {}))
             elif device_type == "Firewall" and hostname == "pafw": # Palo Alto
                 interfaces_data = parse_paloalto_interface_data(iface_content.get('ansible_facts', {}).get('ansible_net_interfaces', []))
-            elif device_type == "Firewall" and hostname == "fgt": # FortiGate
+            elif device_type == "Firewall" and hostname == "fgt": # Fortinet
                 interfaces_data = parse_fortigate_interface_data(iface_content.get('meta', {}).get('results', {}))
 
             for iface in interfaces_data:
@@ -401,13 +401,13 @@ def process_device_data(db_name, hostname, device_type, interface_filename, arp_
             arp_file_path = os.path.join(OUTPUTS_DIR, arp_filename)
             with open(arp_file_path, 'r') as f:
                 arp_content = f.read()
-            
+
             arp_data = []
-            if device_type == "Router" or device_type == "Switch": # Cisco devices
+            if device_type == "Router" or device_type == "Switch": # Cisco
                 arp_data = parse_cisco_arp_data(arp_content)
             elif device_type == "Firewall" and hostname == "pafw": # Palo Alto
                 arp_data = parse_paloalto_arp_data(arp_content)
-            elif device_type == "Firewall" and hostname == "fgt": # FortiGate
+            elif device_type == "Firewall" and hostname == "fgt": # Fortinet
                 arp_data = parse_fortigate_arp_data(arp_content)
 
             for arp in arp_data:
@@ -422,13 +422,13 @@ def process_device_data(db_name, hostname, device_type, interface_filename, arp_
             route_file_path = os.path.join(OUTPUTS_DIR, route_filename)
             with open(route_file_path, 'r') as f:
                 route_content = f.read()
-            
+
             route_data = []
-            if device_type == "Router" or device_type == "Switch": # Cisco devices
+            if device_type == "Router" or device_type == "Switch": # Cisco
                 route_data = parse_cisco_route_data(route_content)
             elif device_type == "Firewall" and hostname == "pafw": # Palo Alto
                 route_data = parse_paloalto_route_data(route_content)
-            elif device_type == "Firewall" and hostname == "fgt": # FortiGate
+            elif device_type == "Firewall" and hostname == "fgt": # Fortinet
                 route_data = parse_fortigate_route_data(route_content)
 
             for route in route_data:
@@ -454,7 +454,7 @@ def process_device_data(db_name, hostname, device_type, interface_filename, arp_
             conn.close()
 
 if __name__ == "__main__":
-    db_name = "network.db" # <-- THIS LINE NEEDS TO BE "network.db"
+    db_name = "network.db"
     create_db_and_tables(db_name)
 
     # Dictionary to store grouped file paths for each device
@@ -479,7 +479,7 @@ if __name__ == "__main__":
         elif filename.startswith('fgt_') and ('_interfaces.yml' in filename or '_arp.yml' in filename or '_routes.yml' in filename):
             hostname = "fgt"
             device_type = "Firewall"
-        
+
         # Determine file category
         if hostname:
             if '_interfaces.yml' in filename:
@@ -488,7 +488,7 @@ if __name__ == "__main__":
                 file_category = 'arp'
             elif '_routes.txt' in filename or '_routes.yml' in filename:
                 file_category = 'routes'
-            
+
             if file_category:
                 if hostname not in device_files:
                     device_files[hostname] = {'type': device_type, 'interfaces': None, 'arp': None, 'routes': None}

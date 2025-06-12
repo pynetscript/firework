@@ -4,7 +4,7 @@ import sys
 import json # Import json for structured output
 
 class NetworkPathfinder:
-    def __init__(self, db_name="network.db"): # Updated database name to network.db
+    def __init__(self, db_name="network.db"):
         self.db_name = db_name
         self.conn = None
         self.cursor = None
@@ -17,7 +17,7 @@ class NetworkPathfinder:
             self.cursor = self.conn.cursor()
         except sqlite3.Error as e:
             print(f"Error connecting to database {self.db_name}: {e}")
-            sys.exit(1) # Exit if we can't connect to the database
+            sys.exit(1) # Exit if can't connect to db
 
     def _close_db(self):
         """Closes the database connection."""
@@ -36,7 +36,7 @@ class NetworkPathfinder:
             print(f"Invalid IP address format: {ip_address_str}")
             return None, None
 
-        # First, check for exact match on an interface IP
+        # Check for exact match on an interface IP
         self.cursor.execute("""
             SELECT d.device_id, d.hostname
             FROM devices d
@@ -229,7 +229,7 @@ def get_firewalls_from_path(path_result, pathfinder_instance):
 if __name__ == "__main__":
     # Check for --json-output argument
     json_output_requested = "--json-output" in sys.argv
-    
+
     # Remove --json-output from arguments if present, so ipaddress doesn't complain
     if json_output_requested:
         sys.argv.remove("--json-output")
@@ -269,10 +269,10 @@ if __name__ == "__main__":
             for i, hop in enumerate(path):
                 device, interface, ip, route_type = hop
                 print(f"{i+1}. Device: {device}, Outgoing Interface: {interface}, Next Hop/Destination IP: {ip}, Route Type: {route_type}")
-        
+
         # Identify firewalls in the path
         firewalls = get_firewalls_from_path(path, pathfinder)
-        
+
     # Output firewalls based on --json-output flag
     if json_output_requested:
         print(json.dumps(firewalls))
