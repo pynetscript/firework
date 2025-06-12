@@ -27,8 +27,7 @@ def home():
 
 @routes.route('/request-form')
 @login_required # Ensures user is logged in
-# Changed roles: Now includes 'approver' and 'implementer'
-@roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer') 
+@roles_required('superadmin', 'admin', 'requester') # Only these roles can create requests
 def request_form():
     return render_template('request_form.html')
 
@@ -229,7 +228,7 @@ def check_blacklist(source_ip, destination_ip, protocol, destination_port):
 
 @routes.route('/api/request', methods=['POST'])
 @login_required
-@roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer') # Updated roles
+@roles_required('superadmin', 'admin', 'requester')
 def create_request():
     data = request.form
 
@@ -350,7 +349,7 @@ def create_request():
 
 @routes.route('/admin/blacklist', methods=['GET'])
 @login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
+@roles_required('superadmin', 'admin', 'implementer')
 def blacklist_rules_list():
     """Displays a list of all blacklist rules."""
     return render_template('blacklist_rules_list.html')
@@ -399,7 +398,7 @@ def add_blacklist_rule():
 
 @routes.route('/admin/blacklist/<int:rule_id>', methods=['GET'])
 @login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
+@roles_required('superadmin', 'admin', 'implementer')
 def blacklist_rule_detail(rule_id):
     """Displays the details of a specific blacklist rule."""
     rule = BlacklistRule.query.get_or_404(rule_id)
@@ -409,7 +408,7 @@ def blacklist_rule_detail(rule_id):
 # --- API Endpoints for Blacklist Rules (for AJAX calls) ---
 @routes.route('/api/blacklist_rules', methods=['GET'])
 @login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
+@roles_required('superadmin', 'admin', 'implementer')
 def get_blacklist_rules_api():
     """API endpoint to get all blacklist rules."""
     rules = BlacklistRule.query.order_by(BlacklistRule.sequence).all()

@@ -94,7 +94,7 @@
             {%- if current_user.is_authenticated -%}
                 <a href="{{ url_for('routes.home') }}">Home</a>
                 
-                {%- if current_user.has_role('superadmin', 'admin', 'requester') -%}
+                {%- if current_user.has_role('superadmin', 'admin', 'implementer', 'approver', 'requester') -%}
                     <a href="{{ url_for('routes.request_form') }}">Create Request</a>
                 {%- endif -%}
 
@@ -110,13 +110,10 @@
                     <a href="{{ url_for('routes.implementation_list') }}">Implementation</a>
                 {%- endif -%}
 
-                {%- if current_user.has_role('superadmin', 'admin', 'implementer') -%}
+                {%- if current_user.has_role('superadmin', 'admin') -%}
                     <a href="{{ url_for('routes.blacklist_rules_list') }}">Blacklist Rules</a>
                 {%- endif -%}
 
-                {# Removed "Add User" link from here. It's now only accessible from the "Users" page #}
-
-                {# New: Users list link for Superadmin #}
                 {%- if current_user.has_role('superadmin') -%}
                     <a href="{{ url_for('admin.users_list') }}">Users</a>
                 {%- endif -%}
