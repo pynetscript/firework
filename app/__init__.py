@@ -14,8 +14,11 @@ if not os.path.exists(OUTPUTS_DIR):
 
 def create_app():
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'you-will-never-guess-this-secret-key-super-secure'
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.root_path, '..', 'network.db')
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'firework'
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or \
+        'postgresql://firework:firework@localhost:5432/fireworkdb'
+
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
@@ -37,21 +40,19 @@ def create_app():
     handler.setFormatter(formatter)
     app.logger.addHandler(handler)
     app.logger.setLevel(logging.INFO)
+    #app.logger.setLevel(logging.DEBUG)
     logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
 
-    app.logger.info('Firework application started and comprehensive file logging configured successfully.')
     app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
     app.logger.info(f"Current working directory: {app.root_path}")
 
     from app.routes import routes
     app.register_blueprint(routes)
 
-    from app.auth_routes import auth as auth_blueprint
-    app.register_blueprint(auth_blueprint)
+    from app.auth_routes import auth
+    app.register_blueprint(auth)
 
-    # Register the new admin blueprint
-    from app.admin_routes import admin_bp as admin_blueprint
-    app.register_blueprint(admin_blueprint)
+    from app.admin_routes import admin_bp
+    app.register_blueprint(admin_bp)
 
     return app
-

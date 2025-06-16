@@ -24,7 +24,6 @@ def home():
     # Redirect authenticated users to a default dashboard page
     return redirect(url_for('routes.task_results'))
 
-
 @routes.route('/request-form')
 @login_required # Ensures user is logged in
 # Changed roles: Now includes 'approver' and 'implementer'
@@ -53,6 +52,8 @@ def task_results():
             rule.firewalls_to_provision = []
         if rule.firewalls_already_configured is None: # Ensure these are lists for rendering
             rule.firewalls_already_configured = []
+        if rule.ports is None: # Ensure ports is a list for rendering if it can be None
+            rule.ports = []
     return render_template('task_results.html', rules=rules)
 
 
@@ -236,7 +237,7 @@ def create_request():
     source_ip = data.get('source_ip')
     destination_ip = data.get('destination_ip')
     protocol = data.get('protocol')
-    dest_port = data.get('port')
+    dest_port = data.get('port') # This is the form input, named 'port'
 
     errors = []
 
@@ -282,7 +283,7 @@ def create_request():
         
         if firewalls_in_path:
             precheck_result = network_automation_service.check_policy_existence(
-                source_ip, destination_ip, protocol, dest_port, firewalls_in_path
+                source_ip, destination_ip, protocol, dest_port, firewalls_in_path # Passed 'dest_port' here
             )
             firewalls_to_provision = precheck_result["firewalls_to_provision"]
             firewalls_already_configured = precheck_result["firewalls_already_configured"]
@@ -329,14 +330,19 @@ def create_request():
 
 
     try:
-        # Convert dest_port to int only after successful validation if it's not 'any' or a range
-        final_port_value = int(dest_port) if str(dest_port).isdigit() else dest_port
+        # dest_port can be 'any', '8000-8999', or '80'.
+        # Since 'ports' is JSONEncodedList, it expects a list.
+        # If dest_port is a string, it should be stored as a list with one element.
+        # If it's a range, it should be stored as a list with one element that is the range string.
+        # It's better to store it as a list if the JSONEncodedList expects a list.
+        # So, wrap dest_port in a list.
+        final_ports_value = [str(dest_port)] if dest_port else [] # Ensure it's a list of strings
 
         rule = FirewallRule(
             source_ip=source_ip,
             destination_ip=destination_ip,
             protocol=protocol,
-            port=final_port_value, # Use the potentially converted integer or string
+            ports=final_ports_value, # CHANGED: 'port' to 'ports' and assigned the list
             status=initial_rule_status,
             approval_status=initial_approval_status,
             firewalls_involved=firewalls_in_path,
@@ -526,6 +532,8 @@ def approvals_list():
             rule.firewalls_to_provision = []
         if rule.firewalls_already_configured is None:
             rule.firewalls_already_configured = []
+        if rule.ports is None: # Initialize ports list
+            rule.ports = []
     return render_template('approvals_list.html', rules=pending_rules)
 
 @routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
@@ -579,6 +587,8 @@ def approve_deny_request(rule_id):
         rule.firewalls_to_provision = []
     if rule.firewalls_already_configured is None:
         rule.firewalls_already_configured = []
+    if rule.ports is None: # Initialize ports list
+        rule.ports = []
 
     app_logger.info(f"User {current_user.username} viewing approval details for network request ID {rule.id}.")
     return render_template('approval_detail.html', rule=rule)
@@ -601,6 +611,8 @@ def implementation_list():
             rule.firewalls_to_provision = []
         if rule.firewalls_already_configured is None:
             rule.firewalls_already_configured = []
+        if rule.ports is None: # Initialize ports list
+            rule.ports = []
     return render_template('implementation_list.html', rules=ready_for_implementation_rules)
 
 @routes.route('/implementation/<int:rule_id>', methods=['GET', 'POST'])
@@ -639,6 +651,8 @@ def implement_rule(rule_id):
         rule.firewalls_to_provision = []
     if rule.firewalls_already_configured is None:
         rule.firewalls_already_configured = []
+    if rule.ports is None: # Initialize ports list
+        rule.ports = []
 
     app_logger.info(f"User {current_user.username} viewing implementation details for rule ID {rule.id}.")
     return render_template('implementation_detail.html', rule=rule)
@@ -687,7 +701,7 @@ def provision_request(rule_id):
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'port': rule.port,
+                'ports': rule.ports, # CHANGED: 'port' to 'ports'
                 'rule_description': f"Rule for ticket #{rule.id}"
             },
             firewalls=firewalls_for_ansible_provision # Pass only firewalls that need provisioning
@@ -701,7 +715,7 @@ def provision_request(rule_id):
         firewalls_for_ansible_post_check = rule.firewalls_involved # Post-check all firewalls in path
         
         post_check_result = network_automation_service.check_policy_existence( # Re-run full check
-            rule.source_ip, rule.destination_ip, rule.protocol, rule.port, firewalls_for_ansible_post_check
+            rule.source_ip, rule.destination_ip, rule.protocol, rule.ports, firewalls_for_ansible_post_check # CHANGED: 'rule.port' to 'rule.ports'
         )
         # Update the rule with the latest check results
         rule.firewalls_to_provision = post_check_result["firewalls_to_provision"]

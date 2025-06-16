@@ -24,7 +24,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
+    password_hash = db.Column(db.String(512), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='requester')
     first_name = db.Column(db.String(64), nullable=True) # New field
     last_name = db.Column(db.String(64), nullable=True)  # New field
@@ -50,14 +50,14 @@ class FirewallRule(db.Model):
     source_ip = db.Column(db.String(50), nullable=False)
     destination_ip = db.Column(db.String(50), nullable=False)
     protocol = db.Column(db.String(10), nullable=False)
-    port = db.Column(db.Integer, nullable=False)
+    # CHANGED: 'port' (singular, Integer) to 'ports' (plural, JSONEncodedList)
+    ports = db.Column(JSONEncodedList, nullable=True) # Now stores a list of ports or port ranges
     status = db.Column(db.String(20), default="Pending")
     approval_status = db.Column(db.String(20), default="Pending")
     approver_id = db.Column(db.String(50), nullable=True)
     approver_comment = db.Column(db.Text, nullable=True)
     firewalls_involved = db.Column(JSONEncodedList, nullable=True)
-    
-    # NEW FIELDS: To store which firewalls need provisioning and which are already configured
+
     firewalls_to_provision = db.Column(JSONEncodedList, nullable=True)
     firewalls_already_configured = db.Column(JSONEncodedList, nullable=True)
 
@@ -68,7 +68,8 @@ class FirewallRule(db.Model):
     requester_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
     def __repr__(self):
-        return f'<FirewallRule {self.id} {self.source_ip} to {self.destination_ip}:{self.port}/{self.protocol} Status: {self.status}>'
+        # CHANGED: 'self.port' to 'self.ports'
+        return f'<FirewallRule {self.id} {self.source_ip} to {self.destination_ip}:{self.ports}/{self.protocol} Status: {self.status}>'
 
 class BlacklistRule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -85,3 +86,4 @@ class BlacklistRule(db.Model):
 
     def __repr__(self):
         return f'<BlacklistRule {self.id} - {self.rule_name} (Seq: {self.sequence})>'
+

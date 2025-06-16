@@ -12,7 +12,7 @@
                     <th class="py-2 px-2 text-left">Source IP</th>
                     <th class="py-2 px-2 text-left">Destination IP</th>
                     <th class="py-2 px-2 text-left">Protocol</th>
-                    <th class="py-2 px-2 text-left">Port</th>
+                    <th class="py-2 px-2 text-left">Port(s)</th>
                     <th class="py-2 px-2 text-left">Status</th>
                     <th class="py-2 px-2 text-left">Approval Status</th>
                     <th class="py-2 px-2 text-left">Firewalls Involved</th>
@@ -21,7 +21,7 @@
                     <th class="py-2 px-2 text-left">Created At</th>
                     <th class="py-2 px-2 text-left">Approved At</th>
                     <th class="py-2 px-2 text-left">Implemented At</th>
-                    <th class="py-2 px-2 text-center">Actions</th> {# New column for actions #}
+                    <th class="py-2 px-2 text-center">Actions</th>
                 </tr>
             </thead>
             <tbody class="text-gray-600 text-xs font-light">
@@ -31,7 +31,7 @@
                     <td class="py-2 px-2 text-left break-all">{{ rule.source_ip }}</td>
                     <td class="py-2 px-2 text-left break-all">{{ rule.destination_ip }}</td>
                     <td class="py-2 px-2 text-left break-words">{{ rule.protocol }}</td>
-                    <td class="py-2 px-2 text-left break-words">{{ rule.port }}</td>
+                    <td class="py-2 px-2 text-left break-words">{% if rule.ports %}{{ rule.ports | join(', ') }}{% else %}N/A{% endif %}</td>
                     <td class="py-2 px-2 text-left break-words">{{ rule.status }}</td>
                     <td class="py-2 px-2 text-left break-words">{{ rule.approval_status }}</td>
                     <td class="py-2 px-2 text-left break-words">
