@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Firework</title>
+    <!-- Favicon link -->
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -23,15 +26,25 @@
             padding-left: 2rem; /* Add padding to the left */
             padding-right: 2rem; /* Add padding to the right */
         }
+        /* Flex container for the logo image and "Firework" text */
         header .header-left {
             display: flex;
-            align-items: center;
+            align-items: center; /* Vertically align items */
         }
+        /* Style for the logo image within the header */
+        header .header-left img {
+            width: 2.5rem; /* Adjust size as needed */
+            height: 2.5rem;
+            margin-right: 0.5rem; /* Space between logo and text */
+            flex-shrink: 0; /* Prevent image from shrinking */
+        }
+        /* Style for the main title text within the header */
         header h1 {
             margin: 0;
             font-size: 2.5rem;
             font-weight: 700;
-            color: #4299e1; /* Blue color for Firework */
+            color: #ffffff; /* Changed Firework text to white */
+            line-height: 1; /* Adjust line height for better alignment with image */
         }
         header .version {
             font-size: 0.8rem;
@@ -86,8 +99,10 @@
 <body>
     <header>
         <div class="header-left">
-            <h1><i>Firework</i></h1>
-            <span class="version">0.1beta</span>
+            <!-- Image added here, before the h1 text -->
+            <img src="/static/favicon.png" alt="Firework Logo">
+            <h1>Firework</h1> {# Removed italic class from h1 #}
+            <span class="version">beta.0.1</span> {# Renamed version #}
         </div>
         
         <nav>

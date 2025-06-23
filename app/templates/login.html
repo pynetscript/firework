@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Firework</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #1a202c; /* Darker blue-gray, same as header */
-            color: #f3f4f6; /* Light text for contrast */
+            background-color: #ffffff; /* White background */
+            color: #333; /* Default text color for general body content */
             display: flex;
             justify-content: center;
             align-items: center;
@@ -26,12 +28,30 @@
             max-width: 24rem; /* max-w-sm */
             text-align: center;
         }
-        .login-container h2 {
+        /* Styling for the container holding the image and text for the title */
+        .login-title-container {
+            display: flex; /* Use flexbox to put items side-by-side */
+            align-items: center; /* Vertically align items in the center */
+            justify-content: center; /* Horizontally center the content */
+            margin-bottom: 1.5rem; /* Same margin as the original h2 had */
+            color: #ffffff; /* Apply white color to the container for text */
+        }
+        /* Styling for the Firework text inside the login container */
+        .login-title-container h2 {
             font-size: 2.5rem; /* text-4xl */
             font-weight: 700; /* font-bold */
-            color: #4299e1; /* Blue color for Firework */
-            margin-bottom: 1.5rem; /* mb-6 */
+            margin-left: 0.5rem; /* Space between image and text */
+            margin-top: 0; /* Reset margin from previous h2 style */
+            margin-bottom: 0; /* Reset margin from previous h2 style */
+            line-height: 1; /* Adjust line height to align better with image */
         }
+        /* Styling for the image within the title container */
+        .login-title-container img {
+            width: 3rem; /* Smaller size for inline display */
+            height: 3rem; /* Smaller size for inline display */
+            flex-shrink: 0; /* Prevent image from shrinking on smaller screens */
+        }
+
         .flash-message {
             padding: 1rem;
             margin-bottom: 1rem;
@@ -63,8 +83,11 @@
 </head>
 <body>
     <div class="login-container">
-        <h2 class="italic">Firework</h2>
-
+        <div class="login-title-container">
+            <img src="/static/favicon.png" alt="Firework">
+            <h2>Firework</h2>
+        </div>
+        
         {# Flash messages display here #}
         {%- with messages = get_flashed_messages(with_categories=true) -%}
             {%- if messages -%}
