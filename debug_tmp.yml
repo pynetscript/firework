@@ -1,0 +1,14 @@
+---
+- name: Debug Ansible temporary directories
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Print Ansible temporary variables
+      ansible.builtin.debug:
+        msg: |
+          ANSIBLE_LOCAL_TEMP: {{ lookup('env', 'ANSIBLE_LOCAL_TEMP') }}
+          ANSIBLE_REMOTE_TMP: {{ lookup('env', 'ANSIBLE_REMOTE_TMP') }}
+          TMPDIR: {{ lookup('env', 'TMPDIR') }}
+          TEMP: {{ lookup('env', 'TEMP') }}
+          Playbook Directory: {{ playbook_dir }}
