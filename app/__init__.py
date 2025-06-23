@@ -39,8 +39,7 @@ def create_app():
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     app.logger.addHandler(handler)
-    app.logger.setLevel(logging.INFO)
-    #app.logger.setLevel(logging.DEBUG)
+    app.logger.setLevel(logging.DEBUG)
     logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
 
     app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")

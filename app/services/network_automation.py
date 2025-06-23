@@ -1,29 +1,29 @@
 import subprocess
 import os
 import json
-import logging # Import the logging module
+import logging
+import yaml
+import ipaddress
+import re
 
-# Get a logger for this module
 app_logger = logging.getLogger(__name__)
+
+OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'outputs')
 
 class NetworkAutomationService:
     def __init__(self, inventory_path='inventory.yml', playbook_dir='.'):
-        # Calculate the path to the project root (up two levels from app/services)
         project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
-
         self.inventory_path = os.path.join(project_root, inventory_path)
-        self.playbook_dir = os.path.join(project_root, playbook_dir) # Playbooks are also in the project root
+        self.playbook_dir = os.path.join(project_root, playbook_dir)
 
-        # Ensure inventory.yml exists as a prerequisite for Ansible operations
         if not os.path.exists(self.inventory_path):
             app_logger.error(f"Inventory file not found at: {self.inventory_path}")
             raise FileNotFoundError(f"Inventory file not found at: {self.inventory_path}")
 
+        os.makedirs(OUTPUTS_DIR, exist_ok=True)
+        app_logger.info(f"Ansible outputs directory set to: {OUTPUTS_DIR}")
+
     def _execute_ansible_playbook(self, playbook_name, extra_vars=None):
-        """
-        Internal helper to execute an Ansible playbook.
-        Returns stdout and stderr from the playbook execution.
-        """
         playbook_path = os.path.join(self.playbook_dir, playbook_name)
         if not os.path.exists(playbook_path):
             app_logger.error(f"Ansible playbook not found: {playbook_path}")
@@ -35,18 +35,44 @@ class NetworkAutomationService:
             '-i', self.inventory_path
         ]
         if extra_vars:
-            # Convert extra_vars dict to a JSON string for Ansible's --extra-vars
             command.extend(['--extra-vars', json.dumps(extra_vars)])
 
-        app_logger.info(f"Executing Ansible command: {' '.join(command)} in {self.playbook_dir}")
+        env_for_subprocess = os.environ.copy()
+
+        user_home = env_for_subprocess.get('HOME', '/tmp')
+        ansible_runtime_tmp_dir = os.path.join(user_home, '.ansible_runtime_temps')
+
+        # --- NEW DEBUG LINE HERE ---
+        app_logger.debug(f"DEBUGGING PATHS: Determined user_home='{user_home}', ansible_runtime_tmp_dir='{ansible_runtime_tmp_dir}' before os.makedirs.")
+        # --- END NEW DEBUG LINE ---
+
+        try:
+            # This is the line that might be failing if ansible_runtime_tmp_dir is '/nonexistent'
+            os.makedirs(ansible_runtime_tmp_dir, exist_ok=True)
+        except Exception as e:
+            app_logger.error(f"Failed to create temporary directory '{ansible_runtime_tmp_dir}': {e}")
+            # Re-raise the exception to propagate the error
+            raise
+
+        env_for_subprocess['ANSIBLE_TMPDIR'] = ansible_runtime_tmp_dir
+        env_for_subprocess['TMPDIR'] = ansible_runtime_tmp_dir
+        env_for_subprocess['ANSIBLE_COLLECTIONS_PATH'] = os.path.join(self.playbook_dir, 'ansible_collections')
+
+        app_logger.debug("--- Subprocess Environment for Ansible ---")
+        for key, value in env_for_subprocess.items():
+            if any(kw in key.upper() for kw in ['ANSIBLE', 'TMP', 'TEMP', 'PATH', 'HOME', 'USER', 'COLLECTION']):
+                app_logger.debug(f"  {key}={value}")
+        app_logger.debug("----------------------------------------")
+        app_logger.info(f"Executing Ansible command: {' '.join(command)} in CWD: {self.playbook_dir}")
 
         try:
             process = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
-                check=True, # Raise a CalledProcessError for non-zero exit codes
-                cwd=self.playbook_dir # Execute from the project root
+                check=True,
+                cwd=self.playbook_dir,
+                env=env_for_subprocess
             )
             app_logger.info(f"Ansible playbook '{playbook_name}' executed successfully.")
             app_logger.debug(f"STDOUT for {playbook_name}:\n{process.stdout}")
@@ -66,7 +92,6 @@ class NetworkAutomationService:
             raise RuntimeError(f"An unexpected error occurred during Ansible execution: {e}")
 
     def run_collector(self):
-        """Runs the Ansible playbook to collect network device data."""
         app_logger.info("Running Ansible network data collector (collector.yml)...")
         try:
             stdout, stderr = self._execute_ansible_playbook('collector.yml')
@@ -77,15 +102,13 @@ class NetworkAutomationService:
             return {"status": "error", "message": f"Failed to collect network data: {e}"}
 
     def build_database(self):
-        """Runs the Python script to build the network topology database."""
         app_logger.info("Building network topology database (build_db.py)...")
         try:
-            # Assuming build_db.py is in the same directory as this service or accessible via path
             build_db_script_path = os.path.join(self.playbook_dir, 'build_db.py')
             if not os.path.exists(build_db_script_path):
                 app_logger.error(f"Database builder script not found: {build_db_script_path}")
                 raise FileNotFoundError(f"Database builder script not found: {build_db_script_path}")
-
+                
             process = subprocess.run(
                 ['python3', build_db_script_path],
                 capture_output=True,
@@ -111,10 +134,6 @@ class NetworkAutomationService:
             return {"status": "error", "message": f"An unexpected error occurred during database build: {e}"}
 
     def find_path_and_firewalls(self, source_ip, destination_ip):
-        """
-        Runs the Python pathfinder script to identify firewalls in the path.
-        Returns a list of firewall hostnames.
-        """
         app_logger.info(f"Running pathfinder (pathfinder.py) for {source_ip} to {destination_ip}...")
         try:
             pathfinder_script_path = os.path.join(self.playbook_dir, 'pathfinder.py')
@@ -131,11 +150,10 @@ class NetworkAutomationService:
             )
             firewalls = []
             if process.stdout:
-                # Assuming pathfinder.py outputs a JSON array of firewall hostnames
                 try:
                     firewalls = json.loads(process.stdout.strip())
                     if not isinstance(firewalls, list):
-                        firewalls = [] # Ensure it's a list even if JSON is not array
+                        firewalls = []
                 except json.JSONDecodeError:
                     app_logger.error(f"Pathfinder output is not valid JSON: {process.stdout.strip()}")
                     firewalls = []
@@ -160,10 +178,6 @@ class NetworkAutomationService:
 
 
     def check_policy_existence(self, source_ip, destination_ip, protocol, port, firewalls):
-        """
-        Checks if a given policy already exists on the specified firewalls.
-        Returns a dictionary with lists of 'firewalls_to_provision' and 'firewalls_already_configured'.
-        """
         app_logger.info(f"Checking policy existence for {source_ip} to {destination_ip}:{port}/{protocol} on firewalls: {firewalls}")
         
         firewalls_to_provision = []
@@ -171,11 +185,10 @@ class NetworkAutomationService:
 
         if not firewalls:
             app_logger.info("No firewalls in path. No policies to check.")
-            # If no firewalls, then effectively all "needed" policies are "configured"
             return {
                 "firewalls_to_provision": [],
                 "firewalls_already_configured": [],
-                "all_policies_exist": True # Implicitly true if no firewalls
+                "all_policies_exist": True
             }
 
         for firewall_name in firewalls:
@@ -194,8 +207,8 @@ class NetworkAutomationService:
                 playbook = 'pre_check_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Cannot perform pre-check.")
-                firewalls_to_provision.append(firewall_name) # Treat as needs provisioning if unable to check
-                continue # Skip to next firewall
+                firewalls_to_provision.append(firewall_name)
+                continue
 
             try:
                 stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
@@ -209,10 +222,10 @@ class NetworkAutomationService:
 
             except RuntimeError as e:
                 app_logger.error(f"Pre-check for policy existence failed on {firewall_name}: {e}. Assuming needs provisioning.")
-                firewalls_to_provision.append(firewall_name) # If check fails, assume it needs provisioning
+                firewalls_to_provision.append(firewall_name)
             except Exception as e:
                 app_logger.critical(f"Unexpected error during policy existence check on {firewall_name}: {e}. Assuming needs provisioning.")
-                firewalls_to_provision.append(firewall_name) # If unexpected error, assume it needs provisioning
+                firewalls_to_provision.append(firewall_name)
         
         all_policies_exist_flag = len(firewalls_to_provision) == 0
 
@@ -229,13 +242,11 @@ class NetworkAutomationService:
 
 
     def provision_rule(self, rule_data, firewalls):
-        """Provisions a firewall rule using Ansible based on identified firewalls."""
         app_logger.info(f"Initiating provisioning for rule ID {rule_data['rule_id']} on firewalls: {firewalls}")
         
         provision_stdout = ""
         provision_stderr = ""
 
-        # Loop through each firewall and run the appropriate provisioning playbook
         for firewall_name in firewalls:
             extra_vars = {
                 'firewall_name': firewall_name,
@@ -247,15 +258,13 @@ class NetworkAutomationService:
                 'rule_description': rule_data['rule_description']
             }
             
-            # Determine playbook based on firewall_name (or other logic from inventory/DB)
-            if 'pafw' in firewall_name.lower(): # Example for Palo Alto
+            playbook = None
+            if 'pafw' in firewall_name.lower():
                 playbook = 'provision_firewall_rule_paloalto.yml'
-            elif 'fgt' in firewall_name.lower(): # Example for Fortinet
+            elif 'fgt' in firewall_name.lower():
                 playbook = 'provision_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping provisioning.")
-                # This should ideally raise an error as provisioning requires all firewalls to succeed.
-                # For now, it skips and allows the loop to continue, but the overall check will fail if needed.
                 continue
 
             app_logger.info(f"Provisioning rule {rule_data['rule_id']} on {firewall_name} using {playbook}...")
@@ -266,13 +275,12 @@ class NetworkAutomationService:
                 app_logger.info(f"Successfully provisioned rule {rule_data['rule_id']} on {firewall_name}.")
             except RuntimeError as e:
                 app_logger.error(f"Failed to provision rule {rule_data['rule_id']} on {firewall_name}: {e}")
-                raise # Re-raise to indicate overall provisioning failure
+                raise
 
-        return provision_stdout # Return combined stdout for display/logging
+        return provision_stdout
 
 
     def post_check_rule(self, rule_data, firewalls):
-        """Performs a post-check on a provisioned firewall rule using Ansible."""
         app_logger.info(f"Initiating post-check for rule ID {rule_data['rule_id']} on firewalls: {firewalls}")
         
         post_check_stdout = ""
@@ -302,8 +310,7 @@ class NetworkAutomationService:
                 post_check_stdout += f"\n--- {firewall_name} STDOUT ---\n" + stdout
                 post_check_stderr += f"\n--- {firewall_name} STDERR ---\n" + stderr
                 
-                # Check for a specific string in stdout indicating successful post-check
-                if "POLICY_VERIFIED" in stdout: # Playbook should output this if verification passes
+                if "POLICY_VERIFIED" in stdout:
                     app_logger.info(f"Rule {rule_data['rule_id']} successfully verified on {firewall_name}.")
                 else:
                     app_logger.warning(f"Rule {rule_data['rule_id']} NOT verified on {firewall_name}. Check Ansible output.")
@@ -311,9 +318,9 @@ class NetworkAutomationService:
 
             except RuntimeError as e:
                 app_logger.error(f"Failed to post-check rule {rule_data['rule_id']} on {firewall_name}: {e}")
-                raise # Re-raise to indicate overall post-check failure
+                raise
             except Exception as e:
                 app_logger.critical(f"An unexpected error occurred during post-check for rule {rule_data['rule_id']} on {firewall_name}: {e}")
                 raise
 
-        return post_check_stdout # Return combined stdout for display/logging
+        return post_check_stdout
