@@ -18,6 +18,9 @@ else
     echo "Warning: Gunicorn Firework service might not have stopped cleanly or was not running."
 fi
 
+echo "Reload system daemons"
+sudo systemctl daemon-reload
+
 echo "Deactivating any active virtual environment..."
 deactivate 2>/dev/null || true
 
