@@ -24,7 +24,7 @@
 
         <div>
             <label for="port" class="block text-gray-700 text-sm font-bold mb-2">Port (e.g., 80, 8000-8999, any):</label>
-            <input type="text" id="port" name="port" required
+            <input type="text" id="port" name="ports" required
                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
         </div>
 
@@ -64,17 +64,16 @@
         responseMessageDiv.classList.add('hidden'); // Hide previous messages
 
         try {
-            const response = await fetch('/api/request', {
+            const response = await fetch('{{ url_for("routes.submit_request") }}', {
                 method: 'POST',
                 body: formData
             });
 
             const result = await response.json();
 
-            responseMessageDiv.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800', 'bg-blue-100', 'text-blue-800'); // Added bg-blue-100, text-blue-800
+            responseMessageDiv.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800', 'bg-blue-100', 'text-blue-800');
 
             if (response.ok) {
-                // Check the 'status' field from the JSON response for custom handling
                 if (result.status === "success") {
                     responseMessageDiv.classList.add('bg-green-100', 'text-green-800');
                     responseMessageDiv.innerHTML = `
@@ -85,12 +84,11 @@
                         <p class="mt-2"><a href="{{ url_for('routes.task_results') }}" class="text-green-700 underline hover:no-underline">View All Task Results</a></p>
                         <p><a href="{{ url_for('routes.approvals_list') }}" class="text-green-700 underline hover:no-underline">Go to Approvals</a></p>
                     `;
-                    form.reset(); // Clear form fields on success
+                    form.reset();
                 } else if (result.status === "info") {
-                    responseMessageDiv.classList.add('bg-blue-100', 'text-blue-800'); // Use blue for info messages
+                    responseMessageDiv.classList.add('bg-blue-100', 'text-blue-800');
                     responseMessageDiv.innerHTML = `<p class="font-bold">Information:</p><p>${result.message}</p>`;
                 } else {
-                    // Fallback for unexpected successful responses
                     responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
                     responseMessageDiv.innerHTML = `<p class="font-bold">Unexpected Success Response:</p><p>${result.message}</p>`;
                 }
@@ -110,7 +108,6 @@
             responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
             responseMessageDiv.innerHTML = `<p class="font-bold">Network Error:</p><p>Could not connect to the server or an unexpected error occurred.</p>`;
         } finally {
-            // Revert button state
             submitButton.disabled = false;
             buttonText.textContent = 'Submit Request';
             loadingSpinner.classList.add('hidden');
