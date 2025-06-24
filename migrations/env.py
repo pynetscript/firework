@@ -4,6 +4,8 @@ from logging.config import fileConfig
 from flask import current_app
 
 from alembic import context
+from app import create_app
+from app.models import db, JSONEncodedList
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

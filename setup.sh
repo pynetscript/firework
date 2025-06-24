@@ -25,152 +25,69 @@ export FLASK_APP=run.py
 # --- IMPORTANT: Ensure your app/__init__.py is configured for PostgreSQL before running migrations! ---
 # Example: app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://firework:firework@localhost:5432/fireworkdb'
 
-# 5. Initialize Flask-Migrate repository
-echo "Initializing Flask-Migrate repository..."
-flask db init
+# 5. Initialize Flask-Migrate repository (only if it doesn't exist)
+echo "Initializing Flask-Migrate repository (if not already initialized)..."
+flask db init || echo "Flask-Migrate repository already initialized."
 
-# 6. Create an EMPTY initial database migration script
-# This command explicitly creates a new empty revision, which we will then populate manually via sed.
-echo "Creating an EMPTY initial database migration script for PostgreSQL..."
-flask db revision -m "Initial schema for Firework app (PostgreSQL)"
+# --- START NEW ADDITION: PATCH env.py FOR PERMANENT FIX ---
+# Get the path to the env.py file
+ENV_PY_FILE="migrations/env.py"
+
+echo "Patching migrations/env.py to support Flask app context and custom types..."
+
+# Ensure 'os' is imported FIRST, then add sys.path and Flask-related imports.
+# Replace existing 'import os' and 'import sys' if they exist, and add sys.path.append.
+sed -i '\@^import os@a\
+import sys\
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '\''..'\'' )))' "$ENV_PY_FILE"
+
+# Add 'from app import create_app' and 'from app.models import db, JSONEncodedList'
+sed -i '\@from alembic import context@a\
+from app import create_app\
+from app.models import db, JSONEncodedList' "$ENV_PY_FILE"
+
+# Modify target_metadata and app creation outside functions
+sed -i 's|^target_metadata = None|target_metadata = db.metadata\napp = create_app()|' "$ENV_PY_FILE"
+
+# Set sqlalchemy.url from app config globally for alembic (insert after fileConfig)
+sed -i '/fileConfig(context.config.config_file_name)/a\
+config = context.config\
+config.set_main_option('\''sqlalchemy.url'\'', app.config.get('\''SQLALCHEMY_DATABASE_URI'\''))' "$ENV_PY_FILE"
+
+# Insert 'with app.app_context():' into run_migrations_online()
+sed -i '/def run_migrations_online() -> None:/a\
+with app.app_context():' "$ENV_PY_FILE"
+
+# Adjust context.configure parameters within run_migrations_online
+sed -i 's/context.configure(\n        connection=connection,\n        target_metadata=target_metadata,\n        literal_binds=True,\n        dialect_opts={"paramstyle": "named"},\n    )/context.configure(\n        connection=connection,\n        target_metadata=target_metadata,\n        url=config.get_main_option("sqlalchemy.url"),\n    )/' "$ENV_PY_FILE"
+
+echo "Patched migrations/env.py successfully."
+# --- END NEW ADDITION: PATCH env.py FOR PERMANENT FIX ---
+
+# 6. Generate (autogenerate) the initial migration script based on models.py.
+echo "Generating initial database migration script based on models.py..."
+flask db migrate -m "Initial Firework app schema"
 
 # Get the name of the newly generated migration file
-MIGRATION_FILE=$(ls -t migrations/versions/*.py | head -n 1)
+MIGRATION_FILE_GENERATED=$(ls -t migrations/versions/*.py 2>/dev/null | head -n 1)
 
-if [ -z "$MIGRATION_FILE" ]; then
+if [ -z "$MIGRATION_FILE_GENERATED" ]; then
     echo "ERROR: No migration file generated. Exiting."
     exit 1
 fi
 
-echo "Detected new (empty) migration file: $MIGRATION_FILE"
+echo "Detected new (auto-generated) migration file: $MIGRATION_FILE_GENERATED"
 
-# --- AUTOMATICALLY POPULATE THE NEWLY GENERATED MIGRATION FILE ---
-echo "Automatically populating migration file with initial schema..."
+# Patch the newly generated migration file to fix app.models.JSONEncodedList references
+echo "Patching the auto-generated migration file for JSONEncodedList imports..."
+# Add JSONEncodedList import
+sed -i '\@import sqlalchemy as sa@a from app.models import JSONEncodedList' "$MIGRATION_FILE_GENERATED"
+# Replace app.models.JSONEncodedList with JSONEncodedList
+sed -i 's/app.models.JSONEncodedList/JSONEncodedList/g' "$MIGRATION_FILE_GENERATED"
+echo "Auto-generated migration file patched successfully."
 
-# 1. Add the necessary import statement for JSONEncodedList
-sed -i '/import sqlalchemy as sa/a from app.models import JSONEncodedList' "$MIGRATION_FILE"
-
-# 2. Insert the 'upgrade' operations (schema creation) into the upgrade() function
-#sed -i '/def upgrade():/a\
-#    op.create_table('\''user'\'',\
-#    sa.Column('\''id'\'', sa.Integer(), nullable=False),\
-#    sa.Column('\''username'\'', sa.String(length=64), nullable=False),\
-#    sa.Column('\''email'\'', sa.String(length=120), nullable=False),\
-#    sa.Column('\''password_hash'\'', sa.String(length=512), nullable=False),\
-#    sa.Column('\''role'\'', sa.String(length=64), nullable=False),\
-#    sa.Column('\''first_name'\'', sa.String(length=64), nullable=True),\
-#    sa.Column('\''last_name'\'', sa.String(length=64), nullable=True),\
-#    sa.Column('\''created_at'\'', sa.DateTime(), nullable=False),\
-#    sa.Column('\''last_login'\'', sa.DateTime(), nullable=True),\
-#    sa.PrimaryKeyConstraint('\''id'\''),\
-#    sa.UniqueConstraint('\''email'\''),\
-#    sa.UniqueConstraint('\''username'\'')\
-#    )\
-#\
-#    op.create_table('\''blacklist_rule'\'',\
-#    sa.Column('\''id'\'', sa.Integer(), nullable=False),\
-#    sa.Column('\''rule_name'\'', sa.String(length=128), nullable=False),\
-#    sa.Column('\''source_ip'\'', sa.String(length=45), nullable=False),\
-#    sa.Column('\''destination_ip'\'', sa.String(length=45), nullable=True),\
-#    sa.Column('\''ports'\'', JSONEncodedList(), nullable=True),\
-#    sa.Column('\''protocol'\'', sa.String(length=16), nullable=True),\
-#    sa.Column('\''description'\'', sa.String(length=256), nullable=True),\
-#    sa.Column('\''created_at'\'', sa.DateTime(), nullable=True),\
-#    sa.Column('\''expires_at'\'', sa.DateTime(), nullable=True),\
-#    sa.Column('\''status'\'', sa.String(length=32), nullable=True),\
-#    sa.PrimaryKeyConstraint('\''id'\''),\
-#    sa.UniqueConstraint('\''rule_name'\'')\
-#    )\
-#\
-#    op.create_table('\''firewall_rule'\'',\
-#    sa.Column('\''id'\'', sa.Integer(), nullable=False),\
-#    sa.Column('\''rule_name'\'', sa.String(length=128), nullable=False),\
-#    sa.Column('\''source_ip'\'', sa.String(length=45), nullable=False),\
-#    sa.Column('\''destination_ip'\'', sa.String(length=45), nullable=True),\
-#    sa.Column('\''ports'\'', JSONEncodedList(), nullable=True),\
-#    sa.Column('\''protocol'\'', sa.String(length=16), nullable=True),\
-#    sa.Column('\''description'\'', sa.String(length=256), nullable=True),\
-#    sa.Column('\''created_at'\'', sa.DateTime(), nullable=True),\
-#    sa.Column('\''expires_at'\'', sa.DateTime(), nullable=True),\
-#    sa.Column('\''status'\'', sa.String(length=32), nullable=True),\
-#    sa.Column('\''firewalls_involved'\'', JSONEncodedList(), nullable=True),\
-#    sa.Column('\''firewalls_to_provision'\'', JSONEncodedList(), nullable=True),\
-#    sa.Column('\''firewalls_already_configured'\'', JSONEncodedList(), nullable=True),\
-#    sa.Column('\''requested_by_user_id'\'', sa.Integer(), nullable=True),\
-#    sa.Column('\''approved_by_user_id'\'', sa.Integer(), nullable=True),\
-#    sa.ForeignKeyConstraint(['\''approved_by_user_id'\''], ['\''user.id'\''], ),\
-#    sa.ForeignKeyConstraint(['\''requested_by_user_id'\''], ['\''user.id'\''], ),\
-#    sa.PrimaryKeyConstraint('\''id'\''),\
-#    sa.UniqueConstraint('\''rule_name'\'')\
-#    )' "$MIGRATION_FILE"
-
-    # 2. Insert the 'upgrade' operations (schema creation) into the upgrade() function
-    # The multiline sed command syntax uses backslashes to escape newlines.
-    # Each line of the Python code that needs to be inserted must be preceded by a backslash.
-    sed -i '/def upgrade():/a\
-    op.create_table('\''user'\'',\
-    sa.Column('\''id'\'', sa.Integer(), nullable=False),\
-    sa.Column('\''username'\'', sa.String(length=64), nullable=False),\
-    sa.Column('\''email'\'', sa.String(length=120), nullable=False),\
-    sa.Column('\''password_hash'\'', sa.String(length=512), nullable=False),\
-    sa.Column('\''role'\'', sa.String(length=20), nullable=False),\
-    sa.Column('\''first_name'\'', sa.String(length=64), nullable=True),\
-    sa.Column('\''last_name'\'', sa.String(length=64), nullable=True),\
-    sa.Column('\''created_at'\'', sa.DateTime(), nullable=False),\
-    sa.Column('\''last_login'\'', sa.DateTime(), nullable=True),\
-    sa.PrimaryKeyConstraint('\''id'\''),\
-    sa.UniqueConstraint('\''email'\''),\
-    sa.UniqueConstraint('\''username'\'')\
-    )\
-\
-    op.create_table('\''blacklist_rule'\'',\
-    sa.Column('\''id'\'', sa.Integer(), nullable=False),\
-    sa.Column('\''sequence'\'', sa.Integer(), nullable=False),\
-    sa.Column('\''rule_name'\'', sa.String(length=100), nullable=False),\
-    sa.Column('\''enabled'\'', sa.Boolean(), nullable=True),\
-    sa.Column('\''source_ip'\'', sa.String(length=50), nullable=True),\
-    sa.Column('\''destination_ip'\'', sa.String(length=50), nullable=True),\
-    sa.Column('\''protocol'\'', sa.String(length=10), nullable=True),\
-    sa.Column('\''destination_port'\'', sa.String(length=50), nullable=True),\
-    sa.Column('\''description'\'', sa.String(length=255), nullable=True),\
-    sa.Column('\''created_at'\'', sa.DateTime(), nullable=True),\
-    sa.Column('\''updated_at'\'', sa.DateTime(), nullable=True),\
-    sa.PrimaryKeyConstraint('\''id'\''),\
-    sa.UniqueConstraint('\''sequence'\'')\
-    )\
-\
-    op.create_table('\''firewall_rule'\'',\
-    sa.Column('\''id'\'', sa.Integer(), nullable=False),\
-    sa.Column('\''source_ip'\'', sa.String(length=50), nullable=False),\
-    sa.Column('\''destination_ip'\'', sa.String(length=50), nullable=False),\
-    sa.Column('\''protocol'\'', sa.String(length=10), nullable=False),\
-    sa.Column('\''ports'\'', JSONEncodedList(), nullable=True),\
-    sa.Column('\''status'\'', sa.String(length=20), nullable=True),\
-    sa.Column('\''approval_status'\'', sa.String(length=20), nullable=True),\
-    sa.Column('\''approver_id'\'', sa.String(length=50), nullable=True),\
-    sa.Column('\''approver_comment'\'', sa.Text(), nullable=True),\
-    sa.Column('\''firewalls_involved'\'', JSONEncodedList(), nullable=True),\
-    sa.Column('\''firewalls_to_provision'\'', JSONEncodedList(), nullable=True),\
-    sa.Column('\''firewalls_already_configured'\'', JSONEncodedList(), nullable=True),\
-    sa.Column('\''created_at'\'', sa.DateTime(), nullable=True),\
-    sa.Column('\''implemented_at'\'', sa.DateTime(), nullable=True),\
-    sa.Column('\''approved_at'\'', sa.DateTime(), nullable=True),\
-    sa.Column('\''requester_id'\'', sa.Integer(), nullable=True),\
-    sa.ForeignKeyConstraint(['\''requester_id'\''], ['\''user.id'\''], ),\
-    sa.PrimaryKeyConstraint('\''id'\'')\
-    )' "$MIGRATION_FILE"
-
-# 3. Insert the 'downgrade' operations (schema deletion) into the downgrade() function
-sed -i '/def downgrade():/a\
-    op.drop_table('\''firewall_rule'\'')\
-    op.drop_table('\''blacklist_rule'\'')\
-    op.drop_table('\''user'\'')' "$MIGRATION_FILE"
-
-echo "Migration file populated and patched successfully."
-# --- END AUTOMATIC POPULATION ---
-
-# 7. Apply database migrations to PostgreSQL
-echo "Applying database migrations to PostgreSQL..."
+# 7. Apply all pending database migrations to PostgreSQL
+echo "Applying all pending database migrations to PostgreSQL..."
 flask db upgrade
 
 echo "Firework Application and Database Schema Setup Completed."

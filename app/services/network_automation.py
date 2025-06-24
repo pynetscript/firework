@@ -2,12 +2,20 @@ import subprocess
 import os
 import json
 import logging
-import yaml
-import ipaddress
-import re
+import yaml # Needed for parsing Ansible output files
+import ipaddress # For IP address validation and manipulation
+import re # For regex parsing
+
+# Import Flask-SQLAlchemy db instance and the new models
+from app.models import db, Device, Interface, ArpEntry, RouteEntry
 
 app_logger = logging.getLogger(__name__)
 
+# --- ADD THIS LINE FOR DEBUGGING ---
+app_logger.debug(f"DEBUG: network_automation.py is being loaded from: {os.path.abspath(__file__)}")
+# --- END DEBUGGING LINE ---
+
+# Define the directory where Ansible output files are stored
 OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'outputs')
 
 class NetworkAutomationService:
@@ -24,6 +32,10 @@ class NetworkAutomationService:
         app_logger.info(f"Ansible outputs directory set to: {OUTPUTS_DIR}")
 
     def _execute_ansible_playbook(self, playbook_name, extra_vars=None):
+        """
+        Internal helper to execute an Ansible playbook.
+        Returns stdout and stderr from the playbook execution.
+        """
         playbook_path = os.path.join(self.playbook_dir, playbook_name)
         if not os.path.exists(playbook_path):
             app_logger.error(f"Ansible playbook not found: {playbook_path}")
@@ -34,237 +46,561 @@ class NetworkAutomationService:
             playbook_path,
             '-i', self.inventory_path
         ]
+
         if extra_vars:
+            # Convert extra_vars dict to JSON string for Ansible's --extra-vars
             command.extend(['--extra-vars', json.dumps(extra_vars)])
 
-        env_for_subprocess = os.environ.copy()
-
-        user_home = env_for_subprocess.get('HOME', '/tmp')
+        # Set environment variables for the subprocess to ensure Ansible finds collections
+        # and has a writable HOME for temporary files/cache.
+        env = os.environ.copy()
+        user_home = os.path.expanduser("~firework_app_user") # Assuming 'firework_app_user' is the user Flask runs as
         ansible_runtime_tmp_dir = os.path.join(user_home, '.ansible_runtime_temps')
+        os.makedirs(ansible_runtime_tmp_dir, exist_ok=True) # Ensure tmp dir exists and is writable
 
-        # --- NEW DEBUG LINE HERE ---
-        app_logger.debug(f"DEBUGGING PATHS: Determined user_home='{user_home}', ansible_runtime_tmp_dir='{ansible_runtime_tmp_dir}' before os.makedirs.")
-        # --- END NEW DEBUG LINE ---
-
-        try:
-            # This is the line that might be failing if ansible_runtime_tmp_dir is '/nonexistent'
-            os.makedirs(ansible_runtime_tmp_dir, exist_ok=True)
-        except Exception as e:
-            app_logger.error(f"Failed to create temporary directory '{ansible_runtime_tmp_dir}': {e}")
-            # Re-raise the exception to propagate the error
-            raise
-
-        env_for_subprocess['ANSIBLE_TMPDIR'] = ansible_runtime_tmp_dir
-        env_for_subprocess['TMPDIR'] = ansible_runtime_tmp_dir
-        env_for_subprocess['ANSIBLE_COLLECTIONS_PATH'] = os.path.join(self.playbook_dir, 'ansible_collections')
+        env['ANSIBLE_COLLECTIONS_PATHS'] = os.path.join(self.playbook_dir, 'ansible_collections') # Adjusted path
+        env['ANSIBLE_CACHE_DIR'] = os.path.join(user_home, '.ansible', 'cache')
+        env['ANSIBLE_TMPDIR'] = ansible_runtime_tmp_dir
+        env['TMPDIR'] = ansible_runtime_tmp_dir
+        env['HOME'] = user_home # Ensure HOME is set for Ansible's internal operations
+        env['USER'] = 'firework_app_user' # Set USER as well
 
         app_logger.debug("--- Subprocess Environment for Ansible ---")
-        for key, value in env_for_subprocess.items():
-            if any(kw in key.upper() for kw in ['ANSIBLE', 'TMP', 'TEMP', 'PATH', 'HOME', 'USER', 'COLLECTION']):
-                app_logger.debug(f"  {key}={value}")
+        for k, v in env.items():
+            if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATHS']:
+                app_logger.debug(f"  {k}={v}")
         app_logger.debug("----------------------------------------")
-        app_logger.info(f"Executing Ansible command: {' '.join(command)} in CWD: {self.playbook_dir}")
 
+        # Set CWD to project root so Ansible can find inventory and playbooks
+        # (Assuming playbooks and inventory are in the project root relative to this script's location)
+        cwd = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+
+        app_logger.info(f"Executing Ansible command: {' '.join(command)} in CWD: {cwd}")
         try:
-            process = subprocess.run(
+            # Run the Ansible playbook as a subprocess
+            result = subprocess.run(
                 command,
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=self.playbook_dir,
-                env=env_for_subprocess
+                capture_output=True, # Capture stdout and stderr
+                text=True,           # Decode output as text
+                check=True,          # Raise CalledProcessError for non-zero exit codes
+                cwd=cwd,             # Set current working directory
+                env=env              # Pass the modified environment
             )
             app_logger.info(f"Ansible playbook '{playbook_name}' executed successfully.")
-            app_logger.debug(f"STDOUT for {playbook_name}:\n{process.stdout}")
-            if process.stderr:
-                app_logger.warning(f"STDERR for {playbook_name}:\n{process.stderr}")
-            return process.stdout, process.stderr
+            return result.stdout, result.stderr
         except subprocess.CalledProcessError as e:
             app_logger.error(f"Ansible playbook '{playbook_name}' failed with exit code {e.returncode}.")
-            app_logger.error(f"STDOUT from failure:\n{e.stdout}")
-            app_logger.error(f"STDERR from failure:\n{e.stderr}")
-            raise RuntimeError(f"Ansible playbook '{playbook_name}' failed: {e.stderr or e.stdout}")
+            app_logger.error(f"STDOUT: {e.stdout}")
+            app_logger.error(f"STDERR: {e.stderr}")
+            raise RuntimeError(f"Ansible playbook failed: {e.stderr or e.stdout}")
         except FileNotFoundError:
-            app_logger.critical("Ansible command not found. Is Ansible installed and in your PATH?")
+            app_logger.error(f"Ansible command not found. Is Ansible installed and in PATH? Command: {command[0]}")
             raise RuntimeError("Ansible command not found. Please ensure Ansible is installed.")
         except Exception as e:
-            app_logger.critical(f"An unexpected error occurred during Ansible execution for {playbook_name}: {e}")
-            raise RuntimeError(f"An unexpected error occurred during Ansible execution: {e}")
+            app_logger.critical(f"An unexpected error occurred during Ansible execution: {e}", exc_info=True)
+            raise RuntimeError(f"Unexpected error during Ansible execution: {e}")
 
-    def run_collector(self):
+    # --- New method to process collected data and store in PostgreSQL ---
+    def _process_and_store_network_data(self, output_dir):
+        """
+        Processes collected network data from YAML/text files and stores it in the PostgreSQL database.
+        This replaces the functionality of build_db.py.
+        """
+        app_logger.info("Starting network topology database build process in PostgreSQL.")
+
+        try:
+            # Clear existing data to ensure a fresh import.
+            # IMPORTANT: This will delete all existing network topology data.
+            # If you need to keep historical data or handle updates, this logic needs to be refined.
+            db.session.query(RouteEntry).delete()
+            db.session.query(ArpEntry).delete()
+            db.session.query(Interface).delete()
+            db.session.query(Device).delete()
+            db.session.commit()
+            app_logger.info("Cleared existing network topology data from PostgreSQL.")
+        except Exception as e:
+            db.session.rollback()
+            app_logger.error(f"Error clearing existing network data: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to clear old network data: {e}")
+
+        # Dictionary to hold processed data for each device
+        device_files = {}
+
+        # Scan the outputs directory for collected files
+        for filename in os.listdir(output_dir):
+            filepath = os.path.join(output_dir, filename)
+            if not os.path.isfile(filepath):
+                continue
+
+            hostname = None
+            device_type = None
+            file_category = None
+
+            # Determine hostname and device type based on filename conventions
+            if filename.startswith('ios_') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
+                hostname_match = re.match(r'ios_([^\_]+)_', filename)
+                if hostname_match:
+                    hostname = hostname_match.group(1) # Extract hostname from 'ios_R1_interfaces.yml' -> 'R1'
+                device_type = "Router" if hostname and hostname.startswith('R') else "Switch" # Simple logic
+
+            elif filename.startswith('pafw_') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
+                hostname = "pafw"
+                device_type = "Firewall"
+            elif filename.startswith('fgt_') and ('_interfaces.yml' in filename or '_arp.yml' in filename or '_routes.yml' in filename):
+                hostname = "fgt"
+                device_type = "Firewall"
+
+            # Determine file category
+            if hostname:
+                if '_interfaces.yml' in filename:
+                    file_category = 'interfaces'
+                elif '_arp.txt' in filename or '_arp.yml' in filename:
+                    file_category = 'arp'
+                elif '_routes.txt' in filename or '_routes.yml' in filename:
+                    file_category = 'routes'
+
+                if file_category:
+                    if hostname not in device_files:
+                        device_files[hostname] = {'type': device_type, 'interfaces': None, 'arp': None, 'routes': None}
+                    device_files[hostname][file_category] = filepath # Store full path
+
+        # Process data for each discovered device
+        for hostname, files_info in device_files.items():
+            try:
+                # Get or create the Device entry
+                device = Device.query.filter_by(hostname=hostname).first()
+                if not device:
+                    device = Device(hostname=hostname, device_type=files_info['type'])
+                    db.session.add(device)
+                    db.session.flush() # Flush to get device.device_id
+
+                # Process Interfaces
+                if files_info['interfaces'] and os.path.exists(files_info['interfaces']):
+                    with open(files_info['interfaces'], 'r') as f:
+                        interface_data = yaml.safe_load(f)
+                        # Adapt parsing based on Cisco vs. FortiGate/Palo Alto YAML structure
+                        if hostname.startswith('ios_'): # Cisco IOS facts format
+                            for intf_name, intf_details in interface_data.get('ansible_interfaces', {}).items():
+                                for ip in intf_details.get('ipv4', []):
+                                    interface = Interface(
+                                        device_id=device.device_id,
+                                        name=intf_name,
+                                        ipv4_address=ip.get('address'),
+                                        ipv4_subnet=ip.get('network_prefix'),
+                                        mac_address=intf_details.get('macaddress'),
+                                        status=intf_details.get('operstatus'), # Assuming this maps to desired status
+                                        type=intf_details.get('type')
+                                    )
+                                    db.session.add(interface)
+                        elif hostname == 'pafw': # Palo Alto interfaces from panos_facts
+                            for intf_details in interface_data.get('ansible_facts', {}).get('panos_interfaces', []):
+                                if intf_details.get('ip'):
+                                    interface = Interface(
+                                        device_id=device.device_id,
+                                        name=intf_details.get('name'),
+                                        ipv4_address=intf_details.get('ip'),
+                                        ipv4_subnet=str(ipaddress.ip_network(f"{intf_details.get('ip')}/{intf_details.get('mask')}").prefixlen),
+                                        mac_address=intf_details.get('mac'),
+                                        status=intf_details.get('state'),
+                                        type='Ethernet' # Or parse from name/kind
+                                    )
+                                    db.session.add(interface)
+                        elif hostname == 'fgt': # FortiGate interfaces (adjust based on actual YAML structure)
+                            # FortiGate interface parsing needs to match the exact structure of its panos_facts output
+                            # This is a placeholder, you'll need to adapt it based on your collector.yml output for FortiGate interfaces
+                            for intf_name, intf_details in interface_data.get('interface', {}).items():
+                                if 'ip' in intf_details:
+                                    interface = Interface(
+                                        device_id=device.device_id,
+                                        name=intf_name,
+                                        ipv4_address=intf_details.get('ip').split('/')[0] if '/' in intf_details.get('ip') else intf_details.get('ip'),
+                                        ipv4_subnet=intf_details.get('ip').split('/')[1] if '/' in intf_details.get('ip') else None,
+                                        mac_address=intf_details.get('mac'),
+                                        status=intf_details.get('status'),
+                                        type=intf_details.get('type')
+                                    )
+                                    db.session.add(interface)
+                    
+                # Process ARP entries
+                if files_info['arp'] and os.path.exists(files_info['arp']):
+                    with open(files_info['arp'], 'r') as f:
+                        arp_content = f.read()
+                        if hostname.startswith('ios_'): # Cisco IOS 'show ip arp' output
+                            for line in arp_content.splitlines():
+                                match = re.match(r'Internet\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\S+\s+([0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4})\s+\S+\s+\S+\s+(\S+)', line)
+                                if match:
+                                    ip, mac_cisco, interface_name = match.groups()
+                                    mac = mac_cisco.replace('.', '') # Convert Cisco MAC format
+                                    arp_entry = ArpEntry(
+                                        device_id=device.device_id,
+                                        ip_address=ip,
+                                        mac_address=mac,
+                                        interface_name=interface_name
+                                    )
+                                    db.session.add(arp_entry)
+                        elif hostname == 'pafw': # Palo Alto ARP (XML output)
+                            # Parse XML output if your collector for PA ARP provides XML
+                            # For simplified text output like old pathfinder.py:
+                            for line in arp_content.splitlines():
+                                if 'entry ip' in line:
+                                    ip_match = re.search(r'ip="(.*?)"', line)
+                                    mac_match = re.search(r'mac="(.*?)"', line)
+                                    intf_match = re.search(r'interface="(.*?)"', line)
+                                    if ip_match and mac_match:
+                                        arp_entry = ArpEntry(
+                                            device_id=device.device_id,
+                                            ip_address=ip_match.group(1),
+                                            mac_address=mac_match.group(1),
+                                            interface_name=intf_match.group(1) if intf_match else None
+                                        )
+                                        db.session.add(arp_entry)
+                        elif hostname == 'fgt': # FortiGate ARP (YAML)
+                            arp_data = yaml.safe_load(arp_content)
+                            for entry in arp_data.get('arp_table', []):
+                                arp_entry = ArpEntry(
+                                    device_id=device.device_id,
+                                    ip_address=entry.get('ip'),
+                                    mac_address=entry.get('mac'),
+                                    interface_name=entry.get('interface')
+                                )
+                                db.session.add(arp_entry)
+
+                # Process Route entries
+                if files_info['routes'] and os.path.exists(files_info['routes']):
+                    with open(files_info['routes'], 'r') as f:
+                        route_content = f.read()
+                        if hostname.startswith('ios_'): # Cisco IOS 'show ip route' output
+                            for line in route_content.splitlines():
+                                # Example: "S* 0.0.0.0/0 [1/0] via 10.0.0.1, GigabitEthernet0/0"
+                                # Example: "C        10.0.0.0/24 is directly connected, GigabitEthernet0/0"
+                                match = re.match(r'(\S+\*?)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2})(?: \[(\d+)\/(\d+)\])?(?: via (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))?,?\s*(.+)', line)
+                                if match:
+                                    flags, network, ad_str, metric_str, next_hop, interface_name = match.groups()
+                                    route_type = 'static' if 'S' in flags else 'connected' if 'C' in flags else flags # Simplistic
+                                    
+                                    route_entry = RouteEntry(
+                                        device_id=device.device_id,
+                                        destination_network=network,
+                                        next_hop=next_hop,
+                                        admin_distance=int(ad_str) if ad_str else None,
+                                        metric=int(metric_str) if metric_str else None,
+                                        interface_name=interface_name.strip() if interface_name else None,
+                                        route_type=route_type,
+                                        flags=flags.strip()
+                                    )
+                                    db.session.add(route_entry)
+                        elif hostname == 'pafw': # Palo Alto routes (XML/text output)
+                            # Palo Alto route parsing needs to match the actual output of your collector.yml
+                            # Assuming a more structured output from panos_op show routing route or similar
+                            # This is a placeholder, you'll need to adapt it.
+                            for line in route_content.splitlines():
+                                if 'destination' in line and 'nexthop' in line:
+                                    dest_match = re.search(r'destination="(.*?)"', line)
+                                    next_hop_match = re.search(r'nexthop="(.*?)"', line)
+                                    intf_match = re.search(r'interface="(.*?)"', line)
+                                    type_match = re.search(r'type="(.*?)"', line)
+                                    if dest_match and next_hop_match:
+                                        route_entry = RouteEntry(
+                                            device_id=device.device_id,
+                                            destination_network=dest_match.group(1),
+                                            next_hop=next_hop_match.group(1),
+                                            interface_name=intf_match.group(1) if intf_match else None,
+                                            route_type=type_match.group(1) if type_match else None
+                                        )
+                                        db.session.add(route_entry)
+                        elif hostname == 'fgt': # FortiGate routes (YAML)
+                            route_data = yaml.safe_load(route_content)
+                            for entry in route_data.get('routes', []):
+                                route_entry = RouteEntry(
+                                    device_id=device.device_id,
+                                    destination_network=entry.get('destination'),
+                                    next_hop=entry.get('gateway'),
+                                    interface_name=entry.get('interface'),
+                                    route_type=entry.get('type') # 'static', 'connect', etc.
+                                )
+                                db.session.add(route_entry)
+
+                db.session.commit() # Commit changes for each device
+                app_logger.info(f"Successfully processed and stored data for device: {hostname}")
+
+            except Exception as e:
+                db.session.rollback() # Rollback if any error occurs during processing a device
+                app_logger.error(f"Error processing data for device {hostname}: {e}", exc_info=True)
+                # Don't re-raise immediately, try to process other devices if possible
+                continue 
+
+        app_logger.info("Network topology database build process completed.")
+
+    def run_data_collection(self):
+        """
+        Executes the Ansible collector playbook and then processes the collected data
+        into the PostgreSQL database.
+        """
         app_logger.info("Running Ansible network data collector (collector.yml)...")
         try:
+            # The collector playbook saves outputs to OUTPUTS_DIR, so we don't need its stdout/stderr here
+            # beyond just checking for successful execution.
             stdout, stderr = self._execute_ansible_playbook('collector.yml')
             app_logger.info("Network data collection completed.")
-            return {"status": "success", "message": "Network data collected.", "stdout": stdout, "stderr": stderr}
-        except RuntimeError as e:
-            app_logger.error(f"Failed to collect network data: {e}")
-            return {"status": "error", "message": f"Failed to collect network data: {e}"}
-
-    def build_database(self):
-        app_logger.info("Building network topology database (build_db.py)...")
-        try:
-            build_db_script_path = os.path.join(self.playbook_dir, 'build_db.py')
-            if not os.path.exists(build_db_script_path):
-                app_logger.error(f"Database builder script not found: {build_db_script_path}")
-                raise FileNotFoundError(f"Database builder script not found: {build_db_script_path}")
-                
-            process = subprocess.run(
-                ['python3', build_db_script_path],
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=self.playbook_dir
-            )
-            app_logger.info("Network topology database built successfully.")
-            app_logger.debug(f"STDOUT from build_db.py:\n{process.stdout}")
-            if process.stderr:
-                app_logger.warning(f"STDERR from build_db.py:\n{process.stderr}")
-            return {"status": "success", "message": "Database built.", "stdout": process.stdout, "stderr": process.stderr}
-        except subprocess.CalledProcessError as e:
-            app_logger.error(f"Database builder script failed with exit code {e.returncode}.")
-            app_logger.error(f"STDOUT from failure:\n{e.stdout}")
-            app_logger.error(f"STDERR from failure:\n{e.stderr}")
-            return {"status": "error", "message": f"Database build failed: {e.stderr or e.stdout}"}
-        except FileNotFoundError:
-            app_logger.critical("Python interpreter or build_db.py script not found.")
-            raise RuntimeError("Database builder script or Python interpreter not found.")
-        except Exception as e:
-            app_logger.critical(f"An unexpected error occurred during database build: {e}")
-            return {"status": "error", "message": f"An unexpected error occurred during database build: {e}"}
-
-    def find_path_and_firewalls(self, source_ip, destination_ip):
-        app_logger.info(f"Running pathfinder (pathfinder.py) for {source_ip} to {destination_ip}...")
-        try:
-            pathfinder_script_path = os.path.join(self.playbook_dir, 'pathfinder.py')
-            if not os.path.exists(pathfinder_script_path):
-                app_logger.error(f"Pathfinder script not found: {pathfinder_script_path}")
-                raise FileNotFoundError(f"Pathfinder script not found: {pathfinder_script_path}")
-                
-            process = subprocess.run(
-                ['python3', pathfinder_script_path, source_ip, destination_ip, '--json-output'],
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=self.playbook_dir
-            )
-            firewalls = []
-            if process.stdout:
-                try:
-                    firewalls = json.loads(process.stdout.strip())
-                    if not isinstance(firewalls, list):
-                        firewalls = []
-                except json.JSONDecodeError:
-                    app_logger.error(f"Pathfinder output is not valid JSON: {process.stdout.strip()}")
-                    firewalls = []
             
-            app_logger.info(f"Pathfinder completed. Firewalls found: {firewalls}")
-            app_logger.debug(f"STDOUT from pathfinder.py:\n{process.stdout}")
-            if process.stderr:
-                app_logger.warning(f"STDERR from pathfinder.py:\n{process.stderr}")
+            # Now, process these files and store them in the database
+            self._process_and_store_network_data(OUTPUTS_DIR)
+            app_logger.info("Network topology database built successfully.")
 
-            return firewalls
-        except subprocess.CalledProcessError as e:
-            app_logger.error(f"Pathfinder script failed with exit code {e.returncode}.")
-            app_logger.error(f"STDOUT from failure:\n{e.stdout}")
-            app_logger.error(f"STDERR from failure:\n{e.stderr}")
-            raise RuntimeError(f"Pathfinder failed: {e.stderr or e.stdout}")
-        except FileNotFoundError:
-            app_logger.critical("Python interpreter or pathfinder.py script not found.")
-            raise RuntimeError("Pathfinder script or Python interpreter not found.")
+        except RuntimeError as e:
+            app_logger.error(f"Network data collection or processing failed: {e}")
+            raise
         except Exception as e:
-            app_logger.critical(f"An unexpected error occurred during pathfinding: {e}")
-            raise RuntimeError(f"An unexpected error occurred during pathfinding: {e}")
+            app_logger.critical(f"An unexpected error occurred during network data collection/processing: {e}", exc_info=True)
+            raise
 
 
-    def check_policy_existence(self, source_ip, destination_ip, protocol, port, firewalls):
-        app_logger.info(f"Checking policy existence for {source_ip} to {destination_ip}:{port}/{protocol} on firewalls: {firewalls}")
+    # --- Placeholder for Pathfinding Logic ---
+    def _find_network_path_in_db(self, source_ip, destination_ip):
+        """
+        Finds a network path between source and destination IPs using the data
+        stored in the PostgreSQL database.
+        This replaces the functionality of pathfinder.py.
+        """
+        app_logger.info(f"Starting pathfinding from {source_ip} to {destination_ip} using DB data.")
         
-        firewalls_to_provision = []
-        firewalls_already_configured = []
+        # This is a placeholder. The actual pathfinding logic will be implemented here
+        # using Device, Interface, ArpEntry, RouteEntry models.
+        # This will involve graph traversal algorithms (e.g., BFS/DFS).
+        # For now, it will return a dummy response or raise an error.
 
-        if not firewalls:
-            app_logger.info("No firewalls in path. No policies to check.")
-            return {
-                "firewalls_to_provision": [],
-                "firewalls_already_configured": [],
-                "all_policies_exist": True
-            }
+        path = [] # List of tuples: (device_hostname, outgoing_interface, next_hop_ip, route_type)
+        firewalls_in_path = [] # List of firewall hostnames
 
-        for firewall_name in firewalls:
+        try:
+            source_ip_obj = ipaddress.ip_address(source_ip)
+            destination_ip_obj = ipaddress.ip_address(destination_ip)
+        except ipaddress.AddressValueError:
+            return "Error: Invalid IP address format. Please enter valid IPv4 addresses.", []
+
+        # --- Simplified Pathfinding Logic Placeholder ---
+        # This is a very basic, non-recursive example.
+        # A real pathfinder would use BFS/DFS on the interconnected devices.
+
+        # 1. Try to find the device directly connected to the source_ip
+        src_device = None
+        src_interface = None
+        # Check interfaces directly
+        intf = Interface.query.filter(
+            Interface.ipv4_address == str(source_ip_obj)
+        ).first()
+        if intf:
+            src_device = Device.query.get(intf.device_id)
+            src_interface = intf.name
+        
+        if not src_device:
+            # If not directly on an interface, check for a subnet it belongs to
+            # This is more complex and would involve iterating subnets and checking if IP is in range.
+            # For simplicity, let's assume direct interface or next-hop is known.
+            # Or perhaps check ARP entries if source is a host behind a device.
+            pass # Placeholder for more complex source device lookup
+
+        if not src_device:
+            app_logger.warning(f"Source IP {source_ip} not found on any device interface.")
+            return f"Pathfinding failed: Source IP {source_ip} not found on any device interface.", []
+
+        path.append((src_device.hostname, src_interface, str(source_ip_obj), 'source'))
+        
+        current_ip = source_ip_obj
+        current_device = src_device
+        
+        # Simple loop: find next hop from current device until destination is reached or no more routes
+        max_hops = 10 # Prevent infinite loops
+        for _ in range(max_hops):
+            if current_ip == destination_ip_obj:
+                break # Destination reached
+
+            # Check if current_ip is directly connected to destination_ip on current_device (ARP/Interface)
+            # (Simplified: A real check would involve direct subnet connectivity)
+
+            # Find a route from current_device to destination_ip
+            # Prioritize more specific routes (longer prefix)
+            routes = RouteEntry.query.filter(
+                RouteEntry.device_id == current_device.device_id
+            ).order_by(sa.desc(func.length(RouteEntry.destination_network))).all() # Order by prefix length
+
+            next_hop_found = False
+            for route in routes:
+                try:
+                    dest_net = ipaddress.ip_network(route.destination_network)
+                    if destination_ip_obj in dest_net:
+                        # Found a route to the destination network
+                        if route.next_hop:
+                            next_hop_ip = ipaddress.ip_address(route.next_hop)
+                            path.append((current_device.hostname, route.interface_name, str(next_hop_ip), route.route_type))
+                            
+                            # Find the device associated with this next_hop_ip (its interface)
+                            next_intf = Interface.query.filter(Interface.ipv4_address == str(next_hop_ip)).first()
+                            if next_intf:
+                                current_device = Device.query.get(next_intf.device_id)
+                                current_ip = next_hop_ip
+                                next_hop_found = True
+                                break
+                            else:
+                                # Next hop is outside known topology or a host, path terminates
+                                path.append((f"Unknown device/host for {str(next_hop_ip)}", "N/A", "N/A", "Path Terminated"))
+                                next_hop_found = True
+                                break # Path ends here if next hop device is unknown
+                        else:
+                            # Directly connected route to destination (current_device is last hop)
+                            path.append((current_device.hostname, route.interface_name, str(destination_ip_obj), 'direct_connect'))
+                            current_ip = destination_ip_obj # Destination reached
+                            next_hop_found = True
+                            break
+                except ipaddress.AddressValueError:
+                    app_logger.warning(f"Invalid network format in route entry: {route.destination_network}")
+                    continue
+
+            if not next_hop_found:
+                app_logger.warning(f"No route found from {current_device.hostname} for destination {destination_ip}.")
+                break # No route found, path terminates
+
+            if current_ip == destination_ip_obj:
+                break # Destination reached
+
+        if current_ip != destination_ip_obj:
+            app_logger.warning(f"Pathfinding stopped before reaching destination: {destination_ip_obj}")
+            return f"Pathfinding failed: Could not reach {destination_ip}.", []
+
+        # Identify firewalls in the path
+        firewalls_in_path = [
+            hop[0] for hop in path 
+            if Device.query.filter_by(hostname=hop[0]).first() and 
+               Device.query.filter_by(hostname=hop[0]).first().device_type == "Firewall"
+        ]
+
+        app_logger.info(f"Path found. Firewalls in path: {firewalls_in_path}")
+        return path, firewalls_in_path
+
+    # --- Update methods that use the old subprocess calls ---
+    def perform_pre_check(self, rule_data, firewalls_involved):
+        """
+        Performs pre-checks on relevant firewalls.
+        Now also includes internal pathfinding using the DB.
+        """
+        app_logger.info(f"Performing pre-check for rule {rule_data['rule_id']} on firewalls: {firewalls_involved}")
+
+        pre_check_stdout = ""
+        pre_check_stderr = ""
+        
+        # Step 1: Run data collection and build internal DB if not recently done
+        # Consider adding a timestamp or flag to avoid frequent collection for performance
+        try:
+            self.run_data_collection()
+        except Exception as e:
+            app_logger.error(f"Initial network data collection failed during pre-check: {e}")
+            raise RuntimeError(f"Pre-check failed: Network data collection failed. {e}")
+
+        # Step 2: Perform pathfinding using the internal DB
+        app_logger.info(f"Performing pathfinding from {rule_data['source_ip']} to {rule_data['destination_ip']}.")
+        path, discovered_firewalls = self._find_network_path_in_db(
+            rule_data['source_ip'], rule_data['destination_ip']
+        )
+        
+        if isinstance(path, str): # Pathfinding returned an error message
+            app_logger.error(f"Pathfinding failed: {path}")
+            raise RuntimeError(f"Pre-check failed: Pathfinding error: {path}")
+
+        app_logger.info(f"Pathfinding completed. Discovered firewalls in path: {discovered_firewalls}")
+        rule_data['firewalls_involved'] = discovered_firewalls # Update rule_data with discovered firewalls
+
+        # Filter firewalls for pre-check to only those involved AND provided in the input list
+        firewalls_for_precheck = [fw for fw in firewalls_involved if fw in discovered_firewalls]
+
+        if not firewalls_for_precheck:
+            app_logger.warning(f"No firewalls identified for pre-check between {rule_data['source_ip']} and {rule_data['destination_ip']} from the provided list.")
+            # If no firewalls are involved, but the request still makes sense (e.g., internal host-to-host)
+            # we might want to skip further pre-checks and mark as 'No Provisioning Needed'.
+            return "No firewalls in path require pre-check based on current network topology. Skipping pre-checks.", "", []
+
+        for firewall_name in firewalls_for_precheck:
             extra_vars = {
                 'firewall_name': firewall_name,
-                'source_ip': source_ip,
-                'destination_ip': destination_ip,
-                'protocol': protocol,
-                'port': port
+                'source_ip': rule_data['source_ip'],
+                'destination_ip': rule_data['destination_ip'],
+                'protocol': rule_data['protocol'],
+                'port': rule_data['ports'][0] if rule_data['ports'] else 'any' # Assuming first port for pre-check
             }
 
             playbook = None
-            if 'pafw' in firewall_name.lower():
+            if 'pa' in firewall_name.lower():
                 playbook = 'pre_check_firewall_rule_paloalto.yml'
             elif 'fgt' in firewall_name.lower():
                 playbook = 'pre_check_firewall_rule_fortinet.yml'
             else:
-                app_logger.warning(f"Unknown firewall type for {firewall_name}. Cannot perform pre-check.")
-                firewalls_to_provision.append(firewall_name)
+                app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping pre-check.")
                 continue
 
+            app_logger.info(f"Pre-checking rule {rule_data['rule_id']} on {firewall_name} using {playbook}...")
             try:
                 stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
-                
+                pre_check_stdout += f"\n--- {firewall_name} STDOUT ---\n" + stdout
+                pre_check_stderr += f"\n--- {firewall_name} STDERR ---\n" + stderr
+
                 if "POLICY_EXISTS" in stdout:
-                    app_logger.info(f"Policy EXISTS on {firewall_name}.")
-                    firewalls_already_configured.append(firewall_name)
+                    app_logger.info(f"Rule {rule_data['rule_id']} already exists on {firewall_name}.")
+                    # Add to already_configured list if policy exists
+                    if 'firewalls_already_configured' not in rule_data or rule_data['firewalls_already_configured'] is None:
+                        rule_data['firewalls_already_configured'] = []
+                    rule_data['firewalls_already_configured'].append(firewall_name)
                 else:
-                    app_logger.info(f"Policy DOES NOT exist on {firewall_name}.")
-                    firewalls_to_provision.append(firewall_name)
+                    app_logger.info(f"Rule {rule_data['rule_id']} does NOT exist on {firewall_name}.")
+                    # Add to firewalls_to_provision if policy doesn't exist
+                    if 'firewalls_to_provision' not in rule_data or rule_data['firewalls_to_provision'] is None:
+                        rule_data['firewalls_to_provision'] = []
+                    rule_data['firewalls_to_provision'].append(firewall_name)
 
             except RuntimeError as e:
-                app_logger.error(f"Pre-check for policy existence failed on {firewall_name}: {e}. Assuming needs provisioning.")
-                firewalls_to_provision.append(firewall_name)
+                app_logger.error(f"Failed to pre-check rule {rule_data['rule_id']} on {firewall_name}: {e}")
+                # Don't re-raise, allow other pre-checks to run.
+                # The calling function will need to check the status of firewalls_to_provision/already_configured.
             except Exception as e:
-                app_logger.critical(f"Unexpected error during policy existence check on {firewall_name}: {e}. Assuming needs provisioning.")
-                firewalls_to_provision.append(firewall_name)
+                app_logger.critical(f"An unexpected error occurred during pre-check for rule {rule_data['rule_id']} on {firewall_name}: {e}")
+                # Don't re-raise
         
-        all_policies_exist_flag = len(firewalls_to_provision) == 0
-
-        if all_policies_exist_flag:
-            app_logger.info("Policy confirmed to exist on ALL specified firewalls in the path.")
-        else:
-            app_logger.info(f"Policy does NOT exist on all specified firewalls. Firewalls to provision: {firewalls_to_provision}")
-            
-        return {
-            "firewalls_to_provision": firewalls_to_provision,
-            "firewalls_already_configured": firewalls_already_configured,
-            "all_policies_exist": all_policies_exist_flag
-        }
+        # Return combined output and the potentially modified rule_data
+        return pre_check_stdout, pre_check_stderr, firewalls_for_precheck
 
 
-    def provision_rule(self, rule_data, firewalls):
-        app_logger.info(f"Initiating provisioning for rule ID {rule_data['rule_id']} on firewalls: {firewalls}")
-        
+    def provision_firewall_rule(self, rule_data, firewalls_to_provision):
+        """
+        Provisions a firewall rule on specified firewalls.
+        """
+        app_logger.info(f"Attempting to provision rule {rule_data['rule_id']} on firewalls: {firewalls_to_provision}")
         provision_stdout = ""
         provision_stderr = ""
+        
+        successfully_provisioned = []
+        failed_provisioning = []
 
-        for firewall_name in firewalls:
+        if not firewalls_to_provision:
+            app_logger.info(f"No firewalls specified for provisioning for rule {rule_data['rule_id']}. Skipping provisioning.")
+            return "No firewalls to provision.", "", [], []
+
+        for firewall_name in firewalls_to_provision:
             extra_vars = {
                 'firewall_name': firewall_name,
                 'rule_id': rule_data['rule_id'],
                 'source_ip': rule_data['source_ip'],
                 'destination_ip': rule_data['destination_ip'],
                 'protocol': rule_data['protocol'],
-                'dest_port': rule_data['port'],
+                'dest_port': rule_data['ports'][0] if rule_data['ports'] else 'any', # Assuming first port for provisioning
                 'rule_description': rule_data['rule_description']
             }
-            
+
             playbook = None
-            if 'pafw' in firewall_name.lower():
+            if 'pa' in firewall_name.lower():
                 playbook = 'provision_firewall_rule_paloalto.yml'
             elif 'fgt' in firewall_name.lower():
                 playbook = 'provision_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping provisioning.")
+                failed_provisioning.append(firewall_name)
                 continue
 
             app_logger.info(f"Provisioning rule {rule_data['rule_id']} on {firewall_name} using {playbook}...")
@@ -272,36 +608,53 @@ class NetworkAutomationService:
                 stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
                 provision_stdout += f"\n--- {firewall_name} STDOUT ---\n" + stdout
                 provision_stderr += f"\n--- {firewall_name} STDERR ---\n" + stderr
-                app_logger.info(f"Successfully provisioned rule {rule_data['rule_id']} on {firewall_name}.")
+                app_logger.info(f"Rule {rule_data['rule_id']} successfully provisioned on {firewall_name}.")
+                successfully_provisioned.append(firewall_name)
             except RuntimeError as e:
                 app_logger.error(f"Failed to provision rule {rule_data['rule_id']} on {firewall_name}: {e}")
-                raise
+                failed_provisioning.append(firewall_name)
+                provision_stderr += f"\n--- {firewall_name} ERROR ---\n" + str(e)
+            except Exception as e:
+                app_logger.critical(f"An unexpected error occurred during provisioning for rule {rule_data['rule_id']} on {firewall_name}: {e}")
+                failed_provisioning.append(firewall_name)
+                provision_stderr += f"\n--- {firewall_name} UNEXPECTED ERROR ---\n" + str(e)
 
-        return provision_stdout
+        return provision_stdout, provision_stderr, successfully_provisioned, failed_provisioning
 
 
-    def post_check_rule(self, rule_data, firewalls):
-        app_logger.info(f"Initiating post-check for rule ID {rule_data['rule_id']} on firewalls: {firewalls}")
-        
+    def perform_post_check(self, rule_data, provisioned_firewalls):
+        """
+        Performs post-checks on firewalls where rules were provisioned.
+        """
+        app_logger.info(f"Performing post-check for rule {rule_data['rule_id']} on firewalls: {provisioned_firewalls}")
         post_check_stdout = ""
         post_check_stderr = ""
+        
+        verified_firewalls = []
+        unverified_firewalls = []
 
-        for firewall_name in firewalls:
+        if not provisioned_firewalls:
+            app_logger.info(f"No firewalls specified for post-check for rule {rule_data['rule_id']}. Skipping post-checks.")
+            return "No firewalls to post-check.", ""
+
+        for firewall_name in provisioned_firewalls:
             extra_vars = {
                 'firewall_name': firewall_name,
                 'rule_id': rule_data['rule_id'],
                 'source_ip': rule_data['source_ip'],
                 'destination_ip': rule_data['destination_ip'],
                 'protocol': rule_data['protocol'],
-                'dest_port': rule_data['port']
+                'dest_port': rule_data['ports'][0] if rule_data['ports'] else 'any' # Assuming first port for post-check
             }
 
-            if 'pafw' in firewall_name.lower():
+            playbook = None
+            if 'pa' in firewall_name.lower():
                 playbook = 'post_check_firewall_rule_paloalto.yml'
             elif 'fgt' in firewall_name.lower():
                 playbook = 'post_check_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping post-check.")
+                unverified_firewalls.append(firewall_name)
                 continue
 
             app_logger.info(f"Post-checking rule {rule_data['rule_id']} on {firewall_name} using {playbook}...")
@@ -310,17 +663,26 @@ class NetworkAutomationService:
                 post_check_stdout += f"\n--- {firewall_name} STDOUT ---\n" + stdout
                 post_check_stderr += f"\n--- {firewall_name} STDERR ---\n" + stderr
                 
-                if "POLICY_VERIFIED" in stdout:
+                # Check for a specific string in stdout indicating successful post-check
+                if "POLICY_VERIFIED" in stdout: # Playbook should output this if verification passes
                     app_logger.info(f"Rule {rule_data['rule_id']} successfully verified on {firewall_name}.")
+                    verified_firewalls.append(firewall_name)
                 else:
                     app_logger.warning(f"Rule {rule_data['rule_id']} NOT verified on {firewall_name}. Check Ansible output.")
-                    raise RuntimeError(f"Post-check verification failed on {firewall_name}.")
+                    unverified_firewalls.append(firewall_name)
+                    # Don't raise here, let the process continue to check other firewalls
+                    # raise RuntimeError(f"Post-check verification failed on {firewall_name}.")
 
             except RuntimeError as e:
                 app_logger.error(f"Failed to post-check rule {rule_data['rule_id']} on {firewall_name}: {e}")
-                raise
+                unverified_firewalls.append(firewall_name)
+                post_check_stderr += f"\n--- {firewall_name} ERROR ---\n" + str(e)
             except Exception as e:
                 app_logger.critical(f"An unexpected error occurred during post-check for rule {rule_data['rule_id']} on {firewall_name}: {e}")
-                raise
+                unverified_firewalls.append(firewall_name)
+                post_check_stderr += f"\n--- {firewall_name} UNEXPECTED ERROR ---\n" + str(e)
 
-        return post_check_stdout
+        # You might want to return verified_firewalls and unverified_firewalls lists
+        # to the caller so it can update the FirewallRule status more granularly.
+        return post_check_stdout, post_check_stderr, verified_firewalls, unverified_firewalls
+

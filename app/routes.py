@@ -11,761 +11,566 @@ from app.decorators import roles_required, no_self_approval
 
 routes = Blueprint('routes', __name__)
 
-network_automation_service = NetworkAutomationService()
+# REMOVED: network_automation_service = NetworkAutomationService() from global scope.
+# The instance is now created in app/__init__.py and attached to this blueprint.
 
 app_logger = logging.getLogger(__name__)
 
+# Helper function to get the NetworkAutomationService instance attached to the blueprint.
+# This ensures that the correctly initialized instance is used within blueprint views.
+def get_network_automation_service():
+    """
+    Retrieves the NetworkAutomationService instance attached to the blueprint.
+    This instance is created and managed by the Flask app factory (`create_app`).
+    """
+    if not hasattr(routes, 'network_automation_service'):
+        # This fallback case should ideally not be hit in a properly initialized app.
+        # It's primarily for testing or unusual loading scenarios.
+        app_logger.warning("NetworkAutomationService not found on blueprint. Creating a fallback instance.")
+        routes.network_automation_service = NetworkAutomationService()
+    return routes.network_automation_service
+
+
 @routes.route('/')
 def home():
-    # If not authenticated, Flask-Login will redirect to auth.login due to login_manager.login_view setting.
-    # We explicitly redirect here to ensure a clean redirect from the root URL.
+    """
+    Redirects unauthenticated users to the login page.
+    Redirects authenticated users to the task results page.
+    """
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
-    # Redirect authenticated users to a default dashboard page
     return redirect(url_for('routes.task_results'))
 
+
 @routes.route('/request-form')
-@login_required # Ensures user is logged in
-# Changed roles: Now includes 'approver' and 'implementer'
+@login_required
 @roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
 def request_form():
+    """
+    Renders the form for submitting a new network rule request.
+    Accessible by superadmin, admin, requester, approver, and implementer roles.
+    """
     return render_template('request_form.html')
 
 
-@routes.route('/task-results')
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin', 'implementer', 'approver', 'requester') # All roles can see task results, but content varies
-def task_results():
-    if current_user.role == 'requester':
-        # Requesters only see their own requests
-        rules = FirewallRule.query.filter_by(requester_id=current_user.id).all()
-        app_logger.info(f"Requester {current_user.username} viewing their own task results.")
-    else:
-        # Other roles see all requests
-        rules = FirewallRule.query.all()
-        app_logger.info(f"User {current_user.username} (Role: {current_user.role}) viewing all task results.")
-
-    for rule in rules:
-        if rule.firewalls_involved is None:
-            rule.firewalls_involved = []
-        if rule.firewalls_to_provision is None: # Ensure these are lists for rendering
-            rule.firewalls_to_provision = []
-        if rule.firewalls_already_configured is None: # Ensure these are lists for rendering
-            rule.firewalls_already_configured = []
-        if rule.ports is None: # Ensure ports is a list for rendering if it can be None
-            rule.ports = []
-    return render_template('task_results.html', rules=rules)
-
-
-# --- User Profile Page ---
-@routes.route('/profile', methods=['GET', 'POST'])
-@login_required # Ensures user is logged in
-def profile():
-    user = current_user # The current_user object is already loaded by Flask-Login
-
-    if request.method == 'POST':
-        # Update user details
-        user.username = request.form.get('username', user.username) # Username from form, fallback to current
-        user.email = request.form.get('email', user.email) # Email from form, fallback to current
-        user.first_name = request.form.get('first_name')
-        user.last_name = request.form.get('last_name')
-
-        new_password = request.form.get('password')
-        if new_password:
-            user.set_password(new_password)
-            flash('Password updated successfully!', 'success')
-            app_logger.info(f"User {user.username} (ID: {user.id}) updated their password.")
-
-        try:
-            db.session.commit()
-            flash('Profile updated successfully!', 'success')
-            app_logger.info(f"User {user.username} (ID: {user.id}) updated their profile details.")
-            return redirect(url_for('routes.profile'))
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Error updating profile: {e}', 'error')
-            app_logger.error(f"Error updating profile for user {user.username} (ID: {user.id}): {e}", exc_info=True)
-
-    return render_template('profile.html', user=user)
-
-# --- Helper Validation Functions (unchanged, not directly exposed as routes) ---
-def validate_ip_address(ip_str, field_name):
-    """Validates if a string is a valid IPv4 address or network."""
-    if not ip_str:
-        return False, f"{field_name} cannot be empty."
-    try:
-        ipaddress.IPv4Address(ip_str)
-        return True, None
-    except ipaddress.AddressValueError:
-        try:
-            ipaddress.IPv4Network(ip_str, strict=False)
-            return True, None
-        except ipaddress.AddressValueError:
-            return False, f"Invalid {field_name}: '{ip_str}'. Must be a valid IPv4 address or network (e.g., 10.0.0.0/24)."
-
-def validate_protocol(protocol_str):
-    """
-    Validates if a string is a common protocol (tcp, udp, icmp) or a valid protocol number.
-    """
-    common_protocols = ['tcp', 'udp', 'icmp', 'any']
-    if protocol_str.lower() in common_protocols:
-        return True, None
-    
-    try:
-        proto_num = int(protocol_str)
-        if 0 < proto_num <= 255:
-            return True, None
-        else:
-            return False, f"Invalid protocol number: '{protocol_str}'. Must be between 1 and 255."
-    except ValueError:
-        return False, f"Invalid protocol: '{protocol_str}'. Must be 'tcp', 'udp', 'icmp', 'any' or a valid protocol number (1-255)."
-
-def validate_port(port_value):
-    """Validates if a value is a valid port number (1-65535) or a port range (e.g., 8000-8999) or 'any'."""
-    # Handle None or empty string input upfront
-    if port_value is None or port_value == '':
-        return False, "Port cannot be empty."
-
-    # Now port_value is guaranteed not to be None or empty string
-    # Convert to string and normalize for comparison/parsing
-    port_str = str(port_value).strip().lower()
-    
-    if port_str == 'any':
-        return True, None
-
-    if '-' in port_str:
-        try:
-            rule_start, rule_end = map(int, port_str.split('-'))
-            if 0 < rule_start <= rule_end <= 65535:
-                return True, None
-            else:
-                return False, f"Invalid port range: '{port_value}'. Start and end ports must be between 1 and 65535, and start must be less than or equal to end."
-        except ValueError:
-            return False, f"Invalid port range format: '{port_value}'. Use 'start-end' (e.g., '8000-8999')."
-    else:
-        try:
-            port_num = int(port_str) # Corrected to use port_str here
-            if 0 < port_num <= 65535:
-                return True, None
-            else:
-                return False, f"Invalid port: {port_num}. Must be an integer between 1 and 65535."
-        except ValueError:
-            return False, f"Invalid port format: '{port_value}'. Must be an integer, 'start-end', or 'any'."
-
-
-# --- Blacklist Logic (unchanged) ---
-def check_blacklist(source_ip, destination_ip, protocol, destination_port):
-    """
-    Checks if a given request matches any active blacklist rules.
-    Rules are processed from top to bottom, sorted by sequence.
-    Returns (True, rule_name) if blacklisted, (False, None) otherwise.
-    """
-    blacklist_rules = BlacklistRule.query.filter_by(enabled=True).order_by(BlacklistRule.sequence).all()
-
-    for rule in blacklist_rules:
-        # Source IP check
-        src_match = False
-        if rule.source_ip is None or rule.source_ip.lower() == 'any':
-            src_match = True
-        else:
-            try:
-                rule_src_net = ipaddress.ip_network(rule.source_ip, strict=False)
-                if ipaddress.ip_address(source_ip) in rule_src_net:
-                    src_match = True
-            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
-                pass
-
-        if not src_match:
-            continue
-
-        # Destination IP check
-        dst_match = False
-        if rule.destination_ip is None or rule.destination_ip.lower() == 'any':
-            dst_match = True
-        else:
-            try:
-                rule_dst_net = ipaddress.ip_network(rule.destination_ip, strict=False)
-                if ipaddress.ip_address(destination_ip) in rule_dst_net:
-                    dst_match = True
-            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
-                pass
-
-        if not dst_match:
-            continue
-
-        # Protocol check
-        proto_match = False
-        if rule.protocol is None or rule.protocol.lower() == 'any':
-            proto_match = True
-        elif rule.protocol.lower() == protocol.lower():
-            proto_match = True
-        else:
-            try:
-                if int(rule.protocol) == int(protocol):
-                    proto_match = True
-            except ValueError:
-                pass
-
-        if not proto_match:
-            continue
-
-        # Destination Port check
-        port_match = False
-        if rule.destination_port is None or rule.destination_port.lower() == 'any':
-            port_match = True
-        elif '-' in str(rule.destination_port):
-            try:
-                rule_start, rule_end = map(int, rule.destination_port.split('-'))
-                req_port = int(destination_port)
-                if rule_start <= req_port <= rule_end:
-                    port_match = True
-            except ValueError:
-                pass
-        elif str(rule.destination_port) == str(destination_port):
-            port_match = True
-
-        if port_match:
-            return True, rule.rule_name
-    return False, None
-
-@routes.route('/api/request', methods=['POST'])
+@routes.route('/submit-request', methods=['POST'])
 @login_required
-@roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer') # Updated roles
-def create_request():
-    data = request.form
-
-    source_ip = data.get('source_ip')
-    destination_ip = data.get('destination_ip')
-    protocol = data.get('protocol')
-    dest_port = data.get('port') # This is the form input, named 'port'
+@roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
+def submit_request():
+    """
+    Handles the submission of a new network rule request.
+    Performs validation, blacklist checks, creates the rule in the DB,
+    and initiates a pre-check if auto-approved (for superadmins/admins).
+    """
+    app_logger.info(f"Received new network request from {current_user.username}")
+    source_ip = request.form.get('source_ip')
+    destination_ip = request.form.get('destination_ip')
+    protocol = request.form.get('protocol')
+    ports_raw = request.form.get('ports')
+    rule_description = request.form.get('rule_description')
 
     errors = []
 
-    is_valid, error_msg = validate_ip_address(source_ip, "Source IP")
-    if not is_valid: errors.append(error_msg)
-    is_valid, error_msg = validate_ip_address(destination_ip, "Destination IP")
-    if not is_valid: errors.append(error_msg)
-    is_valid, error_msg = validate_protocol(protocol)
-    if not is_valid: errors.append(error_msg)
-    is_valid, error_msg = validate_port(dest_port)
-    if not is_valid: errors.append(error_msg)
+    # Validate IP addresses
+    try:
+        ipaddress.ip_address(source_ip)
+    except ValueError:
+        errors.append('Invalid Source IP address format.')
+    
+    try:
+        ipaddress.ip_address(destination_ip)
+    except ValueError:
+        errors.append('Invalid Destination IP address format.')
+
+    # Validate protocol (simple check)
+    allowed_protocols = ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']
+    if protocol.lower() not in allowed_protocols and not protocol.isdigit():
+        errors.append('Invalid Protocol. Must be tcp, udp, icmp, any, or a protocol number.')
+    
+    # Process ports
+    ports = []
+    if ports_raw and protocol.lower() not in ['icmp', 'any', '1']: # Ports not relevant for ICMP or ANY protocol
+        ports_list = [p.strip() for p in ports_raw.split(',') if p.strip()]
+        for p in ports_list:
+            if '-' in p:
+                start, end = p.split('-')
+                if not (start.isdigit() and end.isdigit() and 0 <= int(start) <= 65535 and 0 <= int(end) <= 65535 and int(start) <= int(end)):
+                    errors.append(f'Invalid port range: {p}. Must be X-Y where X,Y are numbers 0-65535 and X <= Y.')
+                ports.append(p)
+            else:
+                if not (p.isdigit() and 0 <= int(p) <= 65535):
+                    errors.append(f'Invalid port: {p}. Must be a number between 0-65535.')
+                ports.append(p)
+    elif protocol.lower() in ['icmp', 'any', '1']:
+        ports = ['any'] # Or appropriate value for ICMP/ANY
+
+    if not ports:
+        if protocol.lower() not in ['icmp', 'any', '1']: # If protocol needs ports, and none provided
+             errors.append('At least one port or port range is required for the specified protocol.')
+        else: # For ICMP/ANY, no specific port is needed, so set a default or just proceed.
+            ports = ['any'] # Ensure 'ports' field is not empty for DB consistency
 
     if errors:
-        app_logger.warning(f"Request validation failed: {errors}")
+        for error in errors:
+            flash(error, 'error')
+        app_logger.warning(f"Validation errors for new request from {current_user.username}: {errors}")
         return jsonify({"status": "error", "message": "Validation failed", "errors": errors}), 400
 
-    is_blacklisted, rule_name = check_blacklist(source_ip, destination_ip, protocol, dest_port)
-    if is_blacklisted:
-        app_logger.warning(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} denied by blacklist rule: '{rule_name}' for user {current_user.username}.")
-        return jsonify({"status": "denied", "message": f"Request denied: Matches blacklist rule '{rule_name}'"}), 403
-    else:
-        app_logger.info(f"Request from {source_ip} to {destination_ip}:{dest_port}/{protocol} passed blacklist check for user {current_user.username}.")
-
-
-    firewalls_in_path = []
-    firewalls_to_provision = []
-    firewalls_already_configured = []
-    initial_rule_status = "Pending"
-    initial_approval_status = "Pending"
-    response_message_detail = "" # New variable for specific messages
-
+    # Blacklist check
     try:
-        collection_result = network_automation_service.run_collector()
-        if collection_result["status"] == "error":
-            raise RuntimeError(collection_result["message"])
-        
-        db_build_result = network_automation_service.build_database()
-        if db_build_result["status"] == "error":
-            raise RuntimeError(db_build_result["message"])
+        blacklisted = False
+        blacklist_rules = BlacklistRule.query.filter_by(enabled=True).order_by(BlacklistRule.sequence.asc()).all()
 
+        for rule in blacklist_rules:
+            ip_match = True
+            protocol_match = True
+            port_match = True
 
-        firewalls_in_path = network_automation_service.find_path_and_firewalls(source_ip, destination_ip)
-        
-        if firewalls_in_path:
-            precheck_result = network_automation_service.check_policy_existence(
-                source_ip, destination_ip, protocol, dest_port, firewalls_in_path # Passed 'dest_port' here
-            )
-            firewalls_to_provision = precheck_result["firewalls_to_provision"]
-            firewalls_already_configured = precheck_result["firewalls_already_configured"]
-            all_policies_exist = precheck_result["all_policies_exist"]
+            # Source IP check
+            if rule.source_ip:
+                try:
+                    if '/' in rule.source_ip: # CIDR notation
+                        if not ipaddress.ip_address(source_ip) in ipaddress.ip_network(rule.source_ip):
+                            ip_match = False
+                    else: # Single IP
+                        if source_ip != rule.source_ip:
+                            ip_match = False
+                except ValueError:
+                    app_logger.warning(f"Invalid source_ip in blacklist rule {rule.id}: {rule.source_ip}")
+                    ip_match = False # Treat as non-match if rule is malformed
 
-            if all_policies_exist:
-                app_logger.info(f"Existing policy found for {source_ip} to {destination_ip}:{dest_port}/{protocol} on ALL firewalls. Request marked as already implemented.")
-                # Specific message for already implemented
-                return jsonify({"status": "info", "message": "Request is already implemented. Access is allowed."}), 200
-            elif firewalls_already_configured:
-                # If some are configured, but not all, still proceed to approval
-                app_logger.info(f"Policy partially configured. Firewalls already configured: {firewalls_already_configured}. Firewalls to provision: {firewalls_to_provision}. Proceeding to approval.")
-                initial_rule_status = "Pending Approval"
-                initial_approval_status = "Pending"
-                response_message_detail = "and is now pending approval."
-            else:
-                # No firewalls configured, all need provisioning
-                app_logger.info(f"No existing policy found on any firewall. Firewalls to provision: {firewalls_to_provision}. Proceeding to approval.")
-                initial_rule_status = "Pending Approval"
-                initial_approval_status = "Pending"
-                response_message_detail = "and is now pending approval."
+            # Destination IP check
+            if ip_match and rule.destination_ip: # Only check if source IP matched
+                try:
+                    if '/' in rule.destination_ip: # CIDR notation
+                        if not ipaddress.ip_address(destination_ip) in ipaddress.ip_network(rule.destination_ip):
+                            ip_match = False
+                    else: # Single IP
+                        if destination_ip != rule.destination_ip:
+                            ip_match = False
+                except ValueError:
+                    app_logger.warning(f"Invalid destination_ip in blacklist rule {rule.id}: {rule.destination_ip}")
+                    ip_match = False # Treat as non-match if rule is malformed
+
+            # Protocol check
+            if ip_match and rule.protocol and rule.protocol.lower() != 'any':
+                if protocol.lower() != rule.protocol.lower():
+                    protocol_match = False
+
+            # Port check (only if protocol matches and specific port is defined)
+            if ip_match and protocol_match and rule.destination_port and rule.destination_port.lower() != 'any':
+                requested_ports_set = set()
+                for p_req in ports: # Iterate over requested ports
+                    if '-' in p_req:
+                        start, end = map(int, p_req.split('-'))
+                        requested_ports_set.update(range(start, end + 1))
+                    else:
+                        requested_ports_set.add(int(p_req))
+
+                rule_ports_set = set()
+                p_rule = rule.destination_port # The blacklist rule's port
+                if '-' in p_rule:
+                    start, end = map(int, p_rule.split('-'))
+                    rule_ports_set.update(range(start, end + 1))
+                else:
+                    rule_ports_set.add(int(p_rule))
+                
+                # If there's any overlap between requested ports and blacklist rule ports
+                if not (requested_ports_set.intersection(rule_ports_set)):
+                    port_match = False
+
+            if ip_match and protocol_match and port_match:
+                blacklisted = True
+                app_logger.warning(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} BLOCKED by blacklist rule ID {rule.id} ('{rule.rule_name}') for user {current_user.username}.")
+                break # Exit loop if a blacklist rule matches
+
+        if blacklisted:
+            flash(f"Your request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} matches a blacklisted pattern and cannot be submitted. Contact an administrator for details.", 'error')
+            return jsonify({"status": "error", "message": "Request blocked by blacklist rule."}), 403
         else:
-            initial_rule_status = "No Firewall Involved"
-            initial_approval_status = "N/A"
-            app_logger.info(f"No firewalls found in path for {source_ip} to {destination_ip}. Request set to 'No Firewall Involved'.")
-            response_message_detail = "and doesn't require implementation as there are no firewalls in the path."
-
-
-    except RuntimeError as e:
-        app_logger.error(f"Network automation service failed during pre-check for {source_ip} to {destination_ip}: {e}")
-        initial_rule_status = "Pathfinding Failed"
-        initial_approval_status = "Failed"
-        errors.append(f"Network automation pre-check failed: {e}")
-        response_message_detail = "due to a network automation pre-check failure."
-    except Exception as e:
-        app_logger.error(f"An unexpected error occurred during network automation pre-check for {source_ip} to {destination_ip}: {e}")
-        initial_rule_status = "Pathfinding Failed"
-        initial_approval_status = "Failed"
-        errors.append(f"An internal error occurred during network automation pre-check: {e}")
-        response_message_detail = "due to an unexpected internal error during pre-check."
-    
-    if errors:
-        return jsonify({"status": "error", "message": f"Pre-check failed {response_message_detail}", "errors": errors, "path_status": initial_rule_status}), 500
-
-
-    try:
-        # dest_port can be 'any', '8000-8999', or '80'.
-        # Since 'ports' is JSONEncodedList, it expects a list.
-        # If dest_port is a string, it should be stored as a list with one element.
-        # If it's a range, it should be stored as a list with one element that is the range string.
-        # It's better to store it as a list if the JSONEncodedList expects a list.
-        # So, wrap dest_port in a list.
-        final_ports_value = [str(dest_port)] if dest_port else [] # Ensure it's a list of strings
-
-        rule = FirewallRule(
-            source_ip=source_ip,
-            destination_ip=destination_ip,
-            protocol=protocol,
-            ports=final_ports_value, # CHANGED: 'port' to 'ports' and assigned the list
-            status=initial_rule_status,
-            approval_status=initial_approval_status,
-            firewalls_involved=firewalls_in_path,
-            firewalls_to_provision=firewalls_to_provision, # Store the new lists
-            firewalls_already_configured=firewalls_already_configured, # Store the new lists
-            requester_id=current_user.id
-        )
-        db.session.add(rule)
-        db.session.commit()
-        
-        # Construct the overall success message based on response_message_detail
-        final_success_message = f"Request created successfully {response_message_detail}"
-        app_logger.info(f"Network request ID {rule.id} created successfully by user {current_user.username} with status '{rule.status}'.")
-        
-        # Only return redirect_url for roles that can view the approval details
-        if current_user.has_role('superadmin', 'admin', 'approver', 'implementer') and rule.status == "Pending Approval":
-            redirect_to_approval = url_for('routes.approve_deny_request', rule_id=rule.id)
-            return jsonify({
-                "status": "success",
-                "message": final_success_message,
-                "rule_id": rule.id,
-                "status_detail": rule.status,
-                "firewalls_involved": firewalls_in_path,
-                "redirect_url": redirect_to_approval # Provide redirect URL for permitted roles
-            }), 201
-        else:
-            return jsonify({
-                "status": "success",
-                "message": final_success_message,
-                "rule_id": rule.id,
-                "status_detail": rule.status,
-                "firewalls_involved": firewalls_in_path
-            }), 201
+            app_logger.info(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} passed blacklist check for user {current_user.username}.")
 
     except Exception as e:
-        db.session.rollback()
-        app_logger.error(f"Failed to create request for {source_ip} to {destination_ip} by user {current_user.username}: {str(e)}")
-        return jsonify({"status": "error", "message": f"Failed to create request: {str(e)}"}), 500
+        app_logger.error(f"Error during blacklist check: {e}", exc_info=True)
+        flash("An error occurred during the blacklist check. Please try again or contact support.", 'error')
+        return jsonify({"status": "error", "message": "Internal error during blacklist check."}), 500
 
 
-# --- Blacklist Management Routes ---
+    # Determine initial status based on user role
+    # Superadmins and admins can auto-approve
+    initial_status = 'Pending'
+    approval_status = 'Pending'
+    if current_user.has_role('superadmin', 'admin'):
+        initial_status = 'Approved - Pending Pre-Check'
+        approval_status = 'Approved'
+        app_logger.info(f"User {current_user.username} (role: {current_user.role}) auto-approved request {source_ip} to {destination_ip}:{ports_raw}/{protocol}.")
 
-@routes.route('/admin/blacklist', methods=['GET'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
-def blacklist_rules_list():
-    """Displays a list of all blacklist rules."""
-    return render_template('blacklist_rules_list.html')
 
-@routes.route('/admin/blacklist/add', methods=['GET', 'POST'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
-def add_blacklist_rule():
-    """Displays the form to add a new blacklist rule and handles its submission."""
-    if request.method == 'POST':
-        data = request.form
+    new_rule = FirewallRule(
+        source_ip=source_ip,
+        destination_ip=destination_ip,
+        protocol=protocol,
+        ports=ports, # Save as a list
+        status=initial_status,
+        rule_description=rule_description,
+        approval_status=approval_status,
+        requester_id=current_user.id
+    )
+    db.session.add(new_rule)
+    db.session.commit()
+    app_logger.info(f"Network request ID {new_rule.id} created by {current_user.username}.")
+
+    # If auto-approved, trigger pre-check immediately
+    if initial_status == 'Approved - Pending Pre-Check':
         try:
-            sequence = int(data['sequence'])
-            if BlacklistRule.query.filter_by(sequence=sequence).first():
-                flash(f"Rule with sequence {sequence} already exists. Please choose a different sequence.", 'error')
-                app_logger.warning(f"Attempted by {current_user.username} to add blacklist rule with duplicate sequence: {sequence}")
-                return redirect(url_for('routes.add_blacklist_rule'))
+            # Call the service here
+            # For initial pre-check, provide a list of *all* potential firewalls from your inventory.
+            # The perform_pre_check method will use pathfinding to filter to those actually in path.
+            # IMPORTANT: Replace with actual firewall hostnames from your inventory.yml
+            # For example, if you have 'pa_firewall_1', 'fgt_firewall_1' in inventory.yml
+            all_potential_firewalls = ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2'] # EXAMPLE: ADJUST THIS
             
-            new_rule = BlacklistRule(
-                sequence=sequence,
-                rule_name=data['rule_name'],
-                enabled=bool(data.get('enabled', False)),
-                source_ip=data.get('source_ip') or None,
-                destination_ip=data.get('destination_ip') or None,
-                protocol=data.get('protocol') or None,
-                destination_port=data.get('destination_port') or None,
-                description=data.get('description') or None
+            # Create a mutable dict to pass to perform_pre_check so it can update it
+            rule_data_for_precheck = {
+                'rule_id': new_rule.id,
+                'source_ip': new_rule.source_ip,
+                'destination_ip': new_rule.destination_ip,
+                'protocol': new_rule.protocol,
+                'ports': new_rule.ports, # Use the list of ports
+                'rule_description': new_rule.rule_description
+            }
+
+            # This call will modify rule_data_for_precheck in place with discovered_firewalls,
+            # firewalls_to_provision, and firewalls_already_configured.
+            stdout, stderr, firewalls_checked = get_network_automation_service().perform_pre_check(
+                rule_data=rule_data_for_precheck,
+                firewalls_involved=all_potential_firewalls # Pass all potential firewalls for pathfinding
             )
-            db.session.add(new_rule)
+
+            # Update the rule based on pre-check results from the modified rule_data_for_precheck
+            db_rule = FirewallRule.query.get(new_rule.id)
+            if db_rule:
+                db_rule.firewalls_involved = rule_data_for_precheck.get('firewalls_involved')
+                db_rule.firewalls_to_provision = rule_data_for_precheck.get('firewalls_to_provision')
+                db_rule.firewalls_already_configured = rule_data_for_precheck.get('firewalls_already_configured')
+
+                if stdout:
+                    app_logger.info(f"Pre-check STDOUT for rule {new_rule.id}:\n{stdout}")
+                if stderr:
+                    app_logger.error(f"Pre-check STDERR for rule {new_rule.id}:\n{stderr}")
+
+                # Determine final status after pre-check
+                if db_rule.firewalls_to_provision and len(db_rule.firewalls_to_provision) > 0:
+                    db_rule.status = 'Approved - Pending Implementation'
+                elif db_rule.firewalls_involved and len(db_rule.firewalls_involved) > 0 and \
+                     db_rule.firewalls_already_configured and \
+                     set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured):
+                    db_rule.status = 'Completed - No Provisioning Needed'
+                else: # No firewalls involved or all involved were already configured.
+                    db_rule.status = 'Approved - No Provisioning Needed'
+                
+                db.session.commit()
+                app_logger.info(f"Network request ID {new_rule.id} updated status to {db_rule.status} after pre-check.")
+
+        except RuntimeError as e:
+            # Handle runtime errors from network automation service (e.g., Ansible failure, pathfinding error)
+            new_rule.status = 'Pre-Check Failed'
+            new_rule.approval_status = 'Pre-Check Failed'
             db.session.commit()
-            flash("Blacklist rule added successfully!", 'success')
-            app_logger.info(f"Blacklist rule '{new_rule.rule_name}' (ID: {new_rule.id}, Sequence: {new_rule.sequence}) added successfully by {current_user.username}.")
-            return redirect(url_for('routes.blacklist_rules_list'))
-        except ValueError:
-            db.session.rollback()
-            flash("Invalid sequence number. Must be an integer.", 'error')
-            app_logger.error(f"Failed to add blacklist rule by {current_user.username}: Invalid sequence number provided.")
-            return redirect(url_for('routes.add_blacklist_rule'))
+            app_logger.error(f"Network automation pre-check failed for rule {new_rule.id}: {e}", exc_info=True)
+            flash(f"Pre-check failed: {e}", 'error')
+            return jsonify({"status": "error", "message": f"Pre-check failed: {e}"}), 500
         except Exception as e:
-            db.session.rollback()
-            flash(f"Failed to add blacklist rule: {str(e)}", 'error')
-            app_logger.error(f"Failed to add blacklist rule by {current_user.username}: {str(e)}")
-            return redirect(url_for('routes.add_blacklist_rule'))
-    
-    return render_template('add_blacklist_form.html')
-
-@routes.route('/admin/blacklist/<int:rule_id>', methods=['GET'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
-def blacklist_rule_detail(rule_id):
-    """Displays the details of a specific blacklist rule."""
-    rule = BlacklistRule.query.get_or_404(rule_id)
-    app_logger.info(f"User {current_user.username} viewing details for blacklist rule ID: {rule_id}")
-    return render_template('blacklist_rule_detail.html', rule=rule)
-
-# --- API Endpoints for Blacklist Rules (for AJAX calls) ---
-@routes.route('/api/blacklist_rules', methods=['GET'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
-def get_blacklist_rules_api():
-    """API endpoint to get all blacklist rules."""
-    rules = BlacklistRule.query.order_by(BlacklistRule.sequence).all()
-    rules_data = []
-    for rule in rules:
-        rules_data.append({
-            'id': rule.id,
-            'sequence': rule.sequence,
-            'rule_name': rule.rule_name,
-            'enabled': rule.enabled,
-            'source_ip': rule.source_ip,
-            'destination_ip': rule.destination_ip,
-            'protocol': rule.protocol,
-            'destination_port': rule.destination_port,
-            'description': rule.description,
-            'created_at': rule.created_at.isoformat() if rule.created_at else None,
-            'updated_at': rule.updated_at.isoformat() if rule.updated_at else None
-        })
-    app_logger.info(f"User {current_user.username} fetched all blacklist rules via API.")
-    return jsonify(rules_data), 200
-
-@routes.route('/api/blacklist_rules/<int:rule_id>', methods=['DELETE'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
-def delete_blacklist_rule_api(rule_id):
-    """API endpoint to delete a single blacklist rule."""
-    rule = BlacklistRule.query.get(rule_id)
-    if rule:
-        try:
-            db.session.delete(rule)
+            # Catch any other unexpected errors during pre-check process
+            new_rule.status = 'Error During Pre-Check'
+            new_rule.approval_status = 'Error'
             db.session.commit()
-            app_logger.info(f"Blacklist rule ID {rule_id} deleted successfully by {current_user.username} via API.")
-            return jsonify({"status": "success", "message": f"Rule ID {rule_id} deleted successfully."}), 200
-        except Exception as e:
-            db.session.rollback()
-            app_logger.error(f"Failed to delete blacklist rule ID {rule_id} by {current_user.username} via API: {str(e)}")
-            return jsonify({"status": "error", "message": f"Failed to delete rule ID {rule_id}: {str(e)}"}), 500
-    app_logger.warning(f"Attempted to delete non-existent blacklist rule ID {rule_id} by {current_user.username} via API.")
-    return jsonify({"status": "error", "message": f"Rule ID {rule_id} not found."}), 404
+            app_logger.critical(f"An unexpected error occurred during network automation pre-check for rule {new_rule.id}: {e}", exc_info=True)
+            flash(f"An unexpected error occurred during pre-check: {e}", 'error')
+            return jsonify({"status": "error", "message": f"An unexpected error occurred during pre-check: {e}"}), 500
 
-@routes.route('/api/blacklist_rules', methods=['DELETE'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin')
-def delete_multiple_blacklist_rules_api():
-    """API endpoint to delete multiple blacklist rules."""
-    data = request.get_json()
-    rule_ids = data.get('ids', [])
-    if not rule_ids:
-        app_logger.warning(f"Attempted to delete multiple blacklist rules by {current_user.username}, but no IDs were provided.")
-        return jsonify({"status": "error", "message": "No rule IDs provided for deletion."}), 400
-
-    try:
-        deleted_count = 0
-        for rule_id in rule_ids:
-            rule = BlacklistRule.query.get(rule_id)
-            if rule:
-                db.session.delete(rule)
-                deleted_count += 1
-        db.session.commit()
-        app_logger.info(f"Successfully deleted {deleted_count} blacklist rule(s) by {current_user.username} via API. IDs: {rule_ids}")
-        return jsonify({"status": "success", "message": f"Successfully deleted {deleted_count} rule(s)."}), 200
-    except Exception as e:
-        db.session.rollback()
-        app_logger.error(f"Failed to delete multiple blacklist rules by {current_user.username} via API (IDs: {rule_ids}): {str(e)}")
-        return jsonify({"status": "error", "message": f"Failed to delete rules: {str(e)}"}), 500
+    flash(f"Network request ID {new_rule.id} submitted successfully and moved to {new_rule.status}.", 'success')
+    return jsonify({"status": "success", "message": f"Request ID {new_rule.id} submitted."}), 200
 
 
-# --- Routes for Approval Workflow ---
+@routes.route('/task-results')
+@login_required
+@roles_required('superadmin', 'admin', 'implementer', 'approver', 'requester')
+def task_results():
+    """
+    Displays a list of all network rule requests.
+    Filters rules based on the user's role:
+    - Superadmin/Admin: All rules.
+    - Implementer: Rules with 'Approved - Pending Implementation' or 'Provisioning In Progress'.
+    - Approver: Rules with 'Pending' approval status.
+    - Requester: Only rules they requested.
+    """
+    if current_user.has_role('superadmin', 'admin'):
+        rules = FirewallRule.query.order_by(FirewallRule.created_at.desc()).all()
+    elif current_user.has_role('implementer'):
+        rules = FirewallRule.query.filter(
+            FirewallRule.status.in_(['Approved - Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention'])
+        ).order_by(FirewallRule.created_at.desc()).all()
+    elif current_user.has_role('approver'):
+        rules = FirewallRule.query.filter_by(approval_status='Pending').order_by(FirewallRule.created_at.desc()).all()
+    elif current_user.has_role('requester'):
+        rules = FirewallRule.query.filter_by(requester_id=current_user.id).order_by(FirewallRule.created_at.desc()).all()
+    else:
+        rules = [] # Should not happen if roles_required is effective
 
-@routes.route('/approvals')
-@login_required # Ensures user is logged in
+    return render_template('task_results.html', rules=rules)
+
+
+@routes.route('/approve-deny-request/<int:rule_id>', methods=['GET', 'POST'])
+@login_required
 @roles_required('superadmin', 'admin', 'approver')
-def approvals_list():
-    """Displays a list of requests pending approval."""
-    # Only show rules that are 'Pending Approval' and not yet denied
-    pending_rules = FirewallRule.query.filter_by(status='Pending Approval', approval_status='Pending').all()
-    app_logger.info(f"User {current_user.username} viewing list of pending approvals.")
-    for rule in pending_rules:
-        # Ensure lists are initialized for rendering if None
-        if rule.firewalls_involved is None:
-            rule.firewalls_involved = []
-        if rule.firewalls_to_provision is None:
-            rule.firewalls_to_provision = []
-        if rule.firewalls_already_configured is None:
-            rule.firewalls_already_configured = []
-        if rule.ports is None: # Initialize ports list
-            rule.ports = []
-    return render_template('approvals_list.html', rules=pending_rules)
-
-@routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin', 'approver')
-@no_self_approval # Prevent approver from approving their own requests
+@no_self_approval # Prevent approvers from approving their own requests
 def approve_deny_request(rule_id):
-    """Allows an approver to view details and approve/deny a specific request."""
+    """
+    Allows approvers to review, approve, or deny network rule requests.
+    Triggers pre-check and status updates upon approval.
+    """
     rule = FirewallRule.query.get_or_404(rule_id)
+
+    # Only allow action on rules that are 'Pending' for approval
+    if rule.approval_status != 'Pending':
+        flash(f"Request ID {rule_id} is already '{rule.approval_status}'. No action needed.", 'info')
+        return redirect(url_for('routes.approvals_list'))
 
     if request.method == 'POST':
         action = request.form.get('action')
         approver_comment = request.form.get('approver_comment')
 
-        current_approver_id = current_user.id
+        rule.approver_id = current_user.id
+        rule.approver_comment = approver_comment
+        rule.approved_at = datetime.utcnow()
 
         if action == 'approve':
-            rule.approval_status = "Approved"
-            # Set status to 'Approved - Pending Implementation' ONLY if there are firewalls to provision
-            # Otherwise, if all are already configured, mark as 'Completed'
-            if rule.firewalls_to_provision:
-                rule.status = "Approved - Pending Implementation"
-            else:
-                rule.status = "Completed - No Provisioning Needed" # New status for clarity
-                rule.implemented_at = datetime.utcnow() # Mark as implemented immediately
-
-            rule.approver_id = current_approver_id
-            rule.approver_comment = approver_comment
-            rule.approved_at = datetime.utcnow()
-            db.session.commit()
-            flash('Request approved successfully!', 'success')
-            app_logger.info(f"Network request ID {rule_id} approved by {current_user.username} (ID: {current_user.id}). Status set to '{rule.status}'.")
-            return redirect(url_for('routes.approvals_list'))
-        elif action == 'deny':
-            rule.approval_status = "Denied"
-            rule.status = "Denied by Approver"
-            rule.approver_id = current_approver_id
-            rule.approver_comment = approver_comment
-            db.session.commit()
-            flash('Request denied.', 'info')
-            app_logger.info(f"Network request ID {rule_id} denied by {current_user.username} (ID: {current_user.id}).")
-            return redirect(url_for('routes.approvals_list'))
-        else:
-            app_logger.warning(f"Invalid action '{action}' for network request ID {rule.id} by {current_user.username}.")
-            return jsonify({"status": "error", "message": "Invalid action specified."}), 400
-
-    # Ensure lists are initialized for rendering if None
-    if rule.firewalls_involved is None:
-        rule.firewalls_involved = []
-    if rule.firewalls_to_provision is None:
-        rule.firewalls_to_provision = []
-    if rule.firewalls_already_configured is None:
-        rule.firewalls_already_configured = []
-    if rule.ports is None: # Initialize ports list
-        rule.ports = []
-
-    app_logger.info(f"User {current_user.username} viewing approval details for network request ID {rule.id}.")
-    return render_template('approval_detail.html', rule=rule)
-
-# --- Routes for Implementer Workflow ---
-
-@routes.route('/implementation')
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin', 'implementer')
-def implementation_list():
-    """Displays a list of rules ready for implementation (approved and pending implementation)."""
-    # Only show rules that are 'Approved - Pending Implementation'
-    ready_for_implementation_rules = FirewallRule.query.filter_by(status='Approved - Pending Implementation', approval_status='Approved').all()
-    app_logger.info(f"User {current_user.username} viewing list of rules ready for implementation.")
-    for rule in ready_for_implementation_rules:
-        # Ensure lists are initialized for rendering if None
-        if rule.firewalls_involved is None:
-            rule.firewalls_involved = []
-        if rule.firewalls_to_provision is None:
-            rule.firewalls_to_provision = []
-        if rule.firewalls_already_configured is None:
-            rule.firewalls_already_configured = []
-        if rule.ports is None: # Initialize ports list
-            rule.ports = []
-    return render_template('implementation_list.html', rules=ready_for_implementation_rules)
-
-@routes.route('/implementation/<int:rule_id>', methods=['GET', 'POST'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin', 'implementer')
-def implement_rule(rule_id):
-    """Allows an implementer to view details and provision/decline a specific rule."""
-    rule = FirewallRule.query.get_or_404(rule_id)
-
-    if request.method == 'POST':
-        action = request.form.get('action')
-        implementer_comment = request.form.get('implementer_comment')
-        current_implementer_id = current_user.id
-
-        if action == 'provision':
-            app_logger.info(f"Implementer {current_user.username} triggered provisioning for rule ID {rule_id}.")
-            return provision_request(rule_id)
-        elif action == 'decline_implementation':
-            rule.status = "Declined by Implementer"
-            # Append implementer's comment to existing approver comments
-            existing_comments = rule.approver_comment if rule.approver_comment else ""
-            rule.approver_comment = f"{existing_comments}\nImplementer ({current_user.username}) Comment: {implementer_comment}"
-            rule.approver_id = current_implementer_id # Implementer also recorded as the last action user
-            db.session.commit()
-            flash('Implementation declined.', 'info')
-            app_logger.info(f"Implementer {current_user.username} declined implementation for rule ID {rule_id}.")
-            return redirect(url_for('routes.implementation_list'))
-        else:
-            app_logger.warning(f"Invalid action '{action}' for rule implementation ID {rule.id} by {current_user.username}.")
-            return jsonify({"status": "error", "message": "Invalid action specified."}), 400
-
-    # Ensure lists are initialized for rendering if None
-    if rule.firewalls_involved is None:
-        rule.firewalls_involved = []
-    if rule.firewalls_to_provision is None:
-        rule.firewalls_to_provision = []
-    if rule.firewalls_already_configured is None:
-        rule.firewalls_already_configured = []
-    if rule.ports is None: # Initialize ports list
-        rule.ports = []
-
-    app_logger.info(f"User {current_user.username} viewing implementation details for rule ID {rule.id}.")
-    return render_template('implementation_detail.html', rule=rule)
-
-
-@routes.route('/provision/<int:rule_id>', methods=['POST'])
-@login_required # Ensures user is logged in
-@roles_required('superadmin', 'admin', 'implementer')
-def provision_request(rule_id):
-    """
-    Triggers the Ansible provisioning playbook for an approved firewall rule.
-    Automatically triggers post-check after successful provisioning.
-    This function is now called from the implement_rule route.
-    """
-    rule = FirewallRule.query.get_or_404(rule_id)
-
-    if rule.status != "Approved - Pending Implementation" or rule.approval_status != "Approved":
-        app_logger.warning(f"Attempted to provision rule ID {rule_id} by {current_user.username} which is not in 'Approved - Pending Implementation' state. Current status: {rule.status}, Approval: {rule.approval_status}")
-        return jsonify({"status": "error", "message": "Rule is not in 'Approved - Pending Implementation' state for provisioning."}), 400
-
-    if not rule.firewalls_to_provision:
-        # This case should ideally not happen if logic in create_request/approve is correct
-        # But as a safeguard: if there are no firewalls to provision, mark as completed
-        rule.status = "Completed - No Provisioning Needed"
-        rule.implemented_at = datetime.utcnow()
-        db.session.commit()
-        app_logger.info(f"Rule {rule.id} had no firewalls to provision. Marked as 'Completed - No Provisioning Needed'.")
-        return jsonify({"status": "info", "message": "No firewalls required provisioning for this rule. Status updated.", "redirect_url": url_for('routes.implementation_list')}), 200
-
-
-    rule.status = "Provisioning In Progress"
-    db.session.commit()
-    app_logger.info(f"Provisioning initiated by {current_user.username} for rule ID {rule.id}.")
-    
-    provisioning_message = "Provisioning started."
-
-    try:
-        # Use firewalls_to_provision from the rule object
-        firewalls_for_ansible_provision = rule.firewalls_to_provision
-        
-        app_logger.info(f"Provisioning only on firewalls that require it for rule {rule.id}: {firewalls_for_ansible_provision}")
-
-        provision_result_stdout = network_automation_service.provision_rule(
-            rule_data={
+            rule.approval_status = 'Approved'
+            
+            # Prepare rule_data for pre-check
+            rule_data_for_precheck = {
                 'rule_id': rule.id,
                 'source_ip': rule.source_ip,
                 'destination_ip': rule.destination_ip,
                 'protocol': rule.protocol,
-                'ports': rule.ports, # CHANGED: 'port' to 'ports'
-                'rule_description': f"Rule for ticket #{rule.id}"
-            },
-            firewalls=firewalls_for_ansible_provision # Pass only firewalls that need provisioning
-        )
-        
-        provisioning_message = f"Rule {rule.id} provisioned successfully on required firewalls."
-        app_logger.info(f"Rule {rule.id} provisioned successfully by {current_user.username}. Ansible output: {provision_result_stdout}")
+                'ports': rule.ports,
+                'rule_description': rule.rule_description
+            }
+            # IMPORTANT: Pass all potential firewalls from your inventory for pathfinding
+            all_potential_firewalls = ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2'] # EXAMPLE: ADJUST THIS
 
-        # After successful provisioning, run post-check only on the firewalls that were just provisioned
-        # and re-verify any that were already configured (optional, but good for full check)
-        firewalls_for_ansible_post_check = rule.firewalls_involved # Post-check all firewalls in path
-        
-        post_check_result = network_automation_service.check_policy_existence( # Re-run full check
-            rule.source_ip, rule.destination_ip, rule.protocol, rule.ports, firewalls_for_ansible_post_check # CHANGED: 'rule.port' to 'rule.ports'
-        )
-        # Update the rule with the latest check results
-        rule.firewalls_to_provision = post_check_result["firewalls_to_provision"]
-        rule.firewalls_already_configured = post_check_result["firewalls_already_configured"]
-        
-        if not rule.firewalls_to_provision: # If no firewalls left to provision after this run
-            rule.status = "Completed"
-            rule.implemented_at = datetime.utcnow()
-            provisioning_message += " All configurations verified successfully."
-            app_logger.info(f"Rule {rule.id} post-check successful by {current_user.username}. All firewalls now configured.")
-        else:
-            # This scenario indicates that even after provisioning, some firewalls still don't have the policy.
-            # This is an error state that requires attention.
-            rule.status = "Partially Implemented - Requires Attention"
-            provisioning_message += f" However, policy could not be verified on: {rule.firewalls_to_provision}. Manual intervention may be required."
-            app_logger.error(f"Rule {rule.id} partially implemented. Policy not verified on: {rule.firewalls_to_provision}.")
+            try:
+                # Perform pre-check
+                stdout, stderr, firewalls_checked = get_network_automation_service().perform_pre_check(
+                    rule_data=rule_data_for_precheck,
+                    firewalls_involved=all_potential_firewalls
+                )
 
+                # Update the rule based on pre-check results from the modified rule_data_for_precheck
+                rule.firewalls_involved = rule_data_for_precheck.get('firewalls_involved')
+                rule.firewalls_to_provision = rule_data_for_precheck.get('firewalls_to_provision')
+                rule.firewalls_already_configured = rule_data_for_precheck.get('firewalls_already_configured')
 
-    except RuntimeError as e:
-        rule.status = "Provisioning Failed"
-        provisioning_message = f"Provisioning failed for rule {rule.id}: {e}. Check logs for ID {rule.id}."
-        app_logger.error(f"Provisioning RuntimeError for rule {rule.id} by {current_user.username}: {e}")
-    except Exception as e:
-        rule.status = "Provisioning Failed"
-        provisioning_message = f"An unexpected error occurred during provisioning/post-check for rule {rule.id}: {e}. Check logs for ID {rule.id}."
-        app_logger.critical(f"An unexpected error occurred during provisioning for rule {rule.id} by {current_user.username}: {e}", exc_info=True)
-    finally:
+                if stdout:
+                    app_logger.info(f"Pre-check STDOUT for rule {rule.id}:\n{stdout}")
+                if stderr:
+                    app_logger.error(f"Pre-check STDERR for rule {rule.id}:\n{stderr}")
+
+                # Determine final status after pre-check
+                if rule.firewalls_to_provision and len(rule.firewalls_to_provision) > 0:
+                    rule.status = 'Approved - Pending Implementation'
+                    flash(f"Request ID {rule.id} approved and moved to 'Pending Implementation'.", 'success')
+                elif rule.firewalls_involved and len(rule.firewalls_involved) > 0 and \
+                     rule.firewalls_already_configured and \
+                     set(rule.firewalls_involved) == set(rule.firewalls_already_configured):
+                    rule.status = 'Completed - No Provisioning Needed'
+                    flash(f"Request ID {rule.id} approved. Policy already exists on all involved firewalls. Marked as 'Completed - No Provisioning Needed'.", 'info')
+                else:
+                    rule.status = 'Approved - No Provisioning Needed'
+                    flash(f"Request ID {rule.id} approved. No provisioning required for involved firewalls.", 'info')
+
+            except RuntimeError as e:
+                rule.status = 'Approval Failed - Pre-Check Error' # Specific status for pre-check failure during approval
+                rule.approval_status = 'Pre-Check Failed'
+                flash(f"Approval failed due to pre-check error: {e}", 'error')
+                app_logger.error(f"Pre-check failed during approval for rule {rule.id}: {e}", exc_info=True)
+            except Exception as e:
+                rule.status = 'Approval Failed - Unexpected Error'
+                rule.approval_status = 'Error'
+                flash(f"An unexpected error occurred during approval pre-check: {e}", 'error')
+                app_logger.critical(f"Unexpected error during approval pre-check for rule {rule.id}: {e}", exc_info=True)
+
+        elif action == 'deny':
+            rule.approval_status = 'Denied'
+            rule.status = 'Denied by Approver'
+            flash(f"Request ID {rule.id} denied.", 'warning')
+        
         db.session.commit()
+        app_logger.info(f"Approver {current_user.username} (ID: {current_user.id}) processed request {rule.id} with action: {action}.")
+        return redirect(url_for('routes.approvals_list'))
 
-    if rule.status in ["Completed", "Completed - No Provisioning Needed"]:
-        return jsonify({"status": "success", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 200
-    else:
-        # For 'Provisioning Failed' or 'Partially Implemented'
-        return jsonify({"status": "error", "message": provisioning_message, "rule_id": rule.id, "new_status": rule.status, "redirect_url": url_for('routes.implementation_list')}), 500
+    return render_template('approval_detail.html', rule=rule)
 
-# --- Request Cancellation Route ---
-@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
+
+@routes.route('/approvals')
 @login_required
-@roles_required('superadmin', 'admin', 'requester') # Only superadmin, admin, and requester can cancel
-def cancel_request(rule_id):
-    """Allows a requester (or admin/superadmin) to cancel their own network request."""
+@roles_required('superadmin', 'admin', 'approver')
+def approvals_list():
+    """
+    Displays a list of network rule requests pending approval.
+    """
+    rules = FirewallRule.query.filter_by(approval_status='Pending').order_by(FirewallRule.created_at.asc()).all()
+    return render_template('approvals_list.html', rules=rules)
+
+
+@routes.route('/implement/<int:rule_id>', methods=['GET', 'POST'])
+@login_required
+@roles_required('superadmin', 'admin', 'implementer')
+def implement_rule(rule_id):
+    """
+    Allows implementers to review and provision network rules.
+    Triggers provisioning and post-checks.
+    """
     rule = FirewallRule.query.get_or_404(rule_id)
 
-    # Authorization check: Only the requester or an admin/superadmin can cancel the request
-    if current_user.id != rule.requester_id and not current_user.has_role('superadmin', 'admin'):
-        app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule ID {rule_id} owned by {rule.requester_id}.")
-        return jsonify({"status": "error", "message": "You are not authorized to cancel this request."}), 403
+    # Only allow action if status is 'Approved - Pending Implementation' or 'Partially Implemented - Requires Attention'
+    if rule.status not in ['Approved - Pending Implementation', 'Partially Implemented - Requires Attention']:
+        flash(f"Rule ID {rule_id} is currently '{rule.status}'. No implementation action available.", 'info')
+        return redirect(url_for('routes.implementation_list'))
 
-    # Check if the rule is in a state that can be cancelled
-    # If it's already completed, denied, or declined, it cannot be cancelled via this method.
+    if request.method == 'POST':
+        action = request.form.get('action')
+        implementer_comment = request.form.get('implementer_comment')
+        
+        rule.implementer_id = current_user.id
+        rule.implementer_comment = implementer_comment
+        rule.implemented_at = datetime.utcnow()
+
+        if action == 'provision':
+            firewalls_to_provision = rule.firewalls_to_provision if rule.firewalls_to_provision else []
+            
+            if not firewalls_to_provision:
+                flash("No firewalls marked for provisioning for this rule. Marking as 'Completed - No Provisioning Needed'.", 'info')
+                rule.status = 'Completed - No Provisioning Needed'
+                db.session.commit()
+                app_logger.info(f"Rule {rule.id} marked as 'Completed - No Provisioning Needed' by {current_user.username} (no firewalls to provision).")
+                return redirect(url_for('routes.implementation_list'))
+
+            try:
+                rule.status = 'Provisioning In Progress' # Set status before starting
+                db.session.commit() # Commit status change immediately
+
+                # Perform provisioning
+                provision_stdout, provision_stderr, successfully_provisioned, failed_provisioning = \
+                    get_network_automation_service().provision_firewall_rule(
+                        rule_data={
+                            'rule_id': rule.id,
+                            'source_ip': rule.source_ip,
+                            'destination_ip': rule.destination_ip,
+                            'protocol': rule.protocol,
+                            'ports': rule.ports,
+                            'rule_description': rule.rule_description
+                        },
+                        firewalls_to_provision=firewalls_to_provision
+                    )
+
+                if provision_stdout:
+                    app_logger.info(f"Provisioning STDOUT for rule {rule.id}:\n{provision_stdout}")
+                if provision_stderr:
+                    app_logger.error(f"Provisioning STDERR for rule {rule.id}:\n{provision_stderr}")
+
+                rule.firewalls_already_configured = list(set(rule.firewalls_already_configured or []) | set(successfully_provisioned))
+                rule.firewalls_to_provision = [fw for fw in firewalls_to_provision if fw not in successfully_provisioned]
+
+
+                if len(failed_provisioning) == 0:
+                    # All provisioned, now perform post-check
+                    post_check_stdout, post_check_stderr, verified_firewalls, unverified_firewalls = \
+                        get_network_automation_service().perform_post_check(
+                            rule_data={
+                                'rule_id': rule.id,
+                                'source_ip': rule.source_ip,
+                                'destination_ip': rule.destination_ip,
+                                'protocol': rule.protocol,
+                                'ports': rule.ports,
+                                'rule_description': rule.rule_description
+                            },
+                            provisioned_firewalls=successfully_provisioned
+                        )
+                    if post_check_stdout:
+                        app_logger.info(f"Post-check STDOUT for rule {rule.id}:\n{post_check_stdout}")
+                    if post_check_stderr:
+                        app_logger.error(f"Post-check STDERR for rule {rule.id}:\n{post_check_stderr}")
+
+                    if len(unverified_firewalls) == 0:
+                        rule.status = 'Completed'
+                        flash(f"Rule ID {rule.id} successfully provisioned and verified on all target firewalls.", 'success')
+                    else:
+                        rule.status = 'Partially Implemented - Requires Attention'
+                        flash(f"Rule ID {rule.id} provisioned but failed verification on some firewalls: {', '.join(unverified_firewalls)}. Please investigate.", 'warning')
+
+                else: # Some provisioning failed
+                    if len(successfully_provisioned) > 0:
+                        rule.status = 'Partially Implemented - Requires Attention'
+                        flash(f"Rule ID {rule.id} partially provisioned. Failed on: {', '.join(failed_provisioning)}. Please investigate.", 'warning')
+                    else:
+                        rule.status = 'Provisioning Failed'
+                        flash(f"Rule ID {rule.id} failed provisioning on all target firewalls: {', '.join(failed_provisioning)}.", 'error')
+                
+                db.session.commit()
+                app_logger.info(f"Implementer {current_user.username} (ID: {current_user.id}) processed rule {rule.id}. Final status: {rule.status}.")
+
+            except RuntimeError as e:
+                rule.status = 'Implementation Failed - Automation Error'
+                db.session.commit()
+                app_logger.error(f"Automation failed during provisioning/post-check for rule {rule.id}: {e}", exc_info=True)
+                flash(f"Implementation failed due to automation error: {e}", 'error')
+            except Exception as e:
+                rule.status = 'Implementation Failed - Unexpected Error'
+                db.session.commit()
+                app_logger.critical(f"An unexpected error occurred during implementation for rule {rule.id}: {e}", exc_info=True)
+                flash(f"An unexpected error occurred during implementation: {e}", 'error')
+
+        elif action == 'decline_implementation':
+            rule.status = 'Declined by Implementer'
+            flash(f"Rule ID {rule.id} implementation declined.", 'warning')
+            db.session.commit()
+            app_logger.info(f"Implementer {current_user.username} (ID: {current_user.id}) declined implementation for rule {rule.id}.")
+
+        return redirect(url_for('routes.implementation_list'))
+
+    return render_template('implementation_detail.html', rule=rule)
+
+
+@routes.route('/implementation')
+@login_required
+@roles_required('superadmin', 'admin', 'implementer')
+def implementation_list():
+    """
+    Displays a list of network rule requests pending implementation.
+    """
+    rules = FirewallRule.query.filter(
+        FirewallRule.status.in_(['Approved - Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention'])
+    ).order_by(FirewallRule.created_at.asc()).all()
+    return render_template('implementation_list.html', rules=rules)
+
+
+@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
+@login_required
+@roles_required('superadmin', 'admin', 'requester') # Only requester, superadmin, admin can cancel
+def cancel_request(rule_id):
+    """
+    Allows a requester (or admin/superadmin) to cancel their own pending network requests.
+    """
+    rule = FirewallRule.query.get_or_404(rule_id)
+
+    # A requester can only cancel their own rules that are not yet completed/denied/in progress.
+    if current_user.has_role('requester') and rule.requester_id != current_user.id:
+        app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
+        return jsonify({"status": "error", "message": "You are not authorized to cancel this request."}), 403
+    
+    # Define statuses that CANNOT be cancelled via this method.
     if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
         app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}.")
         return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
@@ -775,9 +580,9 @@ def cancel_request(rule_id):
         rule.approval_status = "Cancelled" # Update approval status as well
         # Optionally, add a comment indicating who cancelled it
         if rule.approver_comment:
-            rule.approver_comment += f"\nRequest cancelled by {current_user.username}."
+            rule.approver_comment += f"\nRequest cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
         else:
-            rule.approver_comment = f"Request cancelled by {current_user.username}."
+            rule.approver_comment = f"Request cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
 
         db.session.commit()
         app_logger.info(f"Network request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
@@ -785,5 +590,212 @@ def cancel_request(rule_id):
     except Exception as e:
         db.session.rollback()
         app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {str(e)}"}), 500
+        return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {e}"}), 500
+
+
+@routes.route('/blacklist-rules')
+@login_required
+@roles_required('superadmin', 'admin')
+def blacklist_rules_list():
+    """
+    Displays a list of all blacklist rules.
+    Accessible only by superadmin and admin roles.
+    """
+    app_logger.info("Attempting to load blacklist rules list.")
+    try:
+        rules = BlacklistRule.query.order_by(BlacklistRule.sequence.asc()).all()
+        app_logger.info(f"Successfully loaded {len(rules)} blacklist rules.")
+        # --- REMOVE error_message=str(e) from here ---
+        return render_template('blacklist_rules_list.html', rules=rules)
+    except Exception as e:
+        app_logger.error(f"Error loading blacklist rules: {e}", exc_info=True)
+        flash("Failed to load rules. Please check server logs.", 'error')
+        # Keep error_message here for actual errors
+        return render_template('blacklist_rules_list.html', rules=[], error_message=str(e))
+
+
+@routes.route('/blacklist-rules/add', methods=['GET', 'POST'])
+@login_required
+@roles_required('superadmin', 'admin')
+def add_blacklist_rule():
+    """
+    Allows superadmin and admin roles to add new blacklist rules.
+    """
+    if request.method == 'POST':
+        sequence = request.form.get('sequence', type=int)
+        rule_name = request.form.get('rule_name')
+        enabled = request.form.get('enabled') == 'True'
+        source_ip = request.form.get('source_ip') or None
+        destination_ip = request.form.get('destination_ip') or None
+        protocol = request.form.get('protocol') or None
+        destination_port = request.form.get('destination_port') or None
+        description = request.form.get('description') or None
+
+        errors = []
+        if not rule_name:
+            errors.append("Rule Name is required.")
+        if sequence is None:
+            errors.append("Sequence is required and must be an integer.")
+        elif BlacklistRule.query.filter_by(sequence=sequence).first():
+            errors.append(f"A rule with sequence {sequence} already exists. Please choose a unique sequence number.")
+
+        if source_ip:
+            try:
+                ipaddress.ip_network(source_ip, strict=False) # Allow both single IP and CIDR
+            except ValueError:
+                errors.append("Invalid Source IP format.")
+        
+        if destination_ip:
+            try:
+                ipaddress.ip_network(destination_ip, strict=False) # Allow both single IP and CIDR
+            except ValueError:
+                errors.append("Invalid Destination IP format.")
+
+        # Basic validation for protocol and port consistency
+        if protocol and protocol.lower() not in ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']:
+            errors.append("Invalid Protocol. Must be tcp, udp, icmp, any, or protocol number.")
+        
+        if destination_port:
+            # Check if port is 'any', a single number, or a range X-Y
+            if destination_port.lower() != 'any':
+                if '-' in destination_port:
+                    try:
+                        start, end = map(int, destination_port.split('-'))
+                        if not (0 <= start <= 65535 and 0 <= end <= 65535 and start <= end):
+                            errors.append("Invalid port range. Must be X-Y where X,Y are numbers 0-65535 and X <= Y.")
+                    except ValueError:
+                        errors.append("Invalid port range format. Use X-Y.")
+                else:
+                    try:
+                        port_num = int(destination_port)
+                        if not (0 <= port_num <= 65535):
+                            errors.append("Invalid port number. Must be between 0-65535.")
+                    except ValueError:
+                        errors.append("Invalid port number format.")
+            # If protocol is ICMP or ANY, destination_port should ideally be 'any' or empty, but we allow input.
+            if protocol and protocol.lower() in ['icmp', '1'] and destination_port and destination_port.lower() not in ['any', '']:
+                errors.append("For ICMP protocol, destination port should be 'any' or left blank.")
+            if protocol and protocol.lower() == 'any' and destination_port and destination_port.lower() not in ['any', '']:
+                 errors.append("For 'any' protocol, destination port should be 'any' or left blank.")
+
+
+        if errors:
+            for error in errors:
+                flash(error, 'error')
+            app_logger.warning(f"Validation errors for new blacklist rule from {current_user.username}: {errors}")
+            return render_template('add_blacklist_form.html',
+                                   sequence=sequence, rule_name=rule_name, enabled=enabled,
+                                   source_ip=source_ip, destination_ip=destination_ip,
+                                   protocol=protocol, destination_port=destination_port, description=description)
+
+        new_rule = BlacklistRule(
+            sequence=sequence,
+            rule_name=rule_name,
+            enabled=enabled,
+            source_ip=source_ip,
+            destination_ip=destination_ip,
+            protocol=protocol,
+            destination_port=destination_port,
+            description=description
+        )
+        db.session.add(new_rule)
+        try:
+            db.session.commit()
+            flash(f"Blacklist rule '{rule_name}' added successfully!", 'success')
+            app_logger.info(f"Blacklist rule ID {new_rule.id} ('{new_rule.rule_name}') added by {current_user.username}.")
+            return redirect(url_for('routes.blacklist_rules_list'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error adding blacklist rule: {e}", 'error')
+            app_logger.error(f"Error adding blacklist rule by {current_user.username}: {e}", exc_info=True)
+            return render_template('add_blacklist_form.html',
+                                   sequence=sequence, rule_name=rule_name, enabled=enabled,
+                                   source_ip=source_ip, destination_ip=destination_ip,
+                                   protocol=protocol, destination_port=destination_port, description=description)
+
+    return render_template('add_blacklist_form.html')
+
+
+@routes.route('/blacklist-rules/detail/<int:rule_id>')
+@login_required
+@roles_required('superadmin', 'admin')
+def blacklist_rule_detail(rule_id):
+    """
+    Displays detailed information for a specific blacklist rule.
+    """
+    rule = BlacklistRule.query.get_or_404(rule_id)
+    return render_template('blacklist_rule_detail.html', rule=rule)
+
+
+@routes.route('/blacklist-rules/delete/<int:rule_id>', methods=['POST'])
+@login_required
+@roles_required('superadmin', 'admin')
+def delete_blacklist_rule(rule_id):
+    """
+    Deletes a blacklist rule.
+    """
+    rule = BlacklistRule.query.get_or_404(rule_id)
+    try:
+        db.session.delete(rule)
+        db.session.commit()
+        flash(f"Blacklist rule '{rule.rule_name}' deleted successfully.", 'success')
+        app_logger.info(f"Blacklist rule ID {rule_id} ('{rule.rule_name}') deleted by {current_user.username}.")
+        return jsonify({"status": "success", "message": "Rule deleted."}), 200
+    except Exception as e:
+        db.session.rollback()
+        app_logger.error(f"Error deleting blacklist rule {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Error deleting rule: {e}"}), 500
+
+
+@routes.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    """
+    Allows a user to view and update their profile information (email, first/last name, password).
+    Username and role are not editable by the user.
+    """
+    user = current_user # The Flask-Login current_user object
+
+    if request.method == 'POST':
+        email = request.form.get('email')
+        first_name = request.form.get('first_name')
+        last_name = request.form.get('last_name')
+        password = request.form.get('password') # New password, if provided
+
+        errors = []
+
+        # Validate email
+        if not email:
+            errors.append('Email is required.')
+        elif email != user.email and User.query.filter_by(email=email).first():
+            errors.append('Email address already registered by another user.')
+        
+        if errors:
+            for error in errors:
+                flash(error, 'error')
+            app_logger.warning(f"Profile update failed for {user.username}: {errors}")
+            # Re-render the form with current data and errors
+            return render_template('profile.html', user=user)
+
+        user.email = email
+        user.first_name = first_name
+        user.last_name = last_name
+
+        if password: # Only update password if a new one is provided
+            user.set_password(password)
+            flash('Password updated successfully.', 'success')
+            app_logger.info(f"User {user.username} (ID: {user.id}) updated their password.")
+
+        try:
+            db.session.commit()
+            flash('Profile updated successfully!', 'success')
+            app_logger.info(f"User {user.username} (ID: {user.id}) updated their profile.")
+            return redirect(url_for('routes.profile'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error updating profile: {e}", 'error')
+            app_logger.error(f"Error updating profile for {user.username}: {e}", exc_info=True)
+            return render_template('profile.html', user=user)
+
+    return render_template('profile.html', user=user)
 
