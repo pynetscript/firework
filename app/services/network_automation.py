@@ -2,9 +2,10 @@ import subprocess
 import os
 import json
 import logging
-import yaml
-import ipaddress
-import re
+import yaml # Needed for parsing Ansible output files
+import ipaddress # For IP address validation and manipulation
+import re # For regex parsing
+from sqlalchemy import func # For database functions like length for ordering
 
 # Import Flask-SQLAlchemy db instance and the new models
 from app.models import db, Device, Interface, ArpEntry, RouteEntry
@@ -13,8 +14,12 @@ app_logger = logging.getLogger(__name__)
 
 # --- ADD THIS LINE FOR DEBUGGING ---
 app_logger.debug(f"DEBUG: network_automation.py is being loaded from: {os.path.abspath(__file__)}")
+# --- END DEBUGGING LINE ---
 
 # Define the directory where Ansible output files are stored
+# This is relative to the directory where network_automation.py is located.
+# network_automation.py is in app/services/
+# So '..' goes to app/, and another '..' goes to firework/
 OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'outputs')
 
 class NetworkAutomationService:
@@ -23,6 +28,7 @@ class NetworkAutomationService:
         self.inventory_path = os.path.join(project_root, inventory_path)
         self.playbook_dir = os.path.join(project_root, playbook_dir)
         
+        # Define a temporary directory for Ansible to use, relative to project_root
         self.ansible_tmp_dir = os.path.join(project_root, 'ansible_tmp')
 
         if not os.path.exists(self.inventory_path):
@@ -32,6 +38,7 @@ class NetworkAutomationService:
         os.makedirs(OUTPUTS_DIR, exist_ok=True)
         app_logger.info(f"Ansible outputs directory set to: {OUTPUTS_DIR}")
         
+        # Ensure the new ansible_tmp_dir exists
         os.makedirs(self.ansible_tmp_dir, exist_ok=True)
         app_logger.info(f"Ansible temporary directory set to: {self.ansible_tmp_dir}")
 
@@ -57,30 +64,26 @@ class NetworkAutomationService:
 
         env = os.environ.copy()
         
-        # --- FIX 1: Disable SSH Host Key Checking (for development) ---
+        # Disable SSH Host Key Checking (for development)
         env['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
         
-        # --- FIX 2: Correct ANSIBLE_COLLECTIONS_PATHS to ANSIBLE_COLLECTIONS_PATH ---
-        env['ANSIBLE_COLLECTIONS_PATH'] = os.path.join(self.playbook_dir, 'ansible_collections') # Corrected name
-        # Remove the old incorrect variable if it was there or if you had a separate line for it
-        if 'ANSIBLE_COLLECTIONS_PATHS' in env:
+        # Correct ANSIBLE_COLLECTIONS_PATHS to ANSIBLE_COLLECTIONS_PATH
+        env['ANSIBLE_COLLECTIONS_PATH'] = os.path.join(self.playbook_dir, 'ansible_collections')
+        if 'ANSIBLE_COLLECTIONS_PATHS' in env: # Ensure the old one is removed if it somehow persists
             del env['ANSIBLE_COLLECTIONS_PATHS']
-        # --- END FIXES ---
 
         env['ANSIBLE_CACHE_DIR'] = os.path.join(self.ansible_tmp_dir, 'cache')
         env['ANSIBLE_TMPDIR'] = self.ansible_tmp_dir
         env['TMPDIR'] = self.ansible_tmp_dir
-        # The HOME and USER variables are often not strictly necessary if other TMPDIR/CACHE_DIR are set correctly
-        # and host_key_checking is off, but can be kept if they resolve correctly for the Gunicorn user.
-        # For robustness, we might explicitly set them if we know Gunicorn's home.
-        # For now, let's keep them commented out as they might have been the source of '/nonexistent' earlier.
-        # env['HOME'] = user_home # If you're confident this resolves to a writable path for the gunicorn user
-        # env['USER'] = 'firework_app_user'
+        # Consider setting HOME and USER if Flask's Gunicorn user has a specific home for Ansible to use.
+        # For now, relying on explicit TMPDIR/CACHE_DIR and host_key_checking=False.
+        # env['HOME'] = os.path.expanduser("~firework_app_user") # Example: If you have a specific system user
+        # env['USER'] = 'firework_app_user' # Example: If you have a specific system user
 
 
         app_logger.debug("--- Subprocess Environment for Ansible ---")
         for k, v in env.items():
-            if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATH', 'ANSIBLE_HOST_KEY_CHECKING']: # Added new var
+            if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATH', 'ANSIBLE_HOST_KEY_CHECKING']:
                 app_logger.debug(f"  {k}={v}")
         app_logger.debug("----------------------------------------")
 
@@ -110,7 +113,24 @@ class NetworkAutomationService:
             app_logger.critical(f"An unexpected error occurred during Ansible execution: {e}", exc_info=True)
             raise RuntimeError(f"Unexpected error during Ansible execution: {e}")
 
-    # --- New method to process collected data and store in PostgreSQL ---
+
+    def run_data_collection(self):
+        """
+        Runs the Ansible collector playbook and then processes its output
+        to populate the network topology database.
+        """
+        app_logger.info("Running Ansible network data collector (collector.yml)...")
+        try:
+            stdout, stderr = self._execute_ansible_playbook('collector.yml')
+            app_logger.info("Network data collection completed.")
+            # After collection, process and store the data in the DB
+            self._process_and_store_network_data(OUTPUTS_DIR) # Pass OUTPUTS_DIR here
+        except RuntimeError as e:
+            app_logger.error(f"Network data collection or processing failed: {e}")
+            raise RuntimeError(f"Network data collection or processing failed: {e}")
+        except Exception as e:
+            app_logger.critical(f"An unexpected error occurred during network data collection/processing: {e}", exc_info=True)
+            raise RuntimeError(f"An unexpected error occurred during network data collection/processing: {e}")
 
     def _process_and_store_network_data(self, output_dir):
         """
@@ -119,10 +139,23 @@ class NetworkAutomationService:
         """
         app_logger.info("Starting network topology database build process in PostgreSQL.")
 
+        # --- NEW DEBUGGING ADDITIONS ---
+        app_logger.info(f"Attempting to list directory: {output_dir}")
+        try:
+            files_in_output_dir = os.listdir(output_dir)
+            app_logger.info(f"Files found in {output_dir}: {files_in_output_dir}")
+            if not files_in_output_dir:
+                app_logger.warning(f"Directory {output_dir} appears empty to Python process. This is unexpected for data processing.")
+        except FileNotFoundError:
+            app_logger.error(f"Output directory not found: {output_dir}. Please ensure it exists and has correct read/write permissions.")
+            raise # Re-raise to stop if directory itself is missing
+        except PermissionError as e:
+            app_logger.error(f"Permission denied when trying to list {output_dir}: {e}. Ensure Flask/Gunicorn user has read permissions.")
+            raise # Re-raise to stop if permissions are the issue
+        # --- END NEW DEBUGGING ADDITIONS ---
+
         try:
             # Clear existing data to ensure a fresh import.
-            # IMPORTANT: This will delete all existing network topology data.
-            # If you need to keep historical data or handle updates, this logic needs to be refined.
             db.session.query(RouteEntry).delete()
             db.session.query(ArpEntry).delete()
             db.session.query(Interface).delete()
@@ -138,51 +171,54 @@ class NetworkAutomationService:
         device_files = {}
 
         # Scan the outputs directory for collected files
-        for filename in os.listdir(output_dir):
+        for filename in files_in_output_dir: # Use files_in_output_dir here
             filepath = os.path.join(output_dir, filename)
-            if not os.path.isfile(filepath):
+            if not os.path.isfile(filepath): # Ensure it's a file, not a directory
                 continue
 
             hostname = None
             device_type = None
             file_category = None
 
-            # Determine hostname and device type based on filename conventions
-            # Updated to match specific hostnames from your inventory.yml
-            if filename.startswith('R') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
-                hostname_match = re.match(r'(R\d+)_', filename) # Matches R1, R2, R3
-                if hostname_match:
-                    hostname = hostname_match.group(1)
-                device_type = "Router"
-            elif filename.startswith('SW') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
-                hostname_match = re.match(r'(SW\d+)_', filename) # Matches SW1
-                if hostname_match:
-                    hostname = hostname_match.group(1)
-                device_type = "Switch"
-            elif filename.startswith('pafw_') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
-                hostname = "pafw" # Your inventory uses 'pafw' as hostname
-                device_type = "Firewall"
-            elif filename.startswith('fgt_') and ('_interfaces.yml' in filename or '_arp.yml' in filename or '_routes.yml' in filename):
-                hostname = "fgt" # Your inventory uses 'fgt' as hostname
-                device_type = "Firewall"
+            # --- CORRECTED FILE DISCOVERY AND CATEGORIZATION LOGIC ---
+            # Determine hostname and file category first
+            if '_interfaces.yml' in filename:
+                file_category = 'interfaces'
+            elif '_arp.txt' in filename or '_arp.yml' in filename:
+                file_category = 'arp'
+            elif '_routes.txt' in filename or '_routes.yml' in filename:
+                file_category = 'routes'
+            
+            if file_category: # If it's a file we care about based on its content type
+                # Now determine the hostname based on naming convention
+                if filename.startswith('R') and file_category in ['interfaces', 'arp', 'routes']:
+                    hostname_match = re.match(r'(R\d+)_', filename) # Matches R1, R2, R3
+                    if hostname_match:
+                        hostname = hostname_match.group(1)
+                        device_type = "Router"
+                elif filename.startswith('SW') and file_category in ['interfaces', 'arp', 'routes']:
+                    hostname_match = re.match(r'(SW\d+)_', filename) # Matches SW1
+                    if hostname_match:
+                        hostname = hostname_match.group(1)
+                        device_type = "Switch"
+                elif filename.startswith('pafw_') and file_category in ['interfaces', 'arp', 'routes']:
+                    hostname = "pafw" # Your inventory uses 'pafw' as hostname
+                    device_type = "Firewall"
+                elif filename.startswith('fgt_') and file_category in ['interfaces', 'arp', 'routes']:
+                    hostname = "fgt" # Your inventory uses 'fgt' as hostname
+                    device_type = "Firewall"
 
-            # Determine file category
-            if hostname: # Only proceed if hostname was successfully identified
-                if '_interfaces.yml' in filename:
-                    file_category = 'interfaces'
-                elif '_arp.txt' in filename or '_arp.yml' in filename:
-                    file_category = 'arp'
-                elif '_routes.txt' in filename or '_routes.yml' in filename:
-                    file_category = 'routes'
-
-                if file_category:
+                if hostname: # If a hostname was successfully identified for this file
                     if hostname not in device_files:
+                        # Initialize device entry if not seen before
                         device_files[hostname] = {'type': device_type, 'interfaces': None, 'arp': None, 'routes': None}
-                    device_files[hostname][file_category] = filepath # Store full path
+                    # Assign the filepath to the correct category for this hostname
+                    device_files[hostname][file_category] = filepath
                 else:
-                    app_logger.warning(f"File {filename} did not match a known category for hostname {hostname}. Skipping.")
+                    app_logger.warning(f"File {filename} matched a category but its hostname pattern was not recognized. Skipping.")
             else:
-                app_logger.warning(f"File {filename} did not match any known hostname pattern. Skipping.")
+                app_logger.debug(f"File {filename} did not match any known file category. Skipping.") # Debug for irrelevant files
+            # --- END CORRECTED FILE DISCOVERY AND CATEGORIZATION LOGIC ---
 
         app_logger.info(f"Discovered device files for processing: {json.dumps(device_files, indent=2)}")
 
@@ -281,7 +317,7 @@ class NetworkAutomationService:
                                     # FortiGate might give IP with CIDR directly like '192.168.1.1/24'
                                     full_ip_cidr = intf_details.get('ip')
                                     ip_addr = full_ip_cidr.split('/')[0] if '/' in full_ip_cidr else full_ip_cidr
-                                    subnet_prefix = full_ip_cidr.split('/')[1] if '/' in full_ip_cidr else None
+                                    # subnet_prefix = full_ip_cidr.split('/')[1] if '/' in full_ip_cidr else None # Not directly used for DB
 
                                     ipv4_subnet_cidr = None
                                     if full_ip_cidr:
@@ -361,7 +397,7 @@ class NetworkAutomationService:
                             arp_entries_found = 0
                             for entry in arp_data.get('arp_table', []):
                                 arp_entry = ArpEntry(
-                                    device_id=device.device_id,
+                                    device_id=device.device_id, # Corrected from device.device.id
                                     ip_address=entry.get('ip'),
                                     mac_address=entry.get('mac'),
                                     interface_name=entry.get('interface')
@@ -407,7 +443,7 @@ class NetworkAutomationService:
                                         metric=int(metric) if metric else None,
                                         interface_name=interface_name_raw.strip() if interface_name_raw else None,
                                         route_type=route_type,
-                                        flags=line.strip().split(' ')[0] # Capture the initial flag
+                                        flags=line.strip().split(' ')[0]
                                     )
                                     db.session.add(route_entry)
                                     route_entries_found += 1
@@ -451,7 +487,7 @@ class NetworkAutomationService:
                                     destination_network=entry.get('destination'),
                                     next_hop=entry.get('gateway'),
                                     interface_name=entry.get('interface'),
-                                    route_type=entry.get('type') # 'static', 'connect', etc.
+                                    route_type=entry.get('type')
                                 )
                                 db.session.add(route_entry)
                                 route_entries_found += 1
@@ -469,30 +505,6 @@ class NetworkAutomationService:
 
         app_logger.info("Network topology database build process completed.")
 
-    def run_data_collection(self):
-        """
-        Executes the Ansible collector playbook and then processes the collected data
-        into the PostgreSQL database.
-        """
-        app_logger.info("Running Ansible network data collector (collector.yml)...")
-        try:
-            # The collector playbook saves outputs to OUTPUTS_DIR, so we don't need its stdout/stderr here
-            # beyond just checking for successful execution.
-            stdout, stderr = self._execute_ansible_playbook('collector.yml')
-            app_logger.info("Network data collection completed.")
-            
-            # Now, process these files and store them in the database
-            self._process_and_store_network_data(OUTPUTS_DIR)
-            app_logger.info("Network topology database built successfully.")
-
-        except RuntimeError as e:
-            app_logger.error(f"Network data collection or processing failed: {e}")
-            raise
-        except Exception as e:
-            app_logger.critical(f"An unexpected error occurred during network data collection/processing: {e}", exc_info=True)
-            raise
-
-
     # --- Placeholder for Pathfinding Logic ---
     def _find_network_path_in_db(self, source_ip, destination_ip):
         """
@@ -502,11 +514,6 @@ class NetworkAutomationService:
         """
         app_logger.info(f"Starting pathfinding from {source_ip} to {destination_ip} using DB data.")
         
-        # This is a placeholder. The actual pathfinding logic will be implemented here
-        # using Device, Interface, ArpEntry, RouteEntry models.
-        # This will involve graph traversal algorithms (e.g., BFS/DFS).
-        # For now, it will return a dummy response or raise an error.
-
         path = [] # List of tuples: (device_hostname, outgoing_interface, next_hop_ip, route_type)
         firewalls_in_path = [] # List of firewall hostnames
 
@@ -514,6 +521,7 @@ class NetworkAutomationService:
             source_ip_obj = ipaddress.ip_address(source_ip)
             destination_ip_obj = ipaddress.ip_address(destination_ip)
         except ipaddress.AddressValueError:
+            app_logger.error(f"Invalid IP address format during pathfinding: Source={source_ip}, Destination={destination_ip}")
             return "Error: Invalid IP address format. Please enter valid IPv4 addresses.", []
 
         # --- Simplified Pathfinding Logic Placeholder ---
@@ -523,96 +531,161 @@ class NetworkAutomationService:
         # 1. Try to find the device directly connected to the source_ip
         src_device = None
         src_interface = None
-        # Check interfaces directly
-        intf = Interface.query.filter(
+        src_network = None # To store the network the source IP belongs to
+
+        app_logger.debug(f"Attempting to find source device for IP: {source_ip_obj}")
+        
+        # Look for the source IP on an interface's exact IPv4 address
+        intf_direct_match = Interface.query.filter(
             Interface.ipv4_address == str(source_ip_obj)
         ).first()
-        if intf:
-            src_device = Device.query.get(intf.device_id)
-            src_interface = intf.name
-        
-        if not src_device:
-            # If not directly on an interface, check for a subnet it belongs to
-            # This is more complex and would involve iterating subnets and checking if IP is in range.
-            # For simplicity, let's assume direct interface or next-hop is known.
-            # Or perhaps check ARP entries if source is a host behind a device.
-            pass # Placeholder for more complex source device lookup
+
+        if intf_direct_match:
+            src_device = Device.query.get(intf_direct_match.device_id)
+            src_interface = intf_direct_match.name
+            src_network = intf_direct_match.ipv4_subnet # Get the network from the interface
+            app_logger.info(f"Source IP {source_ip_obj} found directly on interface {src_interface} of device {src_device.hostname}.")
+        else:
+            # If not direct match, try to find the device whose interface's subnet contains the source_ip
+            app_logger.debug(f"Source IP {source_ip_obj} not found directly on an interface. Checking subnets.")
+            # Fetch all interfaces with defined subnets
+            all_interfaces_with_subnets = Interface.query.filter(Interface.ipv4_subnet.isnot(None)).all()
+            src_device = None # Initialize to None for the loop
+            src_interface = None
+            src_network = None
+            for intf in all_interfaces_with_subnets:
+                try:
+                    # Parse the stored CIDR string to an ip_network object
+                    interface_network = ipaddress.ip_network(intf.ipv4_subnet, strict=False)
+                    if source_ip_obj in interface_network:
+                        src_device = Device.query.get(intf.device_id)
+                        src_interface = intf.name
+                        src_network = intf.ipv4_subnet
+                        app_logger.info(f"Source IP {source_ip_obj} found within subnet {intf.ipv4_subnet} of interface {src_interface} on device {src_device.hostname}.")
+                        break
+                except ValueError as e:
+                    app_logger.warning(f"Error parsing IPv4 subnet '{intf.ipv4_subnet}' for interface {intf.name} (Device ID: {intf.device_id}): {e}")
+                    continue
 
         if not src_device:
-            app_logger.warning(f"Source IP {source_ip} not found on any device interface.")
-            return f"Pathfinding failed: Source IP {source_ip} not found on any device interface.", []
+            app_logger.warning(f"Source IP {source_ip} not found on any device interface or within any known subnet in the database.")
+            return f"Pathfinding failed: Source IP {source_ip} not found on any device interface or within any known subnet.", []
 
-        path.append((src_device.hostname, src_interface, str(source_ip_obj), 'source'))
+        # Pathfinding now begins from src_device (which has the interface connected to source_ip's network)
+        # We start by adding the connection to the source network, not the device itself as the first hop for path.
+        path.append({
+            'type': 'source_network_entry',
+            'ip': str(source_ip_obj),
+            'device': src_device.hostname,
+            'interface': src_interface,
+            'network': src_network
+        })
         
-        current_ip = source_ip_obj
-        current_device = src_device
+        current_ip_on_path = source_ip_obj # The IP that's logically "at" the current point in pathfinding
+        current_device_on_path = src_device # The device we are currently "on"
         
-        # Simple loop: find next hop from current device until destination is reached or no more routes
+        # Simple loop for hops: find next hop from current device until destination is reached or no more routes
         max_hops = 10 # Prevent infinite loops
-        for _ in range(max_hops):
-            if current_ip == destination_ip_obj:
+        for hop_count in range(max_hops):
+            if current_ip_on_path == destination_ip_obj:
+                app_logger.info(f"Destination IP {destination_ip_obj} reached.")
                 break # Destination reached
 
-            # Check if current_ip is directly connected to destination_ip on current_device (ARP/Interface)
-            # (Simplified: A real check would involve direct subnet connectivity)
+            app_logger.debug(f"Hop {hop_count}: Currently on device {current_device_on_path.hostname}, looking for route to {destination_ip_obj}.")
 
             # Find a route from current_device to destination_ip
             # Prioritize more specific routes (longer prefix)
-            routes = RouteEntry.query.filter(
-                RouteEntry.device_id == current_device.device_id
-            ).order_by(sa.desc(func.length(RouteEntry.destination_network))).all() # Order by prefix length
+            routes_from_current_device = RouteEntry.query.filter(
+                RouteEntry.device_id == current_device_on_path.device_id
+            ).order_by(db.func.length(RouteEntry.destination_network).desc()).all() # Order by prefix length (longer prefix first)
 
-            next_hop_found = False
-            for route in routes:
+            next_hop_found_in_routes = False
+            for route in routes_from_current_device:
                 try:
-                    dest_net = ipaddress.ip_network(route.destination_network)
+                    dest_net = ipaddress.ip_network(route.destination_network, strict=False)
                     if destination_ip_obj in dest_net:
                         # Found a route to the destination network
+                        app_logger.debug(f"Found matching route on {current_device_on_path.hostname}: {route.destination_network} via {route.next_hop or 'direct'} on {route.interface_name}.")
+                        
+                        path.append({
+                            'type': 'route_hop',
+                            'device': current_device_on_path.hostname,
+                            'destination_network': route.destination_network,
+                            'next_hop': route.next_hop,
+                            'interface': route.interface_name,
+                            'route_type': route.route_type
+                        })
+
                         if route.next_hop:
                             next_hop_ip = ipaddress.ip_address(route.next_hop)
-                            path.append((current_device.hostname, route.interface_name, str(next_hop_ip), route.route_type))
-                            
                             # Find the device associated with this next_hop_ip (its interface)
                             next_intf = Interface.query.filter(Interface.ipv4_address == str(next_hop_ip)).first()
                             if next_intf:
-                                current_device = Device.query.get(next_intf.device_id)
-                                current_ip = next_hop_ip
-                                next_hop_found = True
-                                break
+                                next_device = Device.query.get(next_intf.device_id)
+                                if next_device:
+                                    current_device_on_path = next_device
+                                    current_ip_on_path = next_hop_ip
+                                    next_hop_found_in_routes = True
+                                    app_logger.info(f"Path continues to device {current_device_on_path.hostname} via next hop {next_hop_ip}.")
+                                    break # Route found and next device identified, break from routes loop
+                                else:
+                                    app_logger.warning(f"Next hop IP {next_hop_ip} on {current_device_on_path.hostname} leads to unknown device. Path may terminate.")
+                                    path.append({
+                                        'type': 'path_end',
+                                        'reason': 'Next hop device unknown',
+                                        'ip': str(next_hop_ip)
+                                    })
+                                    next_hop_found_in_routes = True # Considered found, but path terminates here logically
+                                    current_ip_on_path = destination_ip_obj + 1 # Force exit loop, indicate not reached
+                                    break
                             else:
-                                # Next hop is outside known topology or a host, path terminates
-                                path.append((f"Unknown device/host for {str(next_hop_ip)}", "N/A", "N/A", "Path Terminated"))
-                                next_hop_found = True
-                                break # Path ends here if next hop device is unknown
+                                app_logger.warning(f"Next hop IP {next_hop_ip} on {current_device_on_path.hostname} not found on any interface. Path may terminate.")
+                                path.append({
+                                    'type': 'path_end',
+                                    'reason': 'Next hop IP not on any interface',
+                                    'ip': str(next_hop_ip)
+                                })
+                                next_hop_found_in_routes = True # Considered found, but path terminates here logically
+                                current_ip_on_path = destination_ip_obj + 1 # Force exit loop, indicate not reached
+                                break
                         else:
                             # Directly connected route to destination (current_device is last hop)
-                            path.append((current_device.hostname, route.interface_name, str(destination_ip_obj), 'direct_connect'))
-                            current_ip = destination_ip_obj # Destination reached
-                            next_hop_found = True
-                            break
+                            app_logger.info(f"Destination IP {destination_ip_obj} is directly connected to {current_device_on_path.hostname}.")
+                            current_ip_on_path = destination_ip_obj # Destination reached
+                            next_hop_found_in_routes = True
+                            break # Route found, destination reached
                 except ipaddress.AddressValueError:
-                    app_logger.warning(f"Invalid network format in route entry: {route.destination_network}")
-                    continue
+                    app_logger.warning(f"Invalid network format in route entry: {route.destination_network} on device {current_device_on_path.hostname}.")
+                    continue # Skip this malformed route
 
-            if not next_hop_found:
-                app_logger.warning(f"No route found from {current_device.hostname} for destination {destination_ip}.")
+            if not next_hop_found_in_routes:
+                app_logger.warning(f"No valid route found from {current_device_on_path.hostname} for destination {destination_ip}.")
+                path.append({
+                    'type': 'path_end',
+                    'reason': 'No route found',
+                    'device': current_device_on_path.hostname
+                })
                 break # No route found, path terminates
 
-            if current_ip == destination_ip_obj:
+            if current_ip_on_path == destination_ip_obj:
+                app_logger.info(f"Pathfinding successfully reached destination {destination_ip_obj}.")
                 break # Destination reached
 
-        if current_ip != destination_ip_obj:
-            app_logger.warning(f"Pathfinding stopped before reaching destination: {destination_ip_obj}")
+        if current_ip_on_path != destination_ip_obj:
+            app_logger.warning(f"Pathfinding stopped before reaching destination {destination_ip_obj}. Final IP on path: {current_ip_on_path}")
             return f"Pathfinding failed: Could not reach {destination_ip}.", []
 
-        # Identify firewalls in the path
-        firewalls_in_path = [
-            hop[0] for hop in path 
-            if Device.query.filter_by(hostname=hop[0]).first() and 
-               Device.query.filter_by(hostname=hop[0]).first().device_type == "Firewall"
-        ]
+        # Identify firewalls in the path based on 'device' in each hop
+        unique_firewall_hostnames = set()
+        for hop in path:
+            if 'device' in hop:
+                device_obj = Device.query.filter_by(hostname=hop['device']).first()
+                if device_obj and device_obj.device_type == "Firewall":
+                    unique_firewall_hostnames.add(device_obj.hostname)
 
+        firewalls_in_path = list(unique_firewall_hostnames)
         app_logger.info(f"Path found. Firewalls in path: {firewalls_in_path}")
+        app_logger.debug(f"Full path trace: {json.dumps(path, indent=2)}")
         return path, firewalls_in_path
 
     # --- Update methods that use the old subprocess calls ---
@@ -620,18 +693,19 @@ class NetworkAutomationService:
         """
         Performs pre-checks on relevant firewalls.
         Now also includes internal pathfinding using the DB.
+        `firewalls_involved` is the initial list provided by the user/form.
         """
-        app_logger.info(f"Performing pre-check for rule {rule_data['rule_id']} on firewalls: {firewalls_involved}")
+        app_logger.info(f"Performing pre-check for rule {rule_data['rule_id']} on firewalls initially specified: {firewalls_involved}")
 
         pre_check_stdout = ""
         pre_check_stderr = ""
         
         # Step 1: Run data collection and build internal DB if not recently done
-        # Consider adding a timestamp or flag to avoid frequent collection for performance
+        # TODO: Add a timestamp or flag to avoid frequent collection for performance
         try:
             self.run_data_collection()
         except Exception as e:
-            app_logger.error(f"Initial network data collection failed during pre-check: {e}")
+            app_logger.error(f"Initial network data collection failed during pre-check: {e}", exc_info=True)
             raise RuntimeError(f"Pre-check failed: Network data collection failed. {e}")
 
         # Step 2: Perform pathfinding using the internal DB
@@ -645,16 +719,22 @@ class NetworkAutomationService:
             raise RuntimeError(f"Pre-check failed: Pathfinding error: {path}")
 
         app_logger.info(f"Pathfinding completed. Discovered firewalls in path: {discovered_firewalls}")
-        rule_data['firewalls_involved'] = discovered_firewalls # Update rule_data with discovered firewalls
+        # Update rule_data with discovered firewalls - these are the *actual* firewalls in the path
+        rule_data['firewalls_involved'] = discovered_firewalls 
 
-        # Filter firewalls for pre-check to only those involved AND provided in the input list
-        firewalls_for_precheck = [fw for fw in firewalls_involved if fw in discovered_firewalls]
+        # Filter firewalls for pre-check: only those in discovered_firewalls that are also in the initial form list
+        # This allows the form to suggest firewalls, but pathfinding determines the *true* ones.
+        # If firewalls_involved_from_form is meant to be ignored after pathfinding, remove the filter.
+        # For now, let's pre-check only firewalls that were both requested AND discovered.
+        # However, typically, all discovered firewalls are relevant for pre-check.
+        # Let's use `discovered_firewalls` directly for pre_check.
+        firewalls_for_precheck = discovered_firewalls # Pre-check all discovered firewalls
 
         if not firewalls_for_precheck:
-            app_logger.warning(f"No firewalls identified for pre-check between {rule_data['source_ip']} and {rule_data['destination_ip']} from the provided list.")
+            app_logger.warning(f"No firewalls identified for pre-check between {rule_data['source_ip']} and {rule_data['destination_ip']} based on network topology.")
             # If no firewalls are involved, but the request still makes sense (e.g., internal host-to-host)
             # we might want to skip further pre-checks and mark as 'No Provisioning Needed'.
-            return "No firewalls in path require pre-check based on current network topology. Skipping pre-checks.", "", []
+            return "No firewalls in path require pre-check based on current network topology. Skipping pre-checks.", "", [], []
 
         for firewall_name in firewalls_for_precheck:
             extra_vars = {
@@ -666,9 +746,9 @@ class NetworkAutomationService:
             }
 
             playbook = None
-            if 'pa' in firewall_name.lower():
+            if firewall_name.lower().startswith('pa'): # Check for 'pa' in hostname
                 playbook = 'pre_check_firewall_rule_paloalto.yml'
-            elif 'fgt' in firewall_name.lower():
+            elif firewall_name.lower().startswith('fgt'): # Check for 'fgt' in hostname
                 playbook = 'pre_check_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping pre-check.")
@@ -682,26 +762,20 @@ class NetworkAutomationService:
 
                 if "POLICY_EXISTS" in stdout:
                     app_logger.info(f"Rule {rule_data['rule_id']} already exists on {firewall_name}.")
-                    # Add to already_configured list if policy exists
                     if 'firewalls_already_configured' not in rule_data or rule_data['firewalls_already_configured'] is None:
                         rule_data['firewalls_already_configured'] = []
                     rule_data['firewalls_already_configured'].append(firewall_name)
                 else:
                     app_logger.info(f"Rule {rule_data['rule_id']} does NOT exist on {firewall_name}.")
-                    # Add to firewalls_to_provision if policy doesn't exist
                     if 'firewalls_to_provision' not in rule_data or rule_data['firewalls_to_provision'] is None:
                         rule_data['firewalls_to_provision'] = []
                     rule_data['firewalls_to_provision'].append(firewall_name)
 
             except RuntimeError as e:
                 app_logger.error(f"Failed to pre-check rule {rule_data['rule_id']} on {firewall_name}: {e}")
-                # Don't re-raise, allow other pre-checks to run.
-                # The calling function will need to check the status of firewalls_to_provision/already_configured.
             except Exception as e:
                 app_logger.critical(f"An unexpected error occurred during pre-check for rule {rule_data['rule_id']} on {firewall_name}: {e}")
-                # Don't re-raise
         
-        # Return combined output and the potentially modified rule_data
         return pre_check_stdout, pre_check_stderr, firewalls_for_precheck
 
 
@@ -732,9 +806,9 @@ class NetworkAutomationService:
             }
 
             playbook = None
-            if 'pa' in firewall_name.lower():
+            if firewall_name.lower().startswith('pa'):
                 playbook = 'provision_firewall_rule_paloalto.yml'
-            elif 'fgt' in firewall_name.lower():
+            elif firewall_name.lower().startswith('fgt'):
                 playbook = 'provision_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping provisioning.")
@@ -786,9 +860,9 @@ class NetworkAutomationService:
             }
 
             playbook = None
-            if 'pa' in firewall_name.lower():
+            if firewall_name.lower().startswith('pa'):
                 playbook = 'post_check_firewall_rule_paloalto.yml'
-            elif 'fgt' in firewall_name.lower():
+            elif firewall_name.lower().startswith('fgt'):
                 playbook = 'post_check_firewall_rule_fortinet.yml'
             else:
                 app_logger.warning(f"Unknown firewall type for {firewall_name}. Skipping post-check.")
@@ -808,8 +882,6 @@ class NetworkAutomationService:
                 else:
                     app_logger.warning(f"Rule {rule_data['rule_id']} NOT verified on {firewall_name}. Check Ansible output.")
                     unverified_firewalls.append(firewall_name)
-                    # Don't raise here, let the process continue to check other firewalls
-                    # raise RuntimeError(f"Post-check verification failed on {firewall_name}.")
 
             except RuntimeError as e:
                 app_logger.error(f"Failed to post-check rule {rule_data['rule_id']} on {firewall_name}: {e}")
@@ -820,7 +892,4 @@ class NetworkAutomationService:
                 unverified_firewalls.append(firewall_name)
                 post_check_stderr += f"\n--- {firewall_name} UNEXPECTED ERROR ---\n" + str(e)
 
-        # You might want to return verified_firewalls and unverified_firewalls lists
-        # to the caller so it can update the FirewallRule status more granularly.
         return post_check_stdout, post_check_stderr, verified_firewalls, unverified_firewalls
-
