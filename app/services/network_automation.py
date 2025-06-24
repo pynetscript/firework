@@ -2,9 +2,9 @@ import subprocess
 import os
 import json
 import logging
-import yaml # Needed for parsing Ansible output files
-import ipaddress # For IP address validation and manipulation
-import re # For regex parsing
+import yaml
+import ipaddress
+import re
 
 # Import Flask-SQLAlchemy db instance and the new models
 from app.models import db, Device, Interface, ArpEntry, RouteEntry
@@ -13,7 +13,6 @@ app_logger = logging.getLogger(__name__)
 
 # --- ADD THIS LINE FOR DEBUGGING ---
 app_logger.debug(f"DEBUG: network_automation.py is being loaded from: {os.path.abspath(__file__)}")
-# --- END DEBUGGING LINE ---
 
 # Define the directory where Ansible output files are stored
 OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'outputs')
@@ -23,8 +22,7 @@ class NetworkAutomationService:
         project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
         self.inventory_path = os.path.join(project_root, inventory_path)
         self.playbook_dir = os.path.join(project_root, playbook_dir)
-
-        # Define a temporary directory for Ansible to use, relative to project_root
+        
         self.ansible_tmp_dir = os.path.join(project_root, 'ansible_tmp')
 
         if not os.path.exists(self.inventory_path):
@@ -33,8 +31,7 @@ class NetworkAutomationService:
 
         os.makedirs(OUTPUTS_DIR, exist_ok=True)
         app_logger.info(f"Ansible outputs directory set to: {OUTPUTS_DIR}")
-
-        # Ensure the new ansible_tmp_dir exists
+        
         os.makedirs(self.ansible_tmp_dir, exist_ok=True)
         app_logger.info(f"Ansible temporary directory set to: {self.ansible_tmp_dir}")
 
@@ -58,27 +55,32 @@ class NetworkAutomationService:
         if extra_vars:
             command.extend(['--extra-vars', json.dumps(extra_vars)])
 
-        # Set environment variables for the subprocess to ensure Ansible finds collections
-        # and has a writable HOME for temporary files/cache.
         env = os.environ.copy()
         
-        # --- FIX: Use the class's ansible_tmp_dir ---
-        # No need for os.path.expanduser("~firework_app_user") directly here.
-        # The directory should be created in __init__
-        # ansible_runtime_tmp_dir = os.path.join(user_home, '.ansible_runtime_temps') # REMOVE OR COMMENT OUT THIS LINE
-        # os.makedirs(ansible_runtime_tmp_dir, exist_ok=True) # REMOVE OR COMMENT OUT THIS LINE
-        # --- END FIX ---
+        # --- FIX 1: Disable SSH Host Key Checking (for development) ---
+        env['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
+        
+        # --- FIX 2: Correct ANSIBLE_COLLECTIONS_PATHS to ANSIBLE_COLLECTIONS_PATH ---
+        env['ANSIBLE_COLLECTIONS_PATH'] = os.path.join(self.playbook_dir, 'ansible_collections') # Corrected name
+        # Remove the old incorrect variable if it was there or if you had a separate line for it
+        if 'ANSIBLE_COLLECTIONS_PATHS' in env:
+            del env['ANSIBLE_COLLECTIONS_PATHS']
+        # --- END FIXES ---
 
-        env['ANSIBLE_COLLECTIONS_PATHS'] = os.path.join(self.playbook_dir, 'ansible_collections')
-        env['ANSIBLE_CACHE_DIR'] = os.path.join(self.ansible_tmp_dir, 'cache') # Use our new tmp dir
-        env['ANSIBLE_TMPDIR'] = self.ansible_tmp_dir # Use our new tmp dir
-        env['TMPDIR'] = self.ansible_tmp_dir # Use our new tmp dir
-        # env['HOME'] = user_home # May no longer be strictly needed, but can keep if user_home is valid
-        # env['USER'] = 'firework_app_user' # May no longer be strictly needed
+        env['ANSIBLE_CACHE_DIR'] = os.path.join(self.ansible_tmp_dir, 'cache')
+        env['ANSIBLE_TMPDIR'] = self.ansible_tmp_dir
+        env['TMPDIR'] = self.ansible_tmp_dir
+        # The HOME and USER variables are often not strictly necessary if other TMPDIR/CACHE_DIR are set correctly
+        # and host_key_checking is off, but can be kept if they resolve correctly for the Gunicorn user.
+        # For robustness, we might explicitly set them if we know Gunicorn's home.
+        # For now, let's keep them commented out as they might have been the source of '/nonexistent' earlier.
+        # env['HOME'] = user_home # If you're confident this resolves to a writable path for the gunicorn user
+        # env['USER'] = 'firework_app_user'
+
 
         app_logger.debug("--- Subprocess Environment for Ansible ---")
         for k, v in env.items():
-            if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATHS']:
+            if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATH', 'ANSIBLE_HOST_KEY_CHECKING']: # Added new var
                 app_logger.debug(f"  {k}={v}")
         app_logger.debug("----------------------------------------")
 
@@ -109,6 +111,7 @@ class NetworkAutomationService:
             raise RuntimeError(f"Unexpected error during Ansible execution: {e}")
 
     # --- New method to process collected data and store in PostgreSQL ---
+
     def _process_and_store_network_data(self, output_dir):
         """
         Processes collected network data from YAML/text files and stores it in the PostgreSQL database.
@@ -145,21 +148,26 @@ class NetworkAutomationService:
             file_category = None
 
             # Determine hostname and device type based on filename conventions
-            if filename.startswith('ios_') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
-                hostname_match = re.match(r'ios_([^\_]+)_', filename)
+            # Updated to match specific hostnames from your inventory.yml
+            if filename.startswith('R') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
+                hostname_match = re.match(r'(R\d+)_', filename) # Matches R1, R2, R3
                 if hostname_match:
-                    hostname = hostname_match.group(1) # Extract hostname from 'ios_R1_interfaces.yml' -> 'R1'
-                device_type = "Router" if hostname and hostname.startswith('R') else "Switch" # Simple logic
-
+                    hostname = hostname_match.group(1)
+                device_type = "Router"
+            elif filename.startswith('SW') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
+                hostname_match = re.match(r'(SW\d+)_', filename) # Matches SW1
+                if hostname_match:
+                    hostname = hostname_match.group(1)
+                device_type = "Switch"
             elif filename.startswith('pafw_') and ('_interfaces.yml' in filename or '_arp.txt' in filename or '_routes.txt' in filename):
-                hostname = "pafw"
+                hostname = "pafw" # Your inventory uses 'pafw' as hostname
                 device_type = "Firewall"
             elif filename.startswith('fgt_') and ('_interfaces.yml' in filename or '_arp.yml' in filename or '_routes.yml' in filename):
-                hostname = "fgt"
+                hostname = "fgt" # Your inventory uses 'fgt' as hostname
                 device_type = "Firewall"
 
             # Determine file category
-            if hostname:
+            if hostname: # Only proceed if hostname was successfully identified
                 if '_interfaces.yml' in filename:
                     file_category = 'interfaces'
                 elif '_arp.txt' in filename or '_arp.yml' in filename:
@@ -171,9 +179,16 @@ class NetworkAutomationService:
                     if hostname not in device_files:
                         device_files[hostname] = {'type': device_type, 'interfaces': None, 'arp': None, 'routes': None}
                     device_files[hostname][file_category] = filepath # Store full path
+                else:
+                    app_logger.warning(f"File {filename} did not match a known category for hostname {hostname}. Skipping.")
+            else:
+                app_logger.warning(f"File {filename} did not match any known hostname pattern. Skipping.")
+
+        app_logger.info(f"Discovered device files for processing: {json.dumps(device_files, indent=2)}")
 
         # Process data for each discovered device
         for hostname, files_info in device_files.items():
+            app_logger.info(f"Attempting to process data for device: {hostname}")
             try:
                 # Get or create the Device entry
                 device = Device.query.filter_by(hostname=hostname).first()
@@ -181,89 +196,169 @@ class NetworkAutomationService:
                     device = Device(hostname=hostname, device_type=files_info['type'])
                     db.session.add(device)
                     db.session.flush() # Flush to get device.device_id
+                    app_logger.info(f"Added new device '{hostname}' (ID: {device.device_id}) to session.")
+                else:
+                    app_logger.info(f"Device '{hostname}' (ID: {device.device_id}) already exists in DB.")
 
                 # Process Interfaces
-                if files_info['interfaces'] and os.path.exists(files_info['interfaces']):
+                if files_info.get('interfaces') and os.path.exists(files_info['interfaces']):
+                    app_logger.info(f"Processing interfaces for {hostname} from {files_info['interfaces']}")
                     with open(files_info['interfaces'], 'r') as f:
                         interface_data = yaml.safe_load(f)
-                        # Adapt parsing based on Cisco vs. FortiGate/Palo Alto YAML structure
-                        if hostname.startswith('ios_'): # Cisco IOS facts format
-                            for intf_name, intf_details in interface_data.get('ansible_interfaces', {}).items():
+                        app_logger.debug(f"Raw interface data for {hostname}: {json.dumps(interface_data, indent=2)}")
+
+                        if hostname.startswith('R') or hostname.startswith('SW'): # Cisco IOS facts format
+                            interfaces_found = 0
+                            # The main dictionary from ios_facts containing interface details is 'ansible_net_interfaces'
+                            for intf_name, intf_details in interface_data.get('ansible_net_interfaces', {}).items():
+                                app_logger.debug(f"Parsing interface '{intf_name}' details for {hostname}. Details: {json.dumps(intf_details)}")
                                 for ip in intf_details.get('ipv4', []):
+                                    address = ip.get('address')
+                                    subnet_mask_prefix = ip.get('subnet') # Corrected key
+                                    
+                                    ipv4_subnet_cidr = None
+                                    if address and subnet_mask_prefix:
+                                        try:
+                                            # Construct full CIDR (e.g., '10.0.1.0/24')
+                                            network_obj = ipaddress.ip_network(f"{address}/{subnet_mask_prefix}", strict=False)
+                                            ipv4_subnet_cidr = str(network_obj)
+                                            app_logger.debug(f"Constructed CIDR for {intf_name}: {ipv4_subnet_cidr}")
+                                        except ValueError:
+                                            app_logger.warning(f"Invalid IP address or subnet mask for {intf_name} on {hostname}: {address}/{subnet_mask_prefix}")
+
                                     interface = Interface(
                                         device_id=device.device_id,
                                         name=intf_name,
-                                        ipv4_address=ip.get('address'),
-                                        ipv4_subnet=ip.get('network_prefix'),
+                                        ipv4_address=address,
+                                        ipv4_subnet=ipv4_subnet_cidr, # Use the constructed CIDR
                                         mac_address=intf_details.get('macaddress'),
-                                        status=intf_details.get('operstatus'), # Assuming this maps to desired status
+                                        status=intf_details.get('operstatus'),
                                         type=intf_details.get('type')
                                     )
                                     db.session.add(interface)
+                                    interfaces_found += 1
+                                    app_logger.info(f"Added interface '{intf_name}' ({address}) for {hostname} to session.")
+                            app_logger.info(f"Finished adding {interfaces_found} interfaces for {hostname}.")
+
                         elif hostname == 'pafw': # Palo Alto interfaces from panos_facts
+                            interfaces_found = 0
                             for intf_details in interface_data.get('ansible_facts', {}).get('panos_interfaces', []):
+                                app_logger.debug(f"Parsing Palo Alto interface '{intf_details.get('name')}' details: {json.dumps(intf_details)}")
                                 if intf_details.get('ip'):
+                                    # Palo Alto facts provide 'ip' and 'mask' separately
+                                    ip_addr = intf_details.get('ip')
+                                    mask_len = intf_details.get('mask') # This should be the prefix length
+                                    
+                                    ipv4_subnet_cidr = None
+                                    if ip_addr and mask_len:
+                                        try:
+                                            # Assuming mask is already a prefix length like '24'
+                                            network_obj = ipaddress.ip_network(f"{ip_addr}/{mask_len}", strict=False)
+                                            ipv4_subnet_cidr = str(network_obj)
+                                            app_logger.debug(f"Constructed CIDR for PA interface {intf_details.get('name')}: {ipv4_subnet_cidr}")
+                                        except ValueError:
+                                            app_logger.warning(f"Invalid PA IP/mask for {intf_details.get('name')}: {ip_addr}/{mask_len}")
+
                                     interface = Interface(
                                         device_id=device.device_id,
                                         name=intf_details.get('name'),
-                                        ipv4_address=intf_details.get('ip'),
-                                        ipv4_subnet=str(ipaddress.ip_network(f"{intf_details.get('ip')}/{intf_details.get('mask')}").prefixlen),
+                                        ipv4_address=ip_addr,
+                                        ipv4_subnet=ipv4_subnet_cidr,
                                         mac_address=intf_details.get('mac'),
                                         status=intf_details.get('state'),
                                         type='Ethernet' # Or parse from name/kind
                                     )
                                     db.session.add(interface)
+                                    interfaces_found += 1
+                                    app_logger.info(f"Added interface '{intf_details.get('name')}' ({ip_addr}) for {hostname} to session.")
+                            app_logger.info(f"Finished adding {interfaces_found} interfaces for {hostname}.")
+
                         elif hostname == 'fgt': # FortiGate interfaces (adjust based on actual YAML structure)
-                            # FortiGate interface parsing needs to match the exact structure of its panos_facts output
-                            # This is a placeholder, you'll need to adapt it based on your collector.yml output for FortiGate interfaces
+                            interfaces_found = 0
                             for intf_name, intf_details in interface_data.get('interface', {}).items():
+                                app_logger.debug(f"Parsing FortiGate interface '{intf_name}' details: {json.dumps(intf_details)}")
                                 if 'ip' in intf_details:
+                                    # FortiGate might give IP with CIDR directly like '192.168.1.1/24'
+                                    full_ip_cidr = intf_details.get('ip')
+                                    ip_addr = full_ip_cidr.split('/')[0] if '/' in full_ip_cidr else full_ip_cidr
+                                    subnet_prefix = full_ip_cidr.split('/')[1] if '/' in full_ip_cidr else None
+
+                                    ipv4_subnet_cidr = None
+                                    if full_ip_cidr:
+                                        try:
+                                            network_obj = ipaddress.ip_network(full_ip_cidr, strict=False)
+                                            ipv4_subnet_cidr = str(network_obj)
+                                            app_logger.debug(f"Constructed CIDR for FGT interface {intf_name}: {ipv4_subnet_cidr}")
+                                        except ValueError:
+                                            app_logger.warning(f"Invalid FGT IP/CIDR for {intf_name}: {full_ip_cidr}")
+
+
                                     interface = Interface(
                                         device_id=device.device_id,
                                         name=intf_name,
-                                        ipv4_address=intf_details.get('ip').split('/')[0] if '/' in intf_details.get('ip') else intf_details.get('ip'),
-                                        ipv4_subnet=intf_details.get('ip').split('/')[1] if '/' in intf_details.get('ip') else None,
+                                        ipv4_address=ip_addr,
+                                        ipv4_subnet=ipv4_subnet_cidr,
                                         mac_address=intf_details.get('mac'),
                                         status=intf_details.get('status'),
                                         type=intf_details.get('type')
                                     )
                                     db.session.add(interface)
+                                    interfaces_found += 1
+                                    app_logger.info(f"Added interface '{intf_name}' ({full_ip_cidr}) for {hostname} to session.")
+                            app_logger.info(f"Finished adding {interfaces_found} interfaces for {hostname}.")
                     
                 # Process ARP entries
-                if files_info['arp'] and os.path.exists(files_info['arp']):
+                if files_info.get('arp') and os.path.exists(files_info['arp']):
+                    app_logger.info(f"Processing ARP for {hostname} from {files_info['arp']}")
                     with open(files_info['arp'], 'r') as f:
                         arp_content = f.read()
-                        if hostname.startswith('ios_'): # Cisco IOS 'show ip arp' output
+                        app_logger.debug(f"Raw ARP data for {hostname}:\n{arp_content}")
+                        arp_entries_found = 0
+                        if hostname.startswith('R') or hostname.startswith('SW'): # Cisco IOS 'show ip arp' output
                             for line in arp_content.splitlines():
-                                match = re.match(r'Internet\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\S+\s+([0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4})\s+\S+\s+\S+\s+(\S+)', line)
+                                # Adjusted regex to be more robust, and capture optional interface
+                                match = re.match(r'Internet\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\S+\s+([0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4})(?:\s+\S+\s+\S+\s+(\S+))?', line)
                                 if match:
                                     ip, mac_cisco, interface_name = match.groups()
-                                    mac = mac_cisco.replace('.', '') # Convert Cisco MAC format
+                                    mac = mac_cisco.replace('.', '')
                                     arp_entry = ArpEntry(
                                         device_id=device.device_id,
                                         ip_address=ip,
                                         mac_address=mac,
-                                        interface_name=interface_name
+                                        interface_name=interface_name if interface_name else None
                                     )
                                     db.session.add(arp_entry)
+                                    arp_entries_found += 1
+                                    app_logger.info(f"Added ARP entry {ip} ({mac}) on {hostname} to session.")
+                            app_logger.info(f"Finished adding {arp_entries_found} ARP entries for {hostname}.")
+
                         elif hostname == 'pafw': # Palo Alto ARP (XML output)
-                            # Parse XML output if your collector for PA ARP provides XML
-                            # For simplified text output like old pathfinder.py:
-                            for line in arp_content.splitlines():
-                                if 'entry ip' in line:
-                                    ip_match = re.search(r'ip="(.*?)"', line)
-                                    mac_match = re.search(r'mac="(.*?)"', line)
-                                    intf_match = re.search(r'interface="(.*?)"', line)
-                                    if ip_match and mac_match:
+                            # Assuming XML output structure is consistent with panos_op <show><arp><entry name='all'/>
+                            try:
+                                import xml.etree.ElementTree as ET
+                                root = ET.fromstring(arp_content)
+                                for entry_element in root.findall(".//entry"):
+                                    ip = entry_element.findtext('ip')
+                                    mac = entry_element.findtext('mac')
+                                    interface = entry_element.findtext('interface')
+                                    if ip and mac:
                                         arp_entry = ArpEntry(
                                             device_id=device.device_id,
-                                            ip_address=ip_match.group(1),
-                                            mac_address=mac_match.group(1),
-                                            interface_name=intf_match.group(1) if intf_match else None
+                                            ip_address=ip,
+                                            mac_address=mac,
+                                            interface_name=interface
                                         )
                                         db.session.add(arp_entry)
+                                        arp_entries_found += 1
+                                        app_logger.info(f"Added PA ARP entry {ip} ({mac}) on {hostname} to session.")
+                                app_logger.info(f"Finished adding {arp_entries_found} ARP entries for {hostname}.")
+                            except Exception as parse_e:
+                                app_logger.error(f"Error parsing Palo Alto ARP XML for {hostname}: {parse_e}", exc_info=True)
+
+
                         elif hostname == 'fgt': # FortiGate ARP (YAML)
                             arp_data = yaml.safe_load(arp_content)
+                            arp_entries_found = 0
                             for entry in arp_data.get('arp_table', []):
                                 arp_entry = ArpEntry(
                                     device_id=device.device_id,
@@ -272,53 +367,85 @@ class NetworkAutomationService:
                                     interface_name=entry.get('interface')
                                 )
                                 db.session.add(arp_entry)
+                                arp_entries_found += 1
+                                app_logger.info(f"Added FGT ARP entry {entry.get('ip')} ({entry.get('mac')}) on {hostname} to session.")
+                            app_logger.info(f"Finished adding {arp_entries_found} ARP entries for {hostname}.")
 
                 # Process Route entries
-                if files_info['routes'] and os.path.exists(files_info['routes']):
+                if files_info.get('routes') and os.path.exists(files_info['routes']):
+                    app_logger.info(f"Processing routes for {hostname} from {files_info['routes']}")
                     with open(files_info['routes'], 'r') as f:
                         route_content = f.read()
-                        if hostname.startswith('ios_'): # Cisco IOS 'show ip route' output
+                        app_logger.debug(f"Raw Route data for {hostname}:\n{route_content}")
+                        route_entries_found = 0
+                        if hostname.startswith('R') or hostname.startswith('SW'): # Cisco IOS 'show ip route' output
                             for line in route_content.splitlines():
                                 # Example: "S* 0.0.0.0/0 [1/0] via 10.0.0.1, GigabitEthernet0/0"
                                 # Example: "C        10.0.0.0/24 is directly connected, GigabitEthernet0/0"
-                                match = re.match(r'(\S+\*?)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2})(?: \[(\d+)\/(\d+)\])?(?: via (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))?,?\s*(.+)', line)
+                                # Regex adapted to match common Cisco route output and handle optional elements
+                                match = re.match(r'^(?:[CDLSRI]\*?|O|E[12]|N[12]|P|i|X|H|a|b|%+)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2})(?: \[(\d+)\/(\d+)\])?(?: via (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))?,?\s*(.+)?', line.strip())
                                 if match:
-                                    flags, network, ad_str, metric_str, next_hop, interface_name = match.groups()
-                                    route_type = 'static' if 'S' in flags else 'connected' if 'C' in flags else flags # Simplistic
+                                    network = match.group(1)
+                                    admin_distance = match.group(2)
+                                    metric = match.group(3)
+                                    next_hop = match.group(4)
+                                    interface_name_raw = match.group(5)
                                     
+                                    # Simple heuristic for route_type based on common Cisco flags
+                                    route_type = 'unknown'
+                                    if line.strip().startswith('C'): route_type = 'connected'
+                                    elif line.strip().startswith('S'): route_type = 'static'
+                                    elif line.strip().startswith('O'): route_type = 'ospf'
+                                    elif line.strip().startswith('B'): route_type = 'bgp'
+                                    elif line.strip().startswith('R'): route_type = 'rip'
+
                                     route_entry = RouteEntry(
                                         device_id=device.device_id,
                                         destination_network=network,
                                         next_hop=next_hop,
-                                        admin_distance=int(ad_str) if ad_str else None,
-                                        metric=int(metric_str) if metric_str else None,
-                                        interface_name=interface_name.strip() if interface_name else None,
+                                        admin_distance=int(admin_distance) if admin_distance else None,
+                                        metric=int(metric) if metric else None,
+                                        interface_name=interface_name_raw.strip() if interface_name_raw else None,
                                         route_type=route_type,
-                                        flags=flags.strip()
+                                        flags=line.strip().split(' ')[0] # Capture the initial flag
                                     )
                                     db.session.add(route_entry)
+                                    route_entries_found += 1
+                                    app_logger.info(f"Added route {network} via {next_hop} on {hostname} to session.")
+                            app_logger.info(f"Finished adding {route_entries_found} route entries for {hostname}.")
+
                         elif hostname == 'pafw': # Palo Alto routes (XML/text output)
-                            # Palo Alto route parsing needs to match the actual output of your collector.yml
-                            # Assuming a more structured output from panos_op show routing route or similar
-                            # This is a placeholder, you'll need to adapt it.
-                            for line in route_content.splitlines():
-                                if 'destination' in line and 'nexthop' in line:
-                                    dest_match = re.search(r'destination="(.*?)"', line)
-                                    next_hop_match = re.search(r'nexthop="(.*?)"', line)
-                                    intf_match = re.search(r'interface="(.*?)"', line)
-                                    type_match = re.search(r'type="(.*?)"', line)
-                                    if dest_match and next_hop_match:
+                            # This parsing needs to be adapted based on the exact output format of panos_op 'show routing route'
+                            # The 'content' from panos_op might be XML.
+                            try:
+                                import xml.etree.ElementTree as ET
+                                root = ET.fromstring(route_content)
+                                # Assuming a structure like <result><route>...</route></result>
+                                for route_element in root.findall(".//route"): # Adjust XPath based on actual XML
+                                    destination = route_element.findtext('destination')
+                                    next_hop = route_element.findtext('nexthop')
+                                    interface = route_element.findtext('interface')
+                                    route_type = route_element.findtext('type') # e.g., 'static', 'direct'
+                                    if destination and next_hop:
                                         route_entry = RouteEntry(
                                             device_id=device.device_id,
-                                            destination_network=dest_match.group(1),
-                                            next_hop=next_hop_match.group(1),
-                                            interface_name=intf_match.group(1) if intf_match else None,
-                                            route_type=type_match.group(1) if type_match else None
+                                            destination_network=destination,
+                                            next_hop=next_hop,
+                                            interface_name=interface,
+                                            route_type=route_type
                                         )
                                         db.session.add(route_entry)
+                                        route_entries_found += 1
+                                        app_logger.info(f"Added PA route {destination} via {next_hop} on {hostname} to session.")
+                                app_logger.info(f"Finished adding {route_entries_found} route entries for {hostname}.")
+                            except Exception as parse_e:
+                                app_logger.error(f"Error parsing Palo Alto routes XML for {hostname}: {parse_e}", exc_info=True)
+
+
                         elif hostname == 'fgt': # FortiGate routes (YAML)
                             route_data = yaml.safe_load(route_content)
-                            for entry in route_data.get('routes', []):
+                            route_entries_found = 0
+                            for entry in route_data.get('routes', []): # This assumes the FortiGate returns a list of routes under 'routes' key
                                 route_entry = RouteEntry(
                                     device_id=device.device_id,
                                     destination_network=entry.get('destination'),
@@ -327,14 +454,17 @@ class NetworkAutomationService:
                                     route_type=entry.get('type') # 'static', 'connect', etc.
                                 )
                                 db.session.add(route_entry)
-
-                db.session.commit() # Commit changes for each device
-                app_logger.info(f"Successfully processed and stored data for device: {hostname}")
+                                route_entries_found += 1
+                                app_logger.info(f"Added FGT route {entry.get('destination')} via {entry.get('gateway')} on {hostname} to session.")
+                            app_logger.info(f"Finished adding {route_entries_found} route entries for {hostname}.")
+                
+                db.session.commit() # Commit all changes for this specific device
+                app_logger.info(f"Successfully committed data for device: {hostname}")
 
             except Exception as e:
-                db.session.rollback() # Rollback if any error occurs during processing a device
+                db.session.rollback() # Rollback if any error occurs during processing a single device
                 app_logger.error(f"Error processing data for device {hostname}: {e}", exc_info=True)
-                # Don't re-raise immediately, try to process other devices if possible
+                # DO NOT raise here. Continue to process other devices.
                 continue 
 
         app_logger.info("Network topology database build process completed.")
