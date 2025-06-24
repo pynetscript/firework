@@ -24,12 +24,20 @@ class NetworkAutomationService:
         self.inventory_path = os.path.join(project_root, inventory_path)
         self.playbook_dir = os.path.join(project_root, playbook_dir)
 
+        # Define a temporary directory for Ansible to use, relative to project_root
+        self.ansible_tmp_dir = os.path.join(project_root, 'ansible_tmp')
+
         if not os.path.exists(self.inventory_path):
             app_logger.error(f"Inventory file not found at: {self.inventory_path}")
             raise FileNotFoundError(f"Inventory file not found at: {self.inventory_path}")
 
         os.makedirs(OUTPUTS_DIR, exist_ok=True)
         app_logger.info(f"Ansible outputs directory set to: {OUTPUTS_DIR}")
+
+        # Ensure the new ansible_tmp_dir exists
+        os.makedirs(self.ansible_tmp_dir, exist_ok=True)
+        app_logger.info(f"Ansible temporary directory set to: {self.ansible_tmp_dir}")
+
 
     def _execute_ansible_playbook(self, playbook_name, extra_vars=None):
         """
@@ -48,22 +56,25 @@ class NetworkAutomationService:
         ]
 
         if extra_vars:
-            # Convert extra_vars dict to JSON string for Ansible's --extra-vars
             command.extend(['--extra-vars', json.dumps(extra_vars)])
 
         # Set environment variables for the subprocess to ensure Ansible finds collections
         # and has a writable HOME for temporary files/cache.
         env = os.environ.copy()
-        user_home = os.path.expanduser("~firework_app_user") # Assuming 'firework_app_user' is the user Flask runs as
-        ansible_runtime_tmp_dir = os.path.join(user_home, '.ansible_runtime_temps')
-        os.makedirs(ansible_runtime_tmp_dir, exist_ok=True) # Ensure tmp dir exists and is writable
+        
+        # --- FIX: Use the class's ansible_tmp_dir ---
+        # No need for os.path.expanduser("~firework_app_user") directly here.
+        # The directory should be created in __init__
+        # ansible_runtime_tmp_dir = os.path.join(user_home, '.ansible_runtime_temps') # REMOVE OR COMMENT OUT THIS LINE
+        # os.makedirs(ansible_runtime_tmp_dir, exist_ok=True) # REMOVE OR COMMENT OUT THIS LINE
+        # --- END FIX ---
 
-        env['ANSIBLE_COLLECTIONS_PATHS'] = os.path.join(self.playbook_dir, 'ansible_collections') # Adjusted path
-        env['ANSIBLE_CACHE_DIR'] = os.path.join(user_home, '.ansible', 'cache')
-        env['ANSIBLE_TMPDIR'] = ansible_runtime_tmp_dir
-        env['TMPDIR'] = ansible_runtime_tmp_dir
-        env['HOME'] = user_home # Ensure HOME is set for Ansible's internal operations
-        env['USER'] = 'firework_app_user' # Set USER as well
+        env['ANSIBLE_COLLECTIONS_PATHS'] = os.path.join(self.playbook_dir, 'ansible_collections')
+        env['ANSIBLE_CACHE_DIR'] = os.path.join(self.ansible_tmp_dir, 'cache') # Use our new tmp dir
+        env['ANSIBLE_TMPDIR'] = self.ansible_tmp_dir # Use our new tmp dir
+        env['TMPDIR'] = self.ansible_tmp_dir # Use our new tmp dir
+        # env['HOME'] = user_home # May no longer be strictly needed, but can keep if user_home is valid
+        # env['USER'] = 'firework_app_user' # May no longer be strictly needed
 
         app_logger.debug("--- Subprocess Environment for Ansible ---")
         for k, v in env.items():
@@ -71,20 +82,17 @@ class NetworkAutomationService:
                 app_logger.debug(f"  {k}={v}")
         app_logger.debug("----------------------------------------")
 
-        # Set CWD to project root so Ansible can find inventory and playbooks
-        # (Assuming playbooks and inventory are in the project root relative to this script's location)
         cwd = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 
         app_logger.info(f"Executing Ansible command: {' '.join(command)} in CWD: {cwd}")
         try:
-            # Run the Ansible playbook as a subprocess
             result = subprocess.run(
                 command,
-                capture_output=True, # Capture stdout and stderr
-                text=True,           # Decode output as text
-                check=True,          # Raise CalledProcessError for non-zero exit codes
-                cwd=cwd,             # Set current working directory
-                env=env              # Pass the modified environment
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=cwd,
+                env=env
             )
             app_logger.info(f"Ansible playbook '{playbook_name}' executed successfully.")
             return result.stdout, result.stderr
