@@ -11,21 +11,15 @@ from app.decorators import roles_required, no_self_approval
 
 routes = Blueprint('routes', __name__)
 
-# REMOVED: network_automation_service = NetworkAutomationService() from global scope.
-# The instance is now created in app/__init__.py and attached to this blueprint.
-
 app_logger = logging.getLogger(__name__)
 
 # Helper function to get the NetworkAutomationService instance attached to the blueprint.
-# This ensures that the correctly initialized instance is used within blueprint views.
 def get_network_automation_service():
     """
     Retrieves the NetworkAutomationService instance attached to the blueprint.
     This instance is created and managed by the Flask app factory (`create_app`).
     """
     if not hasattr(routes, 'network_automation_service'):
-        # This fallback case should ideally not be hit in a properly initialized app.
-        # It's primarily for testing or unusual loading scenarios.
         app_logger.warning("NetworkAutomationService not found on blueprint. Creating a fallback instance.")
         routes.network_automation_service = NetworkAutomationService()
     return routes.network_automation_service
@@ -224,30 +218,22 @@ def submit_request():
     if initial_status == 'Approved - Pending Pre-Check':
         try:
             # Call the service here
-            # For initial pre-check, provide a list of *all* potential firewalls from your inventory.
-            # The perform_pre_check method will use pathfinding to filter to those actually in path.
-            # IMPORTANT: Replace with actual firewall hostnames from your inventory.yml
-            # For example, if you have 'pa_firewall_1', 'fgt_firewall_1' in inventory.yml
             all_potential_firewalls = ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2'] # EXAMPLE: ADJUST THIS
             
-            # Create a mutable dict to pass to perform_pre_check so it can update it
             rule_data_for_precheck = {
                 'rule_id': new_rule.id,
                 'source_ip': new_rule.source_ip,
                 'destination_ip': new_rule.destination_ip,
                 'protocol': new_rule.protocol,
-                'ports': new_rule.ports, # Use the list of ports
+                'ports': new_rule.ports,
                 'rule_description': new_rule.rule_description
             }
 
-            # This call will modify rule_data_for_precheck in place with discovered_firewalls,
-            # firewalls_to_provision, and firewalls_already_configured.
             stdout, stderr, firewalls_checked = get_network_automation_service().perform_pre_check(
                 rule_data=rule_data_for_precheck,
-                firewalls_involved=all_potential_firewalls # Pass all potential firewalls for pathfinding
+                firewalls_involved=all_potential_firewalls
             )
 
-            # Update the rule based on pre-check results from the modified rule_data_for_precheck
             db_rule = FirewallRule.query.get(new_rule.id)
             if db_rule:
                 db_rule.firewalls_involved = rule_data_for_precheck.get('firewalls_involved')
@@ -259,21 +245,19 @@ def submit_request():
                 if stderr:
                     app_logger.error(f"Pre-check STDERR for rule {new_rule.id}:\n{stderr}")
 
-                # Determine final status after pre-check
                 if db_rule.firewalls_to_provision and len(db_rule.firewalls_to_provision) > 0:
                     db_rule.status = 'Approved - Pending Implementation'
                 elif db_rule.firewalls_involved and len(db_rule.firewalls_involved) > 0 and \
                      db_rule.firewalls_already_configured and \
                      set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured):
                     db_rule.status = 'Completed - No Provisioning Needed'
-                else: # No firewalls involved or all involved were already configured.
+                else:
                     db_rule.status = 'Approved - No Provisioning Needed'
                 
                 db.session.commit()
                 app_logger.info(f"Network request ID {new_rule.id} updated status to {db_rule.status} after pre-check.")
 
         except RuntimeError as e:
-            # Handle runtime errors from network automation service (e.g., Ansible failure, pathfinding error)
             new_rule.status = 'Pre-Check Failed'
             new_rule.approval_status = 'Pre-Check Failed'
             db.session.commit()
@@ -281,7 +265,6 @@ def submit_request():
             flash(f"Pre-check failed: {e}", 'error')
             return jsonify({"status": "error", "message": f"Pre-check failed: {e}"}), 500
         except Exception as e:
-            # Catch any other unexpected errors during pre-check process
             new_rule.status = 'Error During Pre-Check'
             new_rule.approval_status = 'Error'
             db.session.commit()
@@ -601,17 +584,28 @@ def blacklist_rules_list():
     Displays a list of all blacklist rules.
     Accessible only by superadmin and admin roles.
     """
-    app_logger.info("Attempting to load blacklist rules list.")
+    # NO DATABASE QUERY HERE - The JavaScript in the template will fetch rules via API
+    app_logger.info("Rendering blacklist rules list page. Data will be loaded via JavaScript API call.")
+    return render_template('blacklist_rules_list.html') # Remove rules=rules, error_message=str(e) from here
+
+
+@routes.route('/api/blacklist_rules', methods=['GET'])
+@login_required
+@roles_required('superadmin', 'admin')
+def api_get_blacklist_rules():
+    """
+    API endpoint to retrieve all blacklist rules as JSON.
+    """
+    app_logger.info("API: Attempting to retrieve all blacklist rules.")
     try:
         rules = BlacklistRule.query.order_by(BlacklistRule.sequence.asc()).all()
-        app_logger.info(f"Successfully loaded {len(rules)} blacklist rules.")
-        # --- REMOVE error_message=str(e) from here ---
-        return render_template('blacklist_rules_list.html', rules=rules)
+        # Convert list of model objects to list of dictionaries
+        rules_data = [rule.to_dict() for rule in rules]
+        app_logger.info(f"API: Successfully retrieved {len(rules_data)} blacklist rules.")
+        return jsonify(rules_data), 200
     except Exception as e:
-        app_logger.error(f"Error loading blacklist rules: {e}", exc_info=True)
-        flash("Failed to load rules. Please check server logs.", 'error')
-        # Keep error_message here for actual errors
-        return render_template('blacklist_rules_list.html', rules=[], error_message=str(e))
+        app_logger.error(f"API: Error retrieving blacklist rules: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Failed to retrieve blacklist rules."}), 500
 
 
 @routes.route('/blacklist-rules/add', methods=['GET', 'POST'])
@@ -703,7 +697,7 @@ def add_blacklist_rule():
             db.session.commit()
             flash(f"Blacklist rule '{rule_name}' added successfully!", 'success')
             app_logger.info(f"Blacklist rule ID {new_rule.id} ('{new_rule.rule_name}') added by {current_user.username}.")
-            return redirect(url_for('routes.blacklist_rules_list'))
+            return redirect(url_for('routes.blacklist_rules_list')) # Redirect to the list view
         except Exception as e:
             db.session.rollback()
             flash(f"Error adding blacklist rule: {e}", 'error')
@@ -745,6 +739,57 @@ def delete_blacklist_rule(rule_id):
         db.session.rollback()
         app_logger.error(f"Error deleting blacklist rule {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"Error deleting rule: {e}"}), 500
+
+# API endpoint for deleting multiple blacklist rules
+@routes.route('/api/blacklist_rules', methods=['DELETE'])
+@login_required
+@roles_required('superadmin', 'admin')
+def api_delete_blacklist_rules():
+    """
+    API endpoint to delete multiple blacklist rules by IDs.
+    """
+    data = request.get_json()
+    rule_ids = data.get('ids', [])
+    if not rule_ids:
+        return jsonify({"status": "error", "message": "No rule IDs provided for deletion."}), 400
+
+    try:
+        deleted_count = 0
+        for rule_id in rule_ids:
+            rule = BlacklistRule.query.get(rule_id)
+            if rule:
+                db.session.delete(rule)
+                deleted_count += 1
+        db.session.commit()
+        app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {rule_ids}.")
+        return jsonify({"status": "success", "message": f"{deleted_count} rule(s) deleted successfully."}), 200
+    except Exception as e:
+        db.session.rollback()
+        app_logger.error(f"API: Error deleting multiple blacklist rules by {current_user.username}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"An error occurred during bulk deletion: {e}"}), 500
+
+
+# API endpoint for deleting a single blacklist rule (used by individual delete buttons)
+@routes.route('/api/blacklist_rules/<int:rule_id>', methods=['DELETE'])
+@login_required
+@roles_required('superadmin', 'admin')
+def api_delete_single_blacklist_rule(rule_id):
+    """
+    API endpoint to delete a single blacklist rule by ID.
+    """
+    rule = BlacklistRule.query.get(rule_id)
+    if not rule:
+        return jsonify({"status": "error", "message": f"Rule with ID {rule_id} not found."}), 404
+    
+    try:
+        db.session.delete(rule)
+        db.session.commit()
+        app_logger.info(f"API: Blacklist rule ID {rule_id} deleted by {current_user.username}.")
+        return jsonify({"status": "success", "message": f"Rule ID {rule_id} deleted successfully."}), 200
+    except Exception as e:
+        db.session.rollback()
+        app_logger.error(f"API: Error deleting single blacklist rule {rule_id} by {current_user.username}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"An error occurred during deletion: {e}"}), 500
 
 
 @routes.route('/profile', methods=['GET', 'POST'])
@@ -798,4 +843,3 @@ def profile():
             return render_template('profile.html', user=user)
 
     return render_template('profile.html', user=user)
-
