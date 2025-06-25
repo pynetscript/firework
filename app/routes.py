@@ -7,7 +7,7 @@ from datetime import datetime
 from flask_login import login_required, current_user
 from app.services.network_automation import NetworkAutomationService
 from app.decorators import roles_required, no_self_approval
-
+import os
 
 routes = Blueprint('routes', __name__)
 
@@ -34,7 +34,6 @@ def home():
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
     return redirect(url_for('routes.task_results'))
-
 
 @routes.route('/request-form')
 @login_required
