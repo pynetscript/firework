@@ -12,14 +12,14 @@ from app.models import db, Device, Interface, ArpEntry, RouteEntry
 
 app_logger = logging.getLogger(__name__)
 
-app_logger.debug(f"DEBUG: network_automation.py is being loaded from: {os.path.abspath(__file__)}")
+#app_logger.debug(f"DEBUG: network_automation.py is being loaded from: {os.path.abspath(__file__)}")
 
 class NetworkAutomationService:
     def __init__(self, inventory_path='inventory.yml', playbook_dir='.'):
         project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
         self.inventory_path = os.path.join(project_root, inventory_path)
         self.playbook_dir = os.path.join(project_root, playbook_dir)
-        
+
         self.outputs_dir = os.path.join(project_root, 'outputs')
         app_logger.info(f"Ansible outputs directory set to: {self.outputs_dir}")
 

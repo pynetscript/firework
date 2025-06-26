@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 max-w-md">
-    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Create New Network Request</h2>
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Create Request</h2>
 
     <form id="requestForm" class="space-y-4">
         <div>
@@ -23,7 +23,7 @@
         </div>
 
         <div>
-            <label for="port" class="block text-gray-700 text-sm font-bold mb-2">Port (e.g., 80, 8000-8999, any):</label>
+            <label for="port" class="block text-gray-700 text-sm font-bold mb-2">Port (e.g., 80, 443, any):</label>
             <input type="text" id="port" name="ports" required
                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
         </div>
@@ -83,7 +83,7 @@
                         <p>Approval Status: ${result.approval_status}</p>
                         <p>Firewalls Involved: ${result.firewalls_involved.length > 0 ? result.firewalls_involved.join(', ') : 'None'}</p>
                         <p class="mt-2"><a href="{{ url_for('routes.task_results') }}" class="text-green-700 underline hover:no-underline">Tasks</a></p>
-                        ${result.can_access_approvals ? // ADD THIS CONDITIONAL CHECK
+                        ${result.can_access_approvals ?
                             `<p><a href="{{ url_for('routes.approvals_list') }}" class="text-green-700 underline hover:no-underline">Approvals</a></p>` : ''
                         }
                     `;

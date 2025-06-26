@@ -318,17 +318,15 @@ def task_results():
         if current_user.has_role('requester'):
             user_rules_conditions.append(FirewallRule.requester_id == current_user.id)
 
-        # Implementers see rules pending, pending implementation, provisioning, provisioning failed, completed
+        # Implementers see rules pending implementation, provisioning, or provisioning failed
         if current_user.has_role('implementer'):
             user_rules_conditions.append(
-                FirewallRule.status.in_(['Pending', 'Approved - Pending Implementation', 'Provisioning', 'Provisioning Failed', 'Completed'])
+                FirewallRule.status.in_(['Approved - Pending Implementation', 'Provisioning', 'Provisioning Failed', 'Completed'])
             )
 
-	# Approvers see rules they have approved or denied OR rules with statuses like implementers
+        # Approvers see rules they have approved or denied
         if current_user.has_role('approver'):
-            user_rules_conditions.append(
-                FirewallRule.status.in_(['Pending', 'Approved - Pending Implementation', 'Provisioning', 'Provisioning Failed', 'Completed'])
-            )
+            user_rules_conditions.append(FirewallRule.approver_id == current_user.id)
 
         # Apply combined conditions, or an empty list if no relevant conditions
         if user_rules_conditions:
@@ -363,14 +361,18 @@ def approve_deny_request(rule_id):
         action = request.form.get('action')
         justification = request.form.get('approver_comment')
 
+        if not justification:
+            flash('Justification is required for approval or denial.', 'error')
+            return render_template('approval_detail.html', rule=rule)
+
         rule.approver_id = current_user.id
         rule.approval_justification = justification
+        rule.approval_date = datetime.utcnow()
 
         if action == 'approve':
             rule.approval_status = 'Approved'
-            rule.status = 'Approved - Pending Implementation'
-            rule.approved_at = datetime.utcnow()
-            app_logger.info(f"Rule {rule.id} approved by {current_user.username}. Status: {rule.status}.")
+            rule.status = 'Approved - Pending Implementation' # Set status here
+            app_logger.info(f"Rule {rule.id} approved by {current_user.username}. Status: {rule.status}. Automation skipped.")
 
             flash(f"Rule {rule.id} approved and moved to 'Pending Implementation'. Automation will be triggered separately.", 'success')
 
