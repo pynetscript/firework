@@ -4,15 +4,20 @@
 <div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Manage Users</h2>
 
-    <div class="flex justify-start mb-6">
+    {# Adjusted layout to place search box next to "Add New User" button #}
+    <div class="flex justify-between items-center mb-6">
         <a href="{{ url_for('admin.add_user') }}" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
             Add New User
         </a>
+        {# NEW: Search Input Field #}
+        <input type="text" id="userSearchInput" placeholder="Search users..."
+               class="p-2 border border-gray-300 rounded-md w-1/3 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </div>
 
     {% if users %}
     <div class="overflow-x-auto">
-        <table class="min-w-full bg-white rounded-lg overflow-hidden shadow-md">
+        {# Added ID to the table for easier JavaScript selection #}
+        <table class="min-w-full bg-white rounded-lg overflow-hidden shadow-md" id="usersTable">
             <thead>
                 <tr class="bg-gray-100 text-gray-700 uppercase text-sm leading-normal">
                     <th class="py-3 px-6 text-left">ID</th>
@@ -109,30 +114,47 @@
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            // Flask expects CSRF token on POST requests if CSRFProtect is enabled.
-                            // For simplicity in this example, we're omitting CSRF token handling in JS,
-                            // but for production, you'd need to include it.
                         },
-                        // No body needed for a simple ID deletion
                     });
 
                     const result = await response.json();
                     if (response.ok) {
-                        // Success, refresh the page to update the list
                         window.location.reload();
                     } else {
-                        // Handle errors
-                        alert(result.message || 'Failed to delete user.'); // Using alert for simplicity here, replace with a custom message box
+                        alert(result.message || 'Failed to delete user.');
                         console.error('Error deleting user:', result);
                     }
                 } catch (error) {
                     console.error('Network error during user deletion:', error);
-                    alert('Network error: Could not connect to the server.'); // Using alert for simplicity here, replace with a custom message box
+                    alert('Network error: Could not connect to the server.');
                 } finally {
                     closeDeleteModal();
                 }
             }
         });
+
+        // NEW: Search functionality
+        const userSearchInput = document.getElementById('userSearchInput');
+        const usersTableBody = document.querySelector('#usersTable tbody'); // Get the tbody of the table
+        // Ensure tableRows is defined only if usersTableBody exists to prevent errors
+        const tableRows = usersTableBody ? usersTableBody.querySelectorAll('tr') : [];
+
+        if (userSearchInput && usersTableBody) { // Check if elements exist before adding listener
+            userSearchInput.addEventListener('input', function() {
+                const searchTerm = userSearchInput.value.toLowerCase();
+
+                tableRows.forEach(function(row) {
+                    // Get all text content from the cells in the current row for broad search
+                    const rowText = row.textContent.toLowerCase();
+
+                    if (rowText.includes(searchTerm)) {
+                        row.style.display = ''; // Show the row
+                    } else {
+                        row.style.display = 'none'; // Hide the row
+                    }
+                });
+            });
+        }
     });
 </script>
 {% endblock %}

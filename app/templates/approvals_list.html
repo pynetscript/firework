@@ -12,7 +12,7 @@
                     <th class="py-3 px-6 text-left">Source IP</th>
                     <th class="py-3 px-6 text-left">Destination IP</th>
                     <th class="py-3 px-6 text-left">Protocol</th>
-                    <th class="py-3 px-6 text-left">Port</th>
+                    <th class="py-3 px-6 text-left">Port(s)</th>
                     <th class="py-3 px-6 text-left">Current Status</th>
                     <th class="py-3 px-6 text-left">Approval Status</th>
                     <th class="py-3 px-6 text-center">Action</th>
@@ -25,7 +25,7 @@
                     <td class="py-3 px-6 text-left">{{ rule.source_ip }}</td>
                     <td class="py-3 px-6 text-left">{{ rule.destination_ip }}</td>
                     <td class="py-3 px-6 text-left">{{ rule.protocol }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.port }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.ports | join(', ') if rule.ports else 'N/A' }}</td>
                     <td class="py-3 px-6 text-left">{{ rule.status }}</td>
                     <td class="py-3 px-6 text-left">{{ rule.approval_status }}</td>
                     <td class="py-3 px-6 text-center">

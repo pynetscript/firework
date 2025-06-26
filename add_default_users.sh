@@ -27,13 +27,13 @@ from datetime import datetime, timezone
 app = create_app()
 with app.app_context():
     users_to_create = [
-        {'username': 'super_admin', 'password': 'super_admin', 'email': 'superadmin@firework.local', 'role': 'superadmin'},
-        {'username': 'admin', 'password': 'admin', 'email': 'admin@firework.local', 'role': 'admin'},
-        {'username': 'implementer', 'password': 'implementer', 'email': 'implementer@firework.local', 'role': 'implementer'},
-        {'username': 'approver1', 'password': 'approver1', 'email': 'approver1@firework.local', 'role': 'approver1'},
-        {'username': 'approver2', 'password': 'approver2', 'email': 'approver2@firework.local', 'role': 'approver2'},
-        {'username': 'requester1', 'password': 'requester1', 'email': 'requester1@firework.local', 'role': 'requester'},
-        {'username': 'requester2', 'password': 'requester2', 'email': 'requester2@firework.local', 'role': 'requester'}
+        {'username': 'super_admin', 'password': 'super_admin', 'email': 'superadmin@firework', 'role': 'superadmin'},
+        {'username': 'admin', 'password': 'admin', 'email': 'admin@firework', 'role': 'admin'},
+        {'username': 'implementer', 'password': 'implementer', 'email': 'implementer@firework', 'role': 'implementer'},
+        {'username': 'approver1', 'password': 'approver1', 'email': 'approver1@firework', 'role': 'approver'},
+        {'username': 'approver2', 'password': 'approver2', 'email': 'approver2@firework', 'role': 'approver'},
+        {'username': 'requester1', 'password': 'requester1', 'email': 'requester1@firework', 'role': 'requester'},
+        {'username': 'requester2', 'password': 'requester2', 'email': 'requester2@firework', 'role': 'requester'}
     ]
 
     for user_data in users_to_create:

@@ -1,0 +1,1614 @@
+2025-06-25 11:06:59,643 - app.routes - INFO - Received new network request from super_admin
+2025-06-25 11:06:59,645 - app.routes - INFO - Request from 10.0.1.1 to 10.3.1.10:8080/tcp passed blacklist check for user super_admin.
+2025-06-25 11:06:59,646 - app.routes - INFO - User super_admin (role: superadmin) auto-approved request 10.0.1.1 to 10.3.1.10:8080/tcp.
+2025-06-25 11:06:59,650 - app.routes - INFO - Network request ID 1 created by super_admin.
+2025-06-25 11:06:59,650 - app.routes - WARNING - NetworkAutomationService not found on blueprint. Creating a fallback instance.
+2025-06-25 11:06:59,650 - app.services.network_automation - INFO - Ansible outputs directory set to: /home/firework/firework/app/services/../../outputs
+2025-06-25 11:06:59,650 - app.services.network_automation - INFO - Ansible temporary directory set to: /home/firework/firework/app/services/../../ansible_tmp
+2025-06-25 11:06:59,650 - app.services.network_automation - INFO - Performing pre-check for rule 1 on firewalls initially specified: ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2']
+2025-06-25 11:06:59,650 - app.services.network_automation - INFO - Running Ansible network data collector (collector.yml)...
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG - --- Subprocess Environment for Ansible ---
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   USER=firework_app_user
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   HOME=/home/firework_app_user
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   ANSIBLE_CACHE_DIR=/home/firework/firework/app/services/../../ansible_tmp/cache
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   ANSIBLE_TMPDIR=/home/firework/firework/app/services/../../ansible_tmp
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   ANSIBLE_HOST_KEY_CHECKING=False
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   ANSIBLE_COLLECTIONS_PATH=/home/firework/firework/app/services/../.././ansible_collections
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG -   TMPDIR=/home/firework/firework/app/services/../../ansible_tmp
+2025-06-25 11:06:59,650 - app.services.network_automation - DEBUG - ----------------------------------------
+2025-06-25 11:06:59,651 - app.services.network_automation - INFO - Executing Ansible command: ansible-playbook /home/firework/firework/app/services/../.././collector.yml -i /home/firework/firework/app/services/../../inventory.yml in CWD: /home/firework/firework/app/services/../..
+2025-06-25 11:07:24,622 - app.services.network_automation - INFO - Ansible playbook 'collector.yml' executed successfully.
+2025-06-25 11:07:24,622 - app.services.network_automation - INFO - Network data collection completed.
+2025-06-25 11:07:24,622 - app.services.network_automation - INFO - Starting network topology database build process in PostgreSQL.
+2025-06-25 11:07:24,622 - app.services.network_automation - INFO - Attempting to list directory: /home/firework/firework/app/services/../../outputs
+2025-06-25 11:07:24,622 - app.services.network_automation - INFO - Files found in /home/firework/firework/app/services/../../outputs: ['R1_interfaces.yml', 'R1_routes.txt', 'fgt_arp.yml', 'R2_interfaces.yml', 'R1_arp.txt', 'SW1_interfaces.yml', 'R2_routes.txt', 'SW1_arp.txt', 'fgt_routes.yml', 'R3_routes.txt', 'R2_arp.txt', 'SW1_routes.txt', 'pafw_arp.txt', 'R3_interfaces.yml', 'fgt_interfaces.yml', 'R3_arp.txt', 'pafw_routes.txt', 'pafw_interfaces.yml']
+2025-06-25 11:07:24,626 - app.services.network_automation - INFO - Cleared existing network topology data from PostgreSQL.
+2025-06-25 11:07:24,626 - app.services.network_automation - INFO - Discovered device files for processing: {
+  "R1": {
+    "type": "Router",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/R1_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/R1_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/R1_routes.txt"
+  },
+  "fgt": {
+    "type": "Firewall",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/fgt_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/fgt_arp.yml",
+    "routes": "/home/firework/firework/app/services/../../outputs/fgt_routes.yml"
+  },
+  "R2": {
+    "type": "Router",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/R2_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/R2_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/R2_routes.txt"
+  },
+  "SW1": {
+    "type": "Switch",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/SW1_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/SW1_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/SW1_routes.txt"
+  },
+  "R3": {
+    "type": "Router",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/R3_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/R3_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/R3_routes.txt"
+  },
+  "pafw": {
+    "type": "Firewall",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/pafw_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/pafw_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/pafw_routes.txt"
+  }
+}
+2025-06-25 11:07:24,626 - app.services.network_automation - INFO - Attempting to process data for device: R1
+2025-06-25 11:07:24,631 - app.services.network_automation - INFO - Added new device 'R1' (ID: 1) to session.
+2025-06-25 11:07:24,631 - app.services.network_automation - INFO - Processing interfaces for R1 from /home/firework/firework/app/services/../../outputs/R1_interfaces.yml
+2025-06-25 11:07:24,637 - app.services.network_automation - DEBUG - Raw interface data for R1: {
+  "ansible_net_all_ipv4_addresses": [
+    "10.11.0.1",
+    "10.0.1.254",
+    "10.0.2.254",
+    "10.250.10.111"
+  ],
+  "ansible_net_all_ipv6_addresses": [],
+  "ansible_net_api": "cliconf",
+  "ansible_net_gather_network_resources": [],
+  "ansible_net_gather_subset": [
+    "default",
+    "interfaces"
+  ],
+  "ansible_net_hostname": "R1",
+  "ansible_net_image": "flash0:/vios-adventerprisek9-m",
+  "ansible_net_interfaces": {
+    "GigabitEthernet0/0": {
+      "bandwidth": 1000000,
+      "description": "*** pafw ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.11.0.1",
+          "subnet": "30"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0000",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/1": {
+      "bandwidth": 1000000,
+      "description": "*** s0 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.0.1.254",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0001",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/2": {
+      "bandwidth": 1000000,
+      "description": "*** d0 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.0.2.254",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0002",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/3": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.250.10.111",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0003",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "NVI0": {
+      "bandwidth": 56,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "up",
+      "macaddress": null,
+      "mediatype": null,
+      "mtu": 1514,
+      "operstatus": "up",
+      "type": null
+    }
+  },
+  "ansible_net_iostype": "IOS",
+  "ansible_net_model": "IOSv",
+  "ansible_net_neighbors": {},
+  "ansible_net_operatingmode": "autonomous",
+  "ansible_net_python_version": "3.12.3",
+  "ansible_net_serialnum": "9MQLLMAY42N2TTAMWTLXE",
+  "ansible_net_system": "ios",
+  "ansible_net_version": "15.6(2)T",
+  "ansible_network_resources": {}
+}
+2025-06-25 11:07:24,637 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/0' details for R1. Details: {"bandwidth": 1000000, "description": "*** pafw ***", "duplex": null, "ipv4": [{"address": "10.11.0.1", "subnet": "30"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0000", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,637 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/0: 10.11.0.0/30
+2025-06-25 11:07:24,637 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/0' (10.11.0.1) for R1 to session.
+2025-06-25 11:07:24,637 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/1' details for R1. Details: {"bandwidth": 1000000, "description": "*** s0 ***", "duplex": null, "ipv4": [{"address": "10.0.1.254", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0001", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,637 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/1: 10.0.1.0/24
+2025-06-25 11:07:24,637 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/1' (10.0.1.254) for R1 to session.
+2025-06-25 11:07:24,638 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/2' details for R1. Details: {"bandwidth": 1000000, "description": "*** d0 ***", "duplex": null, "ipv4": [{"address": "10.0.2.254", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0002", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,638 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/2: 10.0.2.0/24
+2025-06-25 11:07:24,638 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/2' (10.0.2.254) for R1 to session.
+2025-06-25 11:07:24,638 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/3' details for R1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [{"address": "10.250.10.111", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0003", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,638 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/3: 10.250.10.0/24
+2025-06-25 11:07:24,638 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/3' (10.250.10.111) for R1 to session.
+2025-06-25 11:07:24,638 - app.services.network_automation - DEBUG - Parsing interface 'NVI0' details for R1. Details: {"bandwidth": 56, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "up", "macaddress": null, "mediatype": null, "mtu": 1514, "operstatus": "up", "type": null}
+2025-06-25 11:07:24,638 - app.services.network_automation - INFO - Finished adding 4 interfaces for R1.
+2025-06-25 11:07:24,638 - app.services.network_automation - INFO - Processing ARP for R1 from /home/firework/firework/app/services/../../outputs/R1_arp.txt
+2025-06-25 11:07:24,638 - app.services.network_automation - DEBUG - Raw ARP data for R1:
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  10.0.1.254              -   0c0d.f8a2.0001  ARPA   GigabitEthernet0/1
+Internet  10.0.2.254              -   0c0d.f8a2.0002  ARPA   GigabitEthernet0/2
+Internet  10.11.0.1               -   0c0d.f8a2.0000  ARPA   GigabitEthernet0/0
+Internet  10.11.0.2              29   0ccd.9ded.0001  ARPA   GigabitEthernet0/0
+Internet  10.250.10.1             6   000c.2930.4f3a  ARPA   GigabitEthernet0/3
+Internet  10.250.10.111           -   0c0d.f8a2.0003  ARPA   GigabitEthernet0/3
+Internet  10.250.10.206          23   000c.29a0.559f  ARPA   GigabitEthernet0/3
+2025-06-25 11:07:24,639 - app.services.network_automation - INFO - Added ARP entry 10.0.1.254 (0c0df8a20001) on R1 to session.
+2025-06-25 11:07:24,639 - app.services.network_automation - INFO - Added ARP entry 10.0.2.254 (0c0df8a20002) on R1 to session.
+2025-06-25 11:07:24,639 - app.services.network_automation - INFO - Added ARP entry 10.11.0.1 (0c0df8a20000) on R1 to session.
+2025-06-25 11:07:24,639 - app.services.network_automation - INFO - Added ARP entry 10.11.0.2 (0ccd9ded0001) on R1 to session.
+2025-06-25 11:07:24,639 - app.services.network_automation - INFO - Added ARP entry 10.250.10.1 (000c29304f3a) on R1 to session.
+2025-06-25 11:07:24,639 - app.services.network_automation - INFO - Added ARP entry 10.250.10.111 (0c0df8a20003) on R1 to session.
+2025-06-25 11:07:24,640 - app.services.network_automation - INFO - Added ARP entry 10.250.10.206 (000c29a0559f) on R1 to session.
+2025-06-25 11:07:24,640 - app.services.network_automation - INFO - Finished adding 7 ARP entries for R1.
+2025-06-25 11:07:24,640 - app.services.network_automation - INFO - Processing routes for R1 from /home/firework/firework/app/services/../../outputs/R1_routes.txt
+2025-06-25 11:07:24,640 - app.services.network_automation - DEBUG - Raw Route data for R1:
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+       a - application route
+       + - replicated route, % - next hop override, p - overrides from PfR
+
+Gateway of last resort is 10.250.10.1 to network 0.0.0.0
+
+S*    0.0.0.0/0 [1/0] via 10.250.10.1
+      10.0.0.0/8 is variably subnetted, 15 subnets, 3 masks
+C        10.0.1.0/24 is directly connected, GigabitEthernet0/1
+L        10.0.1.254/32 is directly connected, GigabitEthernet0/1
+C        10.0.2.0/24 is directly connected, GigabitEthernet0/2
+L        10.0.2.254/32 is directly connected, GigabitEthernet0/2
+O        10.1.1.0/24 [110/11] via 10.11.0.2, 00:29:03, GigabitEthernet0/0
+O        10.2.1.0/24 [110/14] via 10.11.0.2, 00:29:03, GigabitEthernet0/0
+O        10.3.1.0/24 [110/14] via 10.11.0.2, 00:29:03, GigabitEthernet0/0
+C        10.11.0.0/30 is directly connected, GigabitEthernet0/0
+L        10.11.0.1/32 is directly connected, GigabitEthernet0/0
+O        10.12.0.0/30 [110/11] via 10.11.0.2, 00:29:03, GigabitEthernet0/0
+O        10.21.0.0/30 [110/12] via 10.11.0.2, 00:29:03, GigabitEthernet0/0
+O        10.31.0.0/30 [110/13] via 10.11.0.2, 00:29:03, GigabitEthernet0/0
+O        10.123.0.0/24 [110/13] via 10.11.0.2, 00:29:03, GigabitEthernet0/0
+C        10.250.10.0/24 is directly connected, GigabitEthernet0/3
+L        10.250.10.111/32 is directly connected, GigabitEthernet0/3
+2025-06-25 11:07:24,640 - app.services.network_automation - INFO - Added route 0.0.0.0/0 via 10.250.10.1 on R1 to session.
+2025-06-25 11:07:24,641 - app.services.network_automation - INFO - Added route 10.0.1.0/24 via None on R1 to session.
+2025-06-25 11:07:24,641 - app.services.network_automation - INFO - Added route 10.0.1.254/32 via None on R1 to session.
+2025-06-25 11:07:24,641 - app.services.network_automation - INFO - Added route 10.0.2.0/24 via None on R1 to session.
+2025-06-25 11:07:24,641 - app.services.network_automation - INFO - Added route 10.0.2.254/32 via None on R1 to session.
+2025-06-25 11:07:24,641 - app.services.network_automation - INFO - Added route 10.1.1.0/24 via 10.11.0.2 on R1 to session.
+2025-06-25 11:07:24,641 - app.services.network_automation - INFO - Added route 10.2.1.0/24 via 10.11.0.2 on R1 to session.
+2025-06-25 11:07:24,641 - app.services.network_automation - INFO - Added route 10.3.1.0/24 via 10.11.0.2 on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.11.0.0/30 via None on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.11.0.1/32 via None on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.12.0.0/30 via 10.11.0.2 on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.21.0.0/30 via 10.11.0.2 on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.31.0.0/30 via 10.11.0.2 on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.123.0.0/24 via 10.11.0.2 on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.250.10.0/24 via None on R1 to session.
+2025-06-25 11:07:24,642 - app.services.network_automation - INFO - Added route 10.250.10.111/32 via None on R1 to session.
+2025-06-25 11:07:24,643 - app.services.network_automation - INFO - Finished adding 16 route entries for R1.
+2025-06-25 11:07:24,650 - app.services.network_automation - INFO - Successfully committed data for device: R1
+2025-06-25 11:07:24,651 - app.services.network_automation - INFO - Attempting to process data for device: fgt
+2025-06-25 11:07:24,652 - app.services.network_automation - INFO - Added new device 'fgt' (ID: 2) to session.
+2025-06-25 11:07:24,652 - app.services.network_automation - INFO - Processing interfaces for fgt from /home/firework/firework/app/services/../../outputs/fgt_interfaces.yml
+2025-06-25 11:07:24,656 - app.services.network_automation - DEBUG - Raw interface data for fgt: {
+  "changed": false,
+  "failed": false,
+  "meta": {
+    "build": 2795,
+    "http_method": "GET",
+    "name": "interface",
+    "path": "system",
+    "results": {
+      "port1": {
+        "alias": "(mgmt)",
+        "duplex": 1,
+        "id": "port1",
+        "ip": "10.250.10.101",
+        "link": true,
+        "mac": "00:0c:29:c7:98:ad",
+        "mask": 24,
+        "name": "port1",
+        "rx_bytes": 26157428,
+        "rx_errors": 0,
+        "rx_packets": 107403,
+        "speed": 10000.0,
+        "tx_bytes": 17221727,
+        "tx_errors": 0,
+        "tx_packets": 127263
+      },
+      "port2": {
+        "alias": "(dmz)",
+        "duplex": 1,
+        "id": "port2",
+        "ip": "10.2.1.254",
+        "link": true,
+        "mac": "00:0c:29:c7:98:b7",
+        "mask": 24,
+        "name": "port2",
+        "rx_bytes": 1640144,
+        "rx_errors": 0,
+        "rx_packets": 20331,
+        "speed": 10000.0,
+        "tx_bytes": 2092592,
+        "tx_errors": 0,
+        "tx_packets": 23398
+      },
+      "port3": {
+        "alias": "(lan)",
+        "duplex": 1,
+        "id": "port3",
+        "ip": "10.123.0.2",
+        "link": true,
+        "mac": "00:0c:29:c7:98:c1",
+        "mask": 24,
+        "name": "port3",
+        "rx_bytes": 1625950,
+        "rx_errors": 0,
+        "rx_packets": 20285,
+        "speed": 10000.0,
+        "tx_bytes": 2116770,
+        "tx_errors": 0,
+        "tx_packets": 23567
+      }
+    },
+    "revision": "1750838832.297810",
+    "serial": "FGVMEVHSU6ZDYQ0D",
+    "status": "success",
+    "vdom": "root",
+    "version": "v7.4.8"
+  }
+}
+2025-06-25 11:07:24,656 - app.services.network_automation - INFO - Finished adding 0 interfaces for fgt.
+2025-06-25 11:07:24,656 - app.services.network_automation - INFO - Processing ARP for fgt from /home/firework/firework/app/services/../../outputs/fgt_arp.yml
+2025-06-25 11:07:24,656 - app.services.network_automation - DEBUG - Raw ARP data for fgt:
+changed: false
+failed: false
+meta:
+    build: 2795
+    http_method: GET
+    name: arp
+    path: network
+    results:
+    -   age: 0
+        interface: port1
+        ip: 10.250.10.206
+        mac: 00:0c:29:a0:55:9f
+    -   age: 1960
+        interface: port3
+        ip: 10.123.0.1
+        mac: 0c:a9:e8:e5:00:02
+    -   age: 20
+        interface: port1
+        ip: 10.250.10.1
+        mac: 00:0c:29:30:4f:3a
+    serial: FGVMEVHSU6ZDYQ0D
+    status: success
+    vdom: root
+    version: v7.4.8
+
+2025-06-25 11:07:24,658 - app.services.network_automation - INFO - Finished adding 0 ARP entries for fgt.
+2025-06-25 11:07:24,658 - app.services.network_automation - INFO - Processing routes for fgt from /home/firework/firework/app/services/../../outputs/fgt_routes.yml
+2025-06-25 11:07:24,658 - app.services.network_automation - DEBUG - Raw Route data for fgt:
+changed: false
+failed: false
+meta:
+    build: 2795
+    http_method: GET
+    name: ipv4
+    path: router
+    results:
+    -   distance: 10
+        gateway: 10.250.10.1
+        interface: port1
+        ip_mask: 0.0.0.0/0
+        ip_version: 4
+        metric: 0
+        non_rc_gateway: 10.250.10.1
+        origin: unspecified
+        priority: 1
+        type: static
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750837084
+        interface: port3
+        ip_mask: 10.0.1.0/24
+        ip_version: 4
+        metric: 14
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750837084
+        interface: port3
+        ip_mask: 10.0.2.0/24
+        ip_version: 4
+        metric: 14
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750837084
+        interface: port3
+        ip_mask: 10.1.1.0/24
+        ip_version: 4
+        metric: 13
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 0
+        gateway: 0.0.0.0
+        interface: port2
+        ip_mask: 10.2.1.0/24
+        ip_version: 4
+        metric: 0
+        non_rc_gateway: 0.0.0.0
+        origin: unspecified
+        priority: 0
+        type: connect
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750836876
+        interface: port3
+        ip_mask: 10.3.1.0/24
+        ip_version: 4
+        metric: 3
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750837084
+        interface: port3
+        ip_mask: 10.11.0.0/30
+        ip_version: 4
+        metric: 13
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750836876
+        interface: port3
+        ip_mask: 10.12.0.0/30
+        ip_version: 4
+        metric: 3
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750836837
+        interface: port3
+        ip_mask: 10.21.0.0/30
+        ip_version: 4
+        metric: 2
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 110
+        gateway: 10.123.0.1
+        install_date: 1750836837
+        interface: port3
+        ip_mask: 10.31.0.0/30
+        ip_version: 4
+        metric: 2
+        non_rc_gateway: 10.123.0.1
+        origin: unspecified
+        priority: 1
+        type: ospf
+        vrf: 0
+    -   distance: 0
+        gateway: 0.0.0.0
+        interface: port3
+        ip_mask: 10.123.0.0/24
+        ip_version: 4
+        metric: 0
+        non_rc_gateway: 0.0.0.0
+        origin: unspecified
+        priority: 0
+        type: connect
+        vrf: 0
+    -   distance: 0
+        gateway: 0.0.0.0
+        interface: port1
+        ip_mask: 10.250.10.0/24
+        ip_version: 4
+        metric: 0
+        non_rc_gateway: 0.0.0.0
+        origin: unspecified
+        priority: 0
+        type: connect
+        vrf: 0
+    serial: FGVMEVHSU6ZDYQ0D
+    status: success
+    vdom: root
+    version: v7.4.8
+
+2025-06-25 11:07:24,667 - app.services.network_automation - INFO - Finished adding 0 route entries for fgt.
+2025-06-25 11:07:24,667 - app.services.network_automation - INFO - Successfully committed data for device: fgt
+2025-06-25 11:07:24,667 - app.services.network_automation - INFO - Attempting to process data for device: R2
+2025-06-25 11:07:24,669 - app.services.network_automation - INFO - Added new device 'R2' (ID: 3) to session.
+2025-06-25 11:07:24,669 - app.services.network_automation - INFO - Processing interfaces for R2 from /home/firework/firework/app/services/../../outputs/R2_interfaces.yml
+2025-06-25 11:07:24,673 - app.services.network_automation - DEBUG - Raw interface data for R2: {
+  "ansible_net_all_ipv4_addresses": [
+    "10.12.0.2",
+    "10.21.0.1",
+    "10.250.10.112"
+  ],
+  "ansible_net_all_ipv6_addresses": [],
+  "ansible_net_api": "cliconf",
+  "ansible_net_gather_network_resources": [],
+  "ansible_net_gather_subset": [
+    "default",
+    "interfaces"
+  ],
+  "ansible_net_hostname": "R2",
+  "ansible_net_image": "flash0:/vios-adventerprisek9-m",
+  "ansible_net_interfaces": {
+    "GigabitEthernet0/0": {
+      "bandwidth": 1000000,
+      "description": "*** pafw ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.12.0.2",
+          "subnet": "30"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0cfa.c987.0000",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/1": {
+      "bandwidth": 1000000,
+      "description": "*** SW1 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.21.0.1",
+          "subnet": "30"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0cfa.c987.0001",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/2": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.250.10.112",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0cfa.c987.0002",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/3": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": "Auto",
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0cfa.c987.0003",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "administratively down",
+      "type": "iGbE"
+    }
+  },
+  "ansible_net_iostype": "IOS",
+  "ansible_net_model": "IOSv",
+  "ansible_net_neighbors": {
+    "GigabitEthernet0/1": [
+      {
+        "host": "SW1",
+        "ip": "10.21.0.2",
+        "platform": "Cisco ",
+        "port": "GigabitEthernet0/0"
+      }
+    ]
+  },
+  "ansible_net_operatingmode": "autonomous",
+  "ansible_net_python_version": "3.12.3",
+  "ansible_net_serialnum": "9A6U2IL5ECVYHRE68IG6J",
+  "ansible_net_system": "ios",
+  "ansible_net_version": "15.6(2)T",
+  "ansible_network_resources": {}
+}
+2025-06-25 11:07:24,673 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/0' details for R2. Details: {"bandwidth": 1000000, "description": "*** pafw ***", "duplex": null, "ipv4": [{"address": "10.12.0.2", "subnet": "30"}], "lineprotocol": "up", "macaddress": "0cfa.c987.0000", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,673 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/0: 10.12.0.0/30
+2025-06-25 11:07:24,674 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/0' (10.12.0.2) for R2 to session.
+2025-06-25 11:07:24,674 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/1' details for R2. Details: {"bandwidth": 1000000, "description": "*** SW1 ***", "duplex": null, "ipv4": [{"address": "10.21.0.1", "subnet": "30"}], "lineprotocol": "up", "macaddress": "0cfa.c987.0001", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,674 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/1: 10.21.0.0/30
+2025-06-25 11:07:24,674 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/1' (10.21.0.1) for R2 to session.
+2025-06-25 11:07:24,674 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/2' details for R2. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [{"address": "10.250.10.112", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0cfa.c987.0002", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,674 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/2: 10.250.10.0/24
+2025-06-25 11:07:24,674 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/2' (10.250.10.112) for R2 to session.
+2025-06-25 11:07:24,674 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/3' details for R2. Details: {"bandwidth": 1000000, "description": null, "duplex": "Auto", "ipv4": [], "lineprotocol": "down", "macaddress": "0cfa.c987.0003", "mediatype": "RJ45", "mtu": 1500, "operstatus": "administratively down", "type": "iGbE"}
+2025-06-25 11:07:24,674 - app.services.network_automation - INFO - Finished adding 3 interfaces for R2.
+2025-06-25 11:07:24,674 - app.services.network_automation - INFO - Processing ARP for R2 from /home/firework/firework/app/services/../../outputs/R2_arp.txt
+2025-06-25 11:07:24,675 - app.services.network_automation - DEBUG - Raw ARP data for R2:
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  10.12.0.1              29   0ccd.9ded.0002  ARPA   GigabitEthernet0/0
+Internet  10.12.0.2               -   0cfa.c987.0000  ARPA   GigabitEthernet0/0
+Internet  10.21.0.1               -   0cfa.c987.0001  ARPA   GigabitEthernet0/1
+Internet  10.21.0.2              33   0ca9.e8e5.0000  ARPA   GigabitEthernet0/1
+Internet  10.250.10.1            18   000c.2930.4f3a  ARPA   GigabitEthernet0/2
+Internet  10.250.10.112           -   0cfa.c987.0002  ARPA   GigabitEthernet0/2
+Internet  10.250.10.206          24   000c.29a0.559f  ARPA   GigabitEthernet0/2
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Added ARP entry 10.12.0.1 (0ccd9ded0002) on R2 to session.
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Added ARP entry 10.12.0.2 (0cfac9870000) on R2 to session.
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Added ARP entry 10.21.0.1 (0cfac9870001) on R2 to session.
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Added ARP entry 10.21.0.2 (0ca9e8e50000) on R2 to session.
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Added ARP entry 10.250.10.1 (000c29304f3a) on R2 to session.
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Added ARP entry 10.250.10.112 (0cfac9870002) on R2 to session.
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Added ARP entry 10.250.10.206 (000c29a0559f) on R2 to session.
+2025-06-25 11:07:24,675 - app.services.network_automation - INFO - Finished adding 7 ARP entries for R2.
+2025-06-25 11:07:24,676 - app.services.network_automation - INFO - Processing routes for R2 from /home/firework/firework/app/services/../../outputs/R2_routes.txt
+2025-06-25 11:07:24,676 - app.services.network_automation - DEBUG - Raw Route data for R2:
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+       a - application route
+       + - replicated route, % - next hop override, p - overrides from PfR
+
+Gateway of last resort is 10.250.10.1 to network 0.0.0.0
+
+S*    0.0.0.0/0 [1/0] via 10.250.10.1
+      10.0.0.0/8 is variably subnetted, 14 subnets, 3 masks
+O        10.0.1.0/24 [110/12] via 10.12.0.1, 00:29:04, GigabitEthernet0/0
+O        10.0.2.0/24 [110/12] via 10.12.0.1, 00:29:04, GigabitEthernet0/0
+O        10.1.1.0/24 [110/11] via 10.12.0.1, 00:29:04, GigabitEthernet0/0
+O        10.2.1.0/24 [110/3] via 10.21.0.2, 00:32:41, GigabitEthernet0/1
+O        10.3.1.0/24 [110/3] via 10.21.0.2, 00:32:31, GigabitEthernet0/1
+O        10.11.0.0/30 [110/11] via 10.12.0.1, 00:29:04, GigabitEthernet0/0
+C        10.12.0.0/30 is directly connected, GigabitEthernet0/0
+L        10.12.0.2/32 is directly connected, GigabitEthernet0/0
+C        10.21.0.0/30 is directly connected, GigabitEthernet0/1
+L        10.21.0.1/32 is directly connected, GigabitEthernet0/1
+O        10.31.0.0/30 [110/2] via 10.21.0.2, 00:32:41, GigabitEthernet0/1
+O        10.123.0.0/24 [110/2] via 10.21.0.2, 00:32:41, GigabitEthernet0/1
+C        10.250.10.0/24 is directly connected, GigabitEthernet0/2
+L        10.250.10.112/32 is directly connected, GigabitEthernet0/2
+2025-06-25 11:07:24,676 - app.services.network_automation - INFO - Added route 0.0.0.0/0 via 10.250.10.1 on R2 to session.
+2025-06-25 11:07:24,676 - app.services.network_automation - INFO - Added route 10.0.1.0/24 via 10.12.0.1 on R2 to session.
+2025-06-25 11:07:24,676 - app.services.network_automation - INFO - Added route 10.0.2.0/24 via 10.12.0.1 on R2 to session.
+2025-06-25 11:07:24,676 - app.services.network_automation - INFO - Added route 10.1.1.0/24 via 10.12.0.1 on R2 to session.
+2025-06-25 11:07:24,676 - app.services.network_automation - INFO - Added route 10.2.1.0/24 via 10.21.0.2 on R2 to session.
+2025-06-25 11:07:24,676 - app.services.network_automation - INFO - Added route 10.3.1.0/24 via 10.21.0.2 on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.11.0.0/30 via 10.12.0.1 on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.12.0.0/30 via None on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.12.0.2/32 via None on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.21.0.0/30 via None on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.21.0.1/32 via None on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.31.0.0/30 via 10.21.0.2 on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.123.0.0/24 via 10.21.0.2 on R2 to session.
+2025-06-25 11:07:24,677 - app.services.network_automation - INFO - Added route 10.250.10.0/24 via None on R2 to session.
+2025-06-25 11:07:24,678 - app.services.network_automation - INFO - Added route 10.250.10.112/32 via None on R2 to session.
+2025-06-25 11:07:24,678 - app.services.network_automation - INFO - Finished adding 15 route entries for R2.
+2025-06-25 11:07:24,682 - app.services.network_automation - INFO - Successfully committed data for device: R2
+2025-06-25 11:07:24,682 - app.services.network_automation - INFO - Attempting to process data for device: SW1
+2025-06-25 11:07:24,683 - app.services.network_automation - INFO - Added new device 'SW1' (ID: 4) to session.
+2025-06-25 11:07:24,684 - app.services.network_automation - INFO - Processing interfaces for SW1 from /home/firework/firework/app/services/../../outputs/SW1_interfaces.yml
+2025-06-25 11:07:24,697 - app.services.network_automation - DEBUG - Raw interface data for SW1: {
+  "ansible_net_all_ipv4_addresses": [
+    "10.123.0.1",
+    "10.31.0.1",
+    "10.21.0.2",
+    "10.250.10.110"
+  ],
+  "ansible_net_all_ipv6_addresses": [],
+  "ansible_net_api": "cliconf",
+  "ansible_net_gather_network_resources": [],
+  "ansible_net_gather_subset": [
+    "default",
+    "interfaces"
+  ],
+  "ansible_net_hostname": "SW1",
+  "ansible_net_image": "flash0:/vios_l2-adventerprisek9-m",
+  "ansible_net_interfaces": {
+    "GigabitEthernet0/0": {
+      "bandwidth": 1000000,
+      "description": "*** R2 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.21.0.2",
+          "subnet": "30"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0ca9.e8e5.0000",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "GigabitEthernet"
+    },
+    "GigabitEthernet0/1": {
+      "bandwidth": 1000000,
+      "description": "*** R3 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.31.0.1",
+          "subnet": "30"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0ca9.e8e5.0001",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "GigabitEthernet"
+    },
+    "GigabitEthernet0/2": {
+      "bandwidth": 1000000,
+      "description": "*** fgt port3 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.123.0.1",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0ca9.e8e5.0002",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "GigabitEthernet"
+    },
+    "GigabitEthernet0/3": {
+      "bandwidth": 1000000,
+      "description": "*** d2 ***",
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "up",
+      "macaddress": "0ca9.e8e5.0003",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet1/0": {
+      "bandwidth": 1000000,
+      "description": "*** mgmt ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.250.10.110",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0ca9.e8e5.0004",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "GigabitEthernet"
+    },
+    "GigabitEthernet1/1": {
+      "bandwidth": 1000000,
+      "description": "*** fgt port2 ***",
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "up",
+      "macaddress": "0ca9.e8e5.0005",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet1/2": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.0006",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet1/3": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.0007",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet2/0": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.0008",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet2/1": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.0009",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet2/2": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.000a",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet2/3": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.000b",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet3/0": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.000c",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet3/1": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.000d",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet3/2": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.000e",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    },
+    "GigabitEthernet3/3": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0ca9.e8e5.000f",
+      "mediatype": "unknown media type",
+      "mtu": 1500,
+      "operstatus": "down",
+      "type": "iGbE"
+    }
+  },
+  "ansible_net_iostype": "IOS",
+  "ansible_net_model": "IOSv",
+  "ansible_net_neighbors": {
+    "GigabitEthernet0/0": [
+      {
+        "host": "R2",
+        "ip": "10.21.0.1",
+        "platform": "Cisco ",
+        "port": "GigabitEthernet0/1"
+      }
+    ],
+    "GigabitEthernet0/1": [
+      {
+        "host": "R3.firework.dev",
+        "ip": "10.31.0.2",
+        "platform": "Cisco ",
+        "port": "GigabitEthernet0/0"
+      }
+    ],
+    "GigabitEthernet0/2": [
+      {
+        "host": "SW1",
+        "ip": "10.123.0.1",
+        "platform": "Cisco ",
+        "port": "GigabitEthernet1/1"
+      }
+    ],
+    "GigabitEthernet1/1": [
+      {
+        "host": "SW1",
+        "ip": "10.123.0.1",
+        "platform": "Cisco ",
+        "port": "GigabitEthernet0/2"
+      }
+    ]
+  },
+  "ansible_net_operatingmode": "autonomous",
+  "ansible_net_python_version": "3.12.3",
+  "ansible_net_serialnum": "9OTZET338D3",
+  "ansible_net_system": "ios",
+  "ansible_net_version": "15.2(4.0.55)E",
+  "ansible_network_resources": {}
+}
+2025-06-25 11:07:24,698 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/0' details for SW1. Details: {"bandwidth": 1000000, "description": "*** R2 ***", "duplex": null, "ipv4": [{"address": "10.21.0.2", "subnet": "30"}], "lineprotocol": "up", "macaddress": "0ca9.e8e5.0000", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "up", "type": "GigabitEthernet"}
+2025-06-25 11:07:24,698 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/0: 10.21.0.0/30
+2025-06-25 11:07:24,698 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/0' (10.21.0.2) for SW1 to session.
+2025-06-25 11:07:24,698 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/1' details for SW1. Details: {"bandwidth": 1000000, "description": "*** R3 ***", "duplex": null, "ipv4": [{"address": "10.31.0.1", "subnet": "30"}], "lineprotocol": "up", "macaddress": "0ca9.e8e5.0001", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "up", "type": "GigabitEthernet"}
+2025-06-25 11:07:24,698 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/1: 10.31.0.0/30
+2025-06-25 11:07:24,698 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/1' (10.31.0.1) for SW1 to session.
+2025-06-25 11:07:24,698 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/2' details for SW1. Details: {"bandwidth": 1000000, "description": "*** fgt port3 ***", "duplex": null, "ipv4": [{"address": "10.123.0.1", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0ca9.e8e5.0002", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "up", "type": "GigabitEthernet"}
+2025-06-25 11:07:24,698 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/2: 10.123.0.0/24
+2025-06-25 11:07:24,699 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/2' (10.123.0.1) for SW1 to session.
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/3' details for SW1. Details: {"bandwidth": 1000000, "description": "*** d2 ***", "duplex": null, "ipv4": [], "lineprotocol": "up", "macaddress": "0ca9.e8e5.0003", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet1/0' details for SW1. Details: {"bandwidth": 1000000, "description": "*** mgmt ***", "duplex": null, "ipv4": [{"address": "10.250.10.110", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0ca9.e8e5.0004", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "up", "type": "GigabitEthernet"}
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet1/0: 10.250.10.0/24
+2025-06-25 11:07:24,699 - app.services.network_automation - INFO - Added interface 'GigabitEthernet1/0' (10.250.10.110) for SW1 to session.
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet1/1' details for SW1. Details: {"bandwidth": 1000000, "description": "*** fgt port2 ***", "duplex": null, "ipv4": [], "lineprotocol": "up", "macaddress": "0ca9.e8e5.0005", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet1/2' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.0006", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet1/3' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.0007", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet2/0' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.0008", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet2/1' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.0009", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,699 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet2/2' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.000a", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,700 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet2/3' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.000b", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,700 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet3/0' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.000c", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,700 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet3/1' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.000d", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,700 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet3/2' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.000e", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,700 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet3/3' details for SW1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "down", "macaddress": "0ca9.e8e5.000f", "mediatype": "unknown media type", "mtu": 1500, "operstatus": "down", "type": "iGbE"}
+2025-06-25 11:07:24,700 - app.services.network_automation - INFO - Finished adding 4 interfaces for SW1.
+2025-06-25 11:07:24,700 - app.services.network_automation - INFO - Processing ARP for SW1 from /home/firework/firework/app/services/../../outputs/SW1_arp.txt
+2025-06-25 11:07:24,700 - app.services.network_automation - DEBUG - Raw ARP data for SW1:
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  10.21.0.1              33   0cfa.c987.0001  ARPA   GigabitEthernet0/0
+Internet  10.21.0.2               -   0ca9.e8e5.0000  ARPA   GigabitEthernet0/0
+Internet  10.31.0.1               -   0ca9.e8e5.0001  ARPA   GigabitEthernet0/1
+Internet  10.31.0.2              33   0c42.50d8.0000  ARPA   GigabitEthernet0/1
+Internet  10.123.0.1              -   0ca9.e8e5.0002  ARPA   GigabitEthernet0/2
+Internet  10.123.0.2             32   000c.29c7.98c1  ARPA   GigabitEthernet0/2
+Internet  10.250.10.1             1   000c.2930.4f3a  ARPA   GigabitEthernet1/0
+Internet  10.250.10.110           -   0ca9.e8e5.0004  ARPA   GigabitEthernet1/0
+Internet  10.250.10.111          20   0c0d.f8a2.0003  ARPA   GigabitEthernet1/0
+Internet  10.250.10.112          19   0cfa.c987.0002  ARPA   GigabitEthernet1/0
+Internet  10.250.10.113          17   0c42.50d8.0002  ARPA   GigabitEthernet1/0
+Internet  10.250.10.161           7   0ccd.9ded.0000  ARPA   GigabitEthernet1/0
+Internet  10.250.10.162          29   0ccd.9ded.0000  ARPA   GigabitEthernet1/0
+Internet  10.250.10.206          23   000c.29a0.559f  ARPA   GigabitEthernet1/0
+2025-06-25 11:07:24,700 - app.services.network_automation - INFO - Added ARP entry 10.21.0.1 (0cfac9870001) on SW1 to session.
+2025-06-25 11:07:24,700 - app.services.network_automation - INFO - Added ARP entry 10.21.0.2 (0ca9e8e50000) on SW1 to session.
+2025-06-25 11:07:24,700 - app.services.network_automation - INFO - Added ARP entry 10.31.0.1 (0ca9e8e50001) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.31.0.2 (0c4250d80000) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.123.0.1 (0ca9e8e50002) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.123.0.2 (000c29c798c1) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.250.10.1 (000c29304f3a) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.250.10.110 (0ca9e8e50004) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.250.10.111 (0c0df8a20003) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.250.10.112 (0cfac9870002) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.250.10.113 (0c4250d80002) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.250.10.161 (0ccd9ded0000) on SW1 to session.
+2025-06-25 11:07:24,701 - app.services.network_automation - INFO - Added ARP entry 10.250.10.162 (0ccd9ded0000) on SW1 to session.
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Added ARP entry 10.250.10.206 (000c29a0559f) on SW1 to session.
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Finished adding 14 ARP entries for SW1.
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Processing routes for SW1 from /home/firework/firework/app/services/../../outputs/SW1_routes.txt
+2025-06-25 11:07:24,702 - app.services.network_automation - DEBUG - Raw Route data for SW1:
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+       a - application route
+       + - replicated route, % - next hop override
+
+Gateway of last resort is 10.250.10.1 to network 0.0.0.0
+
+S*    0.0.0.0/0 [1/0] via 10.250.10.1
+      10.0.0.0/8 is variably subnetted, 15 subnets, 3 masks
+O        10.0.1.0/24 [110/13] via 10.21.0.1, 00:28:58, GigabitEthernet0/0
+O        10.0.2.0/24 [110/13] via 10.21.0.1, 00:28:58, GigabitEthernet0/0
+O        10.1.1.0/24 [110/12] via 10.21.0.1, 00:28:58, GigabitEthernet0/0
+O        10.2.1.0/24 [110/2] via 10.123.0.2, 00:33:15, GigabitEthernet0/2
+O        10.3.1.0/24 [110/2] via 10.31.0.2, 00:32:25, GigabitEthernet0/1
+O        10.11.0.0/30 [110/12] via 10.21.0.1, 00:28:58, GigabitEthernet0/0
+O        10.12.0.0/30 [110/2] via 10.21.0.1, 00:32:35, GigabitEthernet0/0
+C        10.21.0.0/30 is directly connected, GigabitEthernet0/0
+L        10.21.0.2/32 is directly connected, GigabitEthernet0/0
+C        10.31.0.0/30 is directly connected, GigabitEthernet0/1
+L        10.31.0.1/32 is directly connected, GigabitEthernet0/1
+C        10.123.0.0/24 is directly connected, GigabitEthernet0/2
+L        10.123.0.1/32 is directly connected, GigabitEthernet0/2
+C        10.250.10.0/24 is directly connected, GigabitEthernet1/0
+L        10.250.10.110/32 is directly connected, GigabitEthernet1/0
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Added route 0.0.0.0/0 via 10.250.10.1 on SW1 to session.
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Added route 10.0.1.0/24 via 10.21.0.1 on SW1 to session.
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Added route 10.0.2.0/24 via 10.21.0.1 on SW1 to session.
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Added route 10.1.1.0/24 via 10.21.0.1 on SW1 to session.
+2025-06-25 11:07:24,702 - app.services.network_automation - INFO - Added route 10.2.1.0/24 via 10.123.0.2 on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.3.1.0/24 via 10.31.0.2 on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.11.0.0/30 via 10.21.0.1 on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.12.0.0/30 via 10.21.0.1 on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.21.0.0/30 via None on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.21.0.2/32 via None on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.31.0.0/30 via None on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.31.0.1/32 via None on SW1 to session.
+2025-06-25 11:07:24,703 - app.services.network_automation - INFO - Added route 10.123.0.0/24 via None on SW1 to session.
+2025-06-25 11:07:24,704 - app.services.network_automation - INFO - Added route 10.123.0.1/32 via None on SW1 to session.
+2025-06-25 11:07:24,704 - app.services.network_automation - INFO - Added route 10.250.10.0/24 via None on SW1 to session.
+2025-06-25 11:07:24,704 - app.services.network_automation - INFO - Added route 10.250.10.110/32 via None on SW1 to session.
+2025-06-25 11:07:24,704 - app.services.network_automation - INFO - Finished adding 16 route entries for SW1.
+2025-06-25 11:07:24,710 - app.services.network_automation - INFO - Successfully committed data for device: SW1
+2025-06-25 11:07:24,710 - app.services.network_automation - INFO - Attempting to process data for device: R3
+2025-06-25 11:07:24,713 - app.services.network_automation - INFO - Added new device 'R3' (ID: 5) to session.
+2025-06-25 11:07:24,713 - app.services.network_automation - INFO - Processing interfaces for R3 from /home/firework/firework/app/services/../../outputs/R3_interfaces.yml
+2025-06-25 11:07:24,718 - app.services.network_automation - DEBUG - Raw interface data for R3: {
+  "ansible_net_all_ipv4_addresses": [
+    "10.31.0.2",
+    "10.3.1.254",
+    "10.250.10.113"
+  ],
+  "ansible_net_all_ipv6_addresses": [],
+  "ansible_net_api": "cliconf",
+  "ansible_net_gather_network_resources": [],
+  "ansible_net_gather_subset": [
+    "default",
+    "interfaces"
+  ],
+  "ansible_net_hostname": "R3",
+  "ansible_net_image": "flash0:/vios-adventerprisek9-m",
+  "ansible_net_interfaces": {
+    "GigabitEthernet0/0": {
+      "bandwidth": 1000000,
+      "description": "*** SW1 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.31.0.2",
+          "subnet": "30"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c42.50d8.0000",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/1": {
+      "bandwidth": 1000000,
+      "description": "*** D3 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.3.1.254",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c42.50d8.0001",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/2": {
+      "bandwidth": 1000000,
+      "description": "*** MGMT ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.250.10.113",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c42.50d8.0002",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/3": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": "Auto",
+      "ipv4": [],
+      "lineprotocol": "down",
+      "macaddress": "0c42.50d8.0003",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "administratively down",
+      "type": "iGbE"
+    }
+  },
+  "ansible_net_iostype": "IOS",
+  "ansible_net_model": "IOSv",
+  "ansible_net_neighbors": {
+    "GigabitEthernet0/0": [
+      {
+        "host": "SW1",
+        "ip": "10.31.0.1",
+        "platform": "Cisco ",
+        "port": "GigabitEthernet0/1"
+      }
+    ]
+  },
+  "ansible_net_operatingmode": "autonomous",
+  "ansible_net_python_version": "3.12.3",
+  "ansible_net_serialnum": "9VFHS72IPP3U7AOFQIRA0",
+  "ansible_net_system": "ios",
+  "ansible_net_version": "15.6(2)T",
+  "ansible_network_resources": {}
+}
+2025-06-25 11:07:24,720 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/0' details for R3. Details: {"bandwidth": 1000000, "description": "*** SW1 ***", "duplex": null, "ipv4": [{"address": "10.31.0.2", "subnet": "30"}], "lineprotocol": "up", "macaddress": "0c42.50d8.0000", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,721 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/0: 10.31.0.0/30
+2025-06-25 11:07:24,721 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/0' (10.31.0.2) for R3 to session.
+2025-06-25 11:07:24,721 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/1' details for R3. Details: {"bandwidth": 1000000, "description": "*** D3 ***", "duplex": null, "ipv4": [{"address": "10.3.1.254", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c42.50d8.0001", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,721 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/1: 10.3.1.0/24
+2025-06-25 11:07:24,722 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/1' (10.3.1.254) for R3 to session.
+2025-06-25 11:07:24,722 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/2' details for R3. Details: {"bandwidth": 1000000, "description": "*** MGMT ***", "duplex": null, "ipv4": [{"address": "10.250.10.113", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c42.50d8.0002", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:07:24,722 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/2: 10.250.10.0/24
+2025-06-25 11:07:24,722 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/2' (10.250.10.113) for R3 to session.
+2025-06-25 11:07:24,723 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/3' details for R3. Details: {"bandwidth": 1000000, "description": null, "duplex": "Auto", "ipv4": [], "lineprotocol": "down", "macaddress": "0c42.50d8.0003", "mediatype": "RJ45", "mtu": 1500, "operstatus": "administratively down", "type": "iGbE"}
+2025-06-25 11:07:24,723 - app.services.network_automation - INFO - Finished adding 3 interfaces for R3.
+2025-06-25 11:07:24,723 - app.services.network_automation - INFO - Processing ARP for R3 from /home/firework/firework/app/services/../../outputs/R3_arp.txt
+2025-06-25 11:07:24,724 - app.services.network_automation - DEBUG - Raw ARP data for R3:
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  10.3.1.254              -   0c42.50d8.0001  ARPA   GigabitEthernet0/1
+Internet  10.31.0.1              33   0ca9.e8e5.0001  ARPA   GigabitEthernet0/0
+Internet  10.31.0.2               -   0c42.50d8.0000  ARPA   GigabitEthernet0/0
+Internet  10.250.10.1            17   000c.2930.4f3a  ARPA   GigabitEthernet0/2
+Internet  10.250.10.113           -   0c42.50d8.0002  ARPA   GigabitEthernet0/2
+Internet  10.250.10.206          24   000c.29a0.559f  ARPA   GigabitEthernet0/2
+2025-06-25 11:07:24,724 - app.services.network_automation - INFO - Added ARP entry 10.3.1.254 (0c4250d80001) on R3 to session.
+2025-06-25 11:07:24,724 - app.services.network_automation - INFO - Added ARP entry 10.31.0.1 (0ca9e8e50001) on R3 to session.
+2025-06-25 11:07:24,725 - app.services.network_automation - INFO - Added ARP entry 10.31.0.2 (0c4250d80000) on R3 to session.
+2025-06-25 11:07:24,725 - app.services.network_automation - INFO - Added ARP entry 10.250.10.1 (000c29304f3a) on R3 to session.
+2025-06-25 11:07:24,725 - app.services.network_automation - INFO - Added ARP entry 10.250.10.113 (0c4250d80002) on R3 to session.
+2025-06-25 11:07:24,726 - app.services.network_automation - INFO - Added ARP entry 10.250.10.206 (000c29a0559f) on R3 to session.
+2025-06-25 11:07:24,726 - app.services.network_automation - INFO - Finished adding 6 ARP entries for R3.
+2025-06-25 11:07:24,726 - app.services.network_automation - INFO - Processing routes for R3 from /home/firework/firework/app/services/../../outputs/R3_routes.txt
+2025-06-25 11:07:24,726 - app.services.network_automation - DEBUG - Raw Route data for R3:
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area 
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2
+       i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+       ia - IS-IS inter area, * - candidate default, U - per-user static route
+       o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+       a - application route
+       + - replicated route, % - next hop override, p - overrides from PfR
+
+Gateway of last resort is 10.250.10.1 to network 0.0.0.0
+
+S*    0.0.0.0/0 [1/0] via 10.250.10.1
+      10.0.0.0/8 is variably subnetted, 14 subnets, 3 masks
+O        10.0.1.0/24 [110/14] via 10.31.0.1, 00:29:03, GigabitEthernet0/0
+O        10.0.2.0/24 [110/14] via 10.31.0.1, 00:29:03, GigabitEthernet0/0
+O        10.1.1.0/24 [110/13] via 10.31.0.1, 00:29:03, GigabitEthernet0/0
+O        10.2.1.0/24 [110/3] via 10.31.0.1, 00:32:36, GigabitEthernet0/0
+C        10.3.1.0/24 is directly connected, GigabitEthernet0/1
+L        10.3.1.254/32 is directly connected, GigabitEthernet0/1
+O        10.11.0.0/30 [110/13] via 10.31.0.1, 00:29:03, GigabitEthernet0/0
+O        10.12.0.0/30 [110/3] via 10.31.0.1, 00:32:36, GigabitEthernet0/0
+O        10.21.0.0/30 [110/2] via 10.31.0.1, 00:32:36, GigabitEthernet0/0
+C        10.31.0.0/30 is directly connected, GigabitEthernet0/0
+L        10.31.0.2/32 is directly connected, GigabitEthernet0/0
+O        10.123.0.0/24 [110/2] via 10.31.0.1, 00:32:36, GigabitEthernet0/0
+C        10.250.10.0/24 is directly connected, GigabitEthernet0/2
+L        10.250.10.113/32 is directly connected, GigabitEthernet0/2
+2025-06-25 11:07:24,727 - app.services.network_automation - INFO - Added route 0.0.0.0/0 via 10.250.10.1 on R3 to session.
+2025-06-25 11:07:24,727 - app.services.network_automation - INFO - Added route 10.0.1.0/24 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,728 - app.services.network_automation - INFO - Added route 10.0.2.0/24 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,728 - app.services.network_automation - INFO - Added route 10.1.1.0/24 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,728 - app.services.network_automation - INFO - Added route 10.2.1.0/24 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,729 - app.services.network_automation - INFO - Added route 10.3.1.0/24 via None on R3 to session.
+2025-06-25 11:07:24,729 - app.services.network_automation - INFO - Added route 10.3.1.254/32 via None on R3 to session.
+2025-06-25 11:07:24,729 - app.services.network_automation - INFO - Added route 10.11.0.0/30 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,730 - app.services.network_automation - INFO - Added route 10.12.0.0/30 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,730 - app.services.network_automation - INFO - Added route 10.21.0.0/30 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,730 - app.services.network_automation - INFO - Added route 10.31.0.0/30 via None on R3 to session.
+2025-06-25 11:07:24,731 - app.services.network_automation - INFO - Added route 10.31.0.2/32 via None on R3 to session.
+2025-06-25 11:07:24,731 - app.services.network_automation - INFO - Added route 10.123.0.0/24 via 10.31.0.1 on R3 to session.
+2025-06-25 11:07:24,731 - app.services.network_automation - INFO - Added route 10.250.10.0/24 via None on R3 to session.
+2025-06-25 11:07:24,731 - app.services.network_automation - INFO - Added route 10.250.10.113/32 via None on R3 to session.
+2025-06-25 11:07:24,732 - app.services.network_automation - INFO - Finished adding 15 route entries for R3.
+2025-06-25 11:07:24,737 - app.services.network_automation - INFO - Successfully committed data for device: R3
+2025-06-25 11:07:24,737 - app.services.network_automation - INFO - Attempting to process data for device: pafw
+2025-06-25 11:07:24,739 - app.services.network_automation - INFO - Added new device 'pafw' (ID: 6) to session.
+2025-06-25 11:07:24,739 - app.services.network_automation - INFO - Processing interfaces for pafw from /home/firework/firework/app/services/../../outputs/pafw_interfaces.yml
+2025-06-25 11:07:24,742 - app.services.network_automation - DEBUG - Raw interface data for pafw: {
+  "ansible_facts": {
+    "ansible_net_full_commit_required": false,
+    "ansible_net_gather_subset": [
+      "interfaces",
+      "system"
+    ],
+    "ansible_net_hostname": "pafw",
+    "ansible_net_interfaces": [
+      {
+        "comment": null,
+        "ip": [
+          "10.11.0.2/30"
+        ],
+        "ipv6": [],
+        "name": "ethernet1/1"
+      },
+      {
+        "comment": null,
+        "ip": [
+          "10.12.0.1/30"
+        ],
+        "ipv6": [],
+        "name": "ethernet1/2"
+      },
+      {
+        "comment": null,
+        "ip": [
+          "10.1.1.254/24"
+        ],
+        "ipv6": [],
+        "name": "ethernet1/3"
+      }
+    ],
+    "ansible_net_model": "PA-VM",
+    "ansible_net_multivsys": "off",
+    "ansible_net_serial": "unknown",
+    "ansible_net_uncommitted_changes": false,
+    "ansible_net_uptime": "0 days, 0:34:02",
+    "ansible_net_version": "10.1.0"
+  },
+  "changed": false,
+  "deprecations": [
+    {
+      "collection_name": "paloaltonetworks.panos",
+      "msg": "Classic provider params are deprecated; use \"provider\" instead",
+      "version": "4.0.0"
+    }
+  ],
+  "failed": false
+}
+2025-06-25 11:07:24,743 - app.services.network_automation - INFO - Finished adding 0 interfaces for pafw.
+2025-06-25 11:07:24,743 - app.services.network_automation - INFO - Processing ARP for pafw from /home/firework/firework/app/services/../../outputs/pafw_arp.txt
+2025-06-25 11:07:24,743 - app.services.network_automation - DEBUG - Raw ARP data for pafw:
+{"response": {"@status": "success", "result": {"max": "250", "total": "2", "timeout": "1800", "dp": "dp0", "entries": {"entry": [{"status": "c", "ip": "10.11.0.1", "mac": "0c:0d:f8:a2:00:00", "ttl": "18", "interface": "ethernet1/1", "port": "ethernet1/1"}, {"status": "c", "ip": "10.12.0.2", "mac": "0c:fa:c9:87:00:00", "ttl": "18", "interface": "ethernet1/2", "port": "ethernet1/2"}]}}}}
+2025-06-25 11:07:24,746 - app.services.network_automation - ERROR - Error parsing Palo Alto ARP XML for pafw: not well-formed (invalid token): line 1, column 0
+Traceback (most recent call last):
+  File "/home/firework/firework/app/services/network_automation.py", line 355, in _process_and_store_network_data
+    root = ET.fromstring(arp_content)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/xml/etree/ElementTree.py", line 1335, in XML
+    parser.feed(text)
+xml.etree.ElementTree.ParseError: not well-formed (invalid token): line 1, column 0
+2025-06-25 11:07:24,747 - app.services.network_automation - INFO - Processing routes for pafw from /home/firework/firework/app/services/../../outputs/pafw_routes.txt
+2025-06-25 11:07:24,747 - app.services.network_automation - DEBUG - Raw Route data for pafw:
+{"response": {"@status": "success", "result": {"flags": "flags: A:active, ?:loose, C:connect, H:host, S:static, ~:internal, R:rip, O:ospf, B:bgp, Oi:ospf intra-area, Oo:ospf inter-area, O1:ospf ext-type-1, O2:ospf ext-type-2, E:ecmp, M:multicast", "entry": [{"virtual-router": "default", "destination": "10.0.1.0/24", "nexthop": "10.11.0.1", "metric": "11", "flags": "A Oi", "age": "1763", "interface": "ethernet1/1", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.0.2.0/24", "nexthop": "10.11.0.1", "metric": "11", "flags": "A Oi", "age": "1763", "interface": "ethernet1/1", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.1.1.0/24", "nexthop": "0.0.0.0", "metric": "10", "flags": "Oi", "age": "1793", "interface": "ethernet1/3", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.1.1.0/24", "nexthop": "10.1.1.254", "metric": "0", "flags": "A C", "age": null, "interface": "ethernet1/3", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.1.1.254/32", "nexthop": "0.0.0.0", "metric": "0", "flags": "A H", "age": null, "interface": null, "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.2.1.0/24", "nexthop": "10.12.0.2", "metric": "13", "flags": "A Oi", "age": "1763", "interface": "ethernet1/2", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.3.1.0/24", "nexthop": "10.12.0.2", "metric": "13", "flags": "A Oi", "age": "1763", "interface": "ethernet1/2", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.11.0.0/30", "nexthop": "0.0.0.0", "metric": "10", "flags": "Oi", "age": "1793", "interface": "ethernet1/1", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.11.0.0/30", "nexthop": "10.11.0.2", "metric": "0", "flags": "A C", "age": null, "interface": "ethernet1/1", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.11.0.2/32", "nexthop": "0.0.0.0", "metric": "0", "flags": "A H", "age": null, "interface": null, "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.12.0.0/30", "nexthop": "0.0.0.0", "metric": "10", "flags": "Oi", "age": "1793", "interface": "ethernet1/2", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.12.0.0/30", "nexthop": "10.12.0.1", "metric": "0", "flags": "A C", "age": null, "interface": "ethernet1/2", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.12.0.1/32", "nexthop": "0.0.0.0", "metric": "0", "flags": "A H", "age": null, "interface": null, "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.21.0.0/30", "nexthop": "10.12.0.2", "metric": "11", "flags": "A Oi", "age": "1763", "interface": "ethernet1/2", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.31.0.0/30", "nexthop": "10.12.0.2", "metric": "12", "flags": "A Oi", "age": "1763", "interface": "ethernet1/2", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.123.0.0/24", "nexthop": "10.12.0.2", "metric": "12", "flags": "A Oi", "age": "1763", "interface": "ethernet1/2", "route-table": "unicast"}, {"virtual-router": "default", "destination": "10.250.10.0/24", "nexthop": "10.12.0.2", "metric": "11", "flags": "A Oi", "age": "1763", "interface": "ethernet1/2", "route-table": "unicast"}]}}}
+2025-06-25 11:07:24,748 - app.services.network_automation - ERROR - Error parsing Palo Alto routes XML for pafw: not well-formed (invalid token): line 1, column 0
+Traceback (most recent call last):
+  File "/home/firework/firework/app/services/network_automation.py", line 438, in _process_and_store_network_data
+    root = ET.fromstring(route_content)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/xml/etree/ElementTree.py", line 1335, in XML
+    parser.feed(text)
+xml.etree.ElementTree.ParseError: not well-formed (invalid token): line 1, column 0
+2025-06-25 11:07:24,750 - app.services.network_automation - INFO - Successfully committed data for device: pafw
+2025-06-25 11:07:24,750 - app.services.network_automation - INFO - Network topology database build process completed.
+2025-06-25 11:07:24,750 - app.services.network_automation - INFO - Performing pathfinding from 10.0.1.1 to 10.3.1.10.
+2025-06-25 11:07:24,750 - app.services.network_automation - INFO - Starting pathfinding from 10.0.1.1 to 10.3.1.10 using DB data.
+2025-06-25 11:07:24,751 - app.services.network_automation - DEBUG - Attempting to find source device for IP: 10.0.1.1
+2025-06-25 11:07:24,753 - app.services.network_automation - DEBUG - Source IP 10.0.1.1 not found directly on an interface. Checking subnets.
+2025-06-25 11:07:24,755 - app.services.network_automation - INFO - Source IP 10.0.1.1 found within subnet 10.0.1.0/24 of interface GigabitEthernet0/1 on device R1.
+2025-06-25 11:07:24,755 - app.services.network_automation - DEBUG - Hop 0: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,757 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,758 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,758 - app.services.network_automation - DEBUG - Hop 1: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,759 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,759 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,760 - app.services.network_automation - DEBUG - Hop 2: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,760 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,761 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,761 - app.services.network_automation - DEBUG - Hop 3: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,762 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,763 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,763 - app.services.network_automation - DEBUG - Hop 4: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,764 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,764 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,764 - app.services.network_automation - DEBUG - Hop 5: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,765 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,766 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,766 - app.services.network_automation - DEBUG - Hop 6: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,767 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,767 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,768 - app.services.network_automation - DEBUG - Hop 7: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,768 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,769 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,769 - app.services.network_automation - DEBUG - Hop 8: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,770 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,770 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,770 - app.services.network_automation - DEBUG - Hop 9: Currently on device R1, looking for route to 10.3.1.10.
+2025-06-25 11:07:24,771 - app.services.network_automation - DEBUG - Found matching route on R1: 10.3.1.0/24 via 10.11.0.2 on 00:29:03, GigabitEthernet0/0.
+2025-06-25 11:07:24,772 - app.services.network_automation - WARNING - Next hop IP 10.11.0.2 on R1 not found on any interface. Path may terminate.
+2025-06-25 11:07:24,772 - app.services.network_automation - WARNING - Pathfinding stopped before reaching destination 10.3.1.10. Final IP on path: 10.3.1.11
+2025-06-25 11:07:24,772 - app.services.network_automation - ERROR - Pathfinding failed: Pathfinding failed: Could not reach 10.3.1.10.
+2025-06-25 11:07:24,776 - app.routes - ERROR - Network automation pre-check failed for rule 1: Pre-check failed: Pathfinding error: Pathfinding failed: Could not reach 10.3.1.10.
+Traceback (most recent call last):
+  File "/home/firework/firework/app/routes.py", line 231, in submit_request
+    stdout, stderr, firewalls_checked = get_network_automation_service().perform_pre_check(
+                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/firework/firework/app/services/network_automation.py", line 695, in perform_pre_check
+    raise RuntimeError(f"Pre-check failed: Pathfinding error: {path}")
+RuntimeError: Pre-check failed: Pathfinding error: Pathfinding failed: Could not reach 10.3.1.10.
+2025-06-25 11:21:10,022 - app - INFO - Database URI configured: postgresql://firework:firework@localhost:5432/fireworkdb
+2025-06-25 11:21:10,023 - app - INFO - Current working directory: /home/firework/firework/app
+2025-06-25 11:21:10,044 - app.services.network_automation - DEBUG - DEBUG: network_automation.py is being loaded from: /home/firework/firework/app/services/network_automation.py
+2025-06-25 11:21:10,549 - app - INFO - Database URI configured: postgresql://firework:firework@localhost:5432/fireworkdb
+2025-06-25 11:21:10,549 - app - INFO - Current working directory: /home/firework/firework/app
+2025-06-25 11:21:10,564 - app.services.network_automation - DEBUG - DEBUG: network_automation.py is being loaded from: /home/firework/firework/app/services/network_automation.py
+2025-06-25 11:21:10,966 - app - INFO - Database URI configured: postgresql://firework:firework@localhost:5432/fireworkdb
+2025-06-25 11:21:10,966 - app - INFO - Current working directory: /home/firework/firework/app
+2025-06-25 11:21:10,974 - app.services.network_automation - DEBUG - DEBUG: network_automation.py is being loaded from: /home/firework/firework/app/services/network_automation.py
+2025-06-25 11:21:13,427 - app - INFO - Database URI configured: postgresql://firework:firework@localhost:5432/fireworkdb
+2025-06-25 11:21:13,427 - app - INFO - Current working directory: /home/firework/firework/app
+2025-06-25 11:21:13,440 - app.services.network_automation - DEBUG - DEBUG: network_automation.py is being loaded from: /home/firework/firework/app/services/network_automation.py
+2025-06-25 11:21:16,463 - app - INFO - Database URI configured: postgresql://firework:firework@localhost:5432/fireworkdb
+2025-06-25 11:21:16,463 - app - INFO - Current working directory: /home/firework/firework/app
+2025-06-25 11:21:16,492 - app.services.network_automation - DEBUG - DEBUG: network_automation.py is being loaded from: /home/firework/firework/app/services/network_automation.py
+2025-06-25 11:21:16,505 - app - INFO - Database URI configured: postgresql://firework:firework@localhost:5432/fireworkdb
+2025-06-25 11:21:16,505 - app - INFO - Current working directory: /home/firework/firework/app
+2025-06-25 11:21:16,525 - app.services.network_automation - DEBUG - DEBUG: network_automation.py is being loaded from: /home/firework/firework/app/services/network_automation.py
+2025-06-25 11:21:16,525 - app - INFO - Database URI configured: postgresql://firework:firework@localhost:5432/fireworkdb
+2025-06-25 11:21:16,525 - app - INFO - Current working directory: /home/firework/firework/app
+2025-06-25 11:21:16,534 - app.services.network_automation - DEBUG - DEBUG: network_automation.py is being loaded from: /home/firework/firework/app/services/network_automation.py
+2025-06-25 11:21:30,239 - app.routes - INFO - Received new network request from super_admin
+2025-06-25 11:21:30,242 - app.routes - INFO - Request from 10.0.1.1 to 10.3.1.10:8080/tcp passed blacklist check for user super_admin.
+2025-06-25 11:21:30,242 - app.routes - INFO - User super_admin (role: superadmin) auto-approved request 10.0.1.1 to 10.3.1.10:8080/tcp.
+2025-06-25 11:21:30,247 - app.routes - INFO - Network request ID 1 created by super_admin.
+2025-06-25 11:21:30,247 - app.routes - WARNING - NetworkAutomationService not found on blueprint. Creating a fallback instance.
+2025-06-25 11:21:30,247 - app.services.network_automation - INFO - Ansible outputs directory set to: /home/firework/firework/app/services/../../outputs
+2025-06-25 11:21:30,247 - app.services.network_automation - INFO - Ansible temporary directory set to: /home/firework/firework/app/services/../../ansible_tmp
+2025-06-25 11:21:30,247 - app.services.network_automation - INFO - Performing pre-check for rule 1 on firewalls initially specified: ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2']
+2025-06-25 11:21:30,247 - app.services.network_automation - INFO - Running Ansible network data collector (collector.yml)...
+2025-06-25 11:21:30,247 - app.services.network_automation - DEBUG - --- Subprocess Environment for Ansible ---
+2025-06-25 11:21:30,247 - app.services.network_automation - DEBUG -   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+2025-06-25 11:21:30,247 - app.services.network_automation - DEBUG -   USER=firework_app_user
+2025-06-25 11:21:30,247 - app.services.network_automation - DEBUG -   HOME=/home/firework_app_user
+2025-06-25 11:21:30,248 - app.services.network_automation - DEBUG -   ANSIBLE_CACHE_DIR=/home/firework/firework/app/services/../../ansible_tmp/cache
+2025-06-25 11:21:30,248 - app.services.network_automation - DEBUG -   ANSIBLE_TMPDIR=/home/firework/firework/app/services/../../ansible_tmp
+2025-06-25 11:21:30,248 - app.services.network_automation - DEBUG -   ANSIBLE_HOST_KEY_CHECKING=False
+2025-06-25 11:21:30,248 - app.services.network_automation - DEBUG -   ANSIBLE_COLLECTIONS_PATH=/home/firework/firework/app/services/../.././ansible_collections
+2025-06-25 11:21:30,248 - app.services.network_automation - DEBUG -   TMPDIR=/home/firework/firework/app/services/../../ansible_tmp
+2025-06-25 11:21:30,248 - app.services.network_automation - DEBUG - ----------------------------------------
+2025-06-25 11:21:30,248 - app.services.network_automation - INFO - Executing Ansible command: ansible-playbook /home/firework/firework/app/services/../.././collector.yml -i /home/firework/firework/app/services/../../inventory.yml in CWD: /home/firework/firework/app/services/../..
+2025-06-25 11:21:55,343 - app.services.network_automation - INFO - Ansible playbook 'collector.yml' executed successfully.
+2025-06-25 11:21:55,343 - app.services.network_automation - INFO - Network data collection completed.
+2025-06-25 11:21:55,343 - app.services.network_automation - INFO - Starting network topology database build process in PostgreSQL.
+2025-06-25 11:21:55,343 - app.services.network_automation - INFO - Attempting to list directory: /home/firework/firework/app/services/../../outputs
+2025-06-25 11:21:55,343 - app.services.network_automation - INFO - Files found in /home/firework/firework/app/services/../../outputs: ['R1_interfaces.yml', 'R1_routes.txt', 'fgt_arp.yml', 'R2_interfaces.yml', 'R1_arp.txt', 'SW1_interfaces.yml', 'R2_routes.txt', 'SW1_arp.txt', 'fgt_routes.yml', 'R3_routes.txt', 'R2_arp.txt', 'SW1_routes.txt', 'pafw_arp.txt', 'R3_interfaces.yml', 'fgt_interfaces.yml', 'R3_arp.txt', 'pafw_routes.txt', 'pafw_interfaces.yml']
+2025-06-25 11:21:55,346 - app.services.network_automation - INFO - Cleared existing network topology data from PostgreSQL.
+2025-06-25 11:21:55,347 - app.services.network_automation - INFO - Discovered device files for processing: {
+  "R1": {
+    "type": "Router",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/R1_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/R1_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/R1_routes.txt"
+  },
+  "fgt": {
+    "type": "Firewall",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/fgt_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/fgt_arp.yml",
+    "routes": "/home/firework/firework/app/services/../../outputs/fgt_routes.yml"
+  },
+  "R2": {
+    "type": "Router",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/R2_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/R2_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/R2_routes.txt"
+  },
+  "SW1": {
+    "type": "Switch",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/SW1_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/SW1_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/SW1_routes.txt"
+  },
+  "R3": {
+    "type": "Router",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/R3_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/R3_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/R3_routes.txt"
+  },
+  "pafw": {
+    "type": "Firewall",
+    "interfaces": "/home/firework/firework/app/services/../../outputs/pafw_interfaces.yml",
+    "arp": "/home/firework/firework/app/services/../../outputs/pafw_arp.txt",
+    "routes": "/home/firework/firework/app/services/../../outputs/pafw_routes.txt"
+  }
+}
+2025-06-25 11:21:55,347 - app.services.network_automation - INFO - Attempting to process data for device: R1
+2025-06-25 11:21:55,350 - app.services.network_automation - INFO - Added new device 'R1' (ID: 1) to session.
+2025-06-25 11:21:55,350 - app.services.network_automation - INFO - Processing interfaces for R1 from /home/firework/firework/app/services/../../outputs/R1_interfaces.yml
+2025-06-25 11:21:55,356 - app.services.network_automation - DEBUG - Raw interface data for R1: {
+  "ansible_net_all_ipv4_addresses": [
+    "10.11.0.1",
+    "10.0.1.254",
+    "10.0.2.254",
+    "10.250.10.111"
+  ],
+  "ansible_net_all_ipv6_addresses": [],
+  "ansible_net_api": "cliconf",
+  "ansible_net_gather_network_resources": [],
+  "ansible_net_gather_subset": [
+    "default",
+    "interfaces"
+  ],
+  "ansible_net_hostname": "R1",
+  "ansible_net_image": "flash0:/vios-adventerprisek9-m",
+  "ansible_net_interfaces": {
+    "GigabitEthernet0/0": {
+      "bandwidth": 1000000,
+      "description": "*** pafw ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.11.0.1",
+          "subnet": "30"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0000",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/1": {
+      "bandwidth": 1000000,
+      "description": "*** s0 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.0.1.254",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0001",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/2": {
+      "bandwidth": 1000000,
+      "description": "*** d0 ***",
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.0.2.254",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0002",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "GigabitEthernet0/3": {
+      "bandwidth": 1000000,
+      "description": null,
+      "duplex": null,
+      "ipv4": [
+        {
+          "address": "10.250.10.111",
+          "subnet": "24"
+        }
+      ],
+      "lineprotocol": "up",
+      "macaddress": "0c0d.f8a2.0003",
+      "mediatype": "RJ45",
+      "mtu": 1500,
+      "operstatus": "up",
+      "type": "iGbE"
+    },
+    "NVI0": {
+      "bandwidth": 56,
+      "description": null,
+      "duplex": null,
+      "ipv4": [],
+      "lineprotocol": "up",
+      "macaddress": null,
+      "mediatype": null,
+      "mtu": 1514,
+      "operstatus": "up",
+      "type": null
+    }
+  },
+  "ansible_net_iostype": "IOS",
+  "ansible_net_model": "IOSv",
+  "ansible_net_neighbors": {},
+  "ansible_net_operatingmode": "autonomous",
+  "ansible_net_python_version": "3.12.3",
+  "ansible_net_serialnum": "9MQLLMAY42N2TTAMWTLXE",
+  "ansible_net_system": "ios",
+  "ansible_net_version": "15.6(2)T",
+  "ansible_network_resources": {}
+}
+2025-06-25 11:21:55,356 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/0' details for R1. Details: {"bandwidth": 1000000, "description": "*** pafw ***", "duplex": null, "ipv4": [{"address": "10.11.0.1", "subnet": "30"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0000", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:21:55,356 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/0: 10.11.0.0/30
+2025-06-25 11:21:55,357 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/0' (10.11.0.1) for R1 to session.
+2025-06-25 11:21:55,357 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/1' details for R1. Details: {"bandwidth": 1000000, "description": "*** s0 ***", "duplex": null, "ipv4": [{"address": "10.0.1.254", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0001", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:21:55,357 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/1: 10.0.1.0/24
+2025-06-25 11:21:55,357 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/1' (10.0.1.254) for R1 to session.
+2025-06-25 11:21:55,357 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/2' details for R1. Details: {"bandwidth": 1000000, "description": "*** d0 ***", "duplex": null, "ipv4": [{"address": "10.0.2.254", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0002", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:21:55,357 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/2: 10.0.2.0/24
+2025-06-25 11:21:55,357 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/2' (10.0.2.254) for R1 to session.
+2025-06-25 11:21:55,357 - app.services.network_automation - DEBUG - Parsing interface 'GigabitEthernet0/3' details for R1. Details: {"bandwidth": 1000000, "description": null, "duplex": null, "ipv4": [{"address": "10.250.10.111", "subnet": "24"}], "lineprotocol": "up", "macaddress": "0c0d.f8a2.0003", "mediatype": "RJ45", "mtu": 1500, "operstatus": "up", "type": "iGbE"}
+2025-06-25 11:21:55,357 - app.services.network_automation - DEBUG - Constructed CIDR for GigabitEthernet0/3: 10.250.10.0/24
+2025-06-25 11:21:55,357 - app.services.network_automation - INFO - Added interface 'GigabitEthernet0/3' (10.250.10.111) for R1 to session.
+2025-06-25 11:21:55,357 - app.services.network_automation - DEBUG - Parsing interface 'NVI0' details for R1. Details: {"bandwidth": 56, "description": null, "duplex": null, "ipv4": [], "lineprotocol": "up", "macaddress": null, "mediatype": null, "mtu": 1514, "operstatus": "up", "type": null}
+2025-06-25 11:21:55,357 - app.services.network_automation - INFO - Finished adding 4 interfaces for R1.
+2025-06-25 11:21:55,358 - app.services.network_automation - INFO - Processing ARP for R1 from /home/firework/firework/app/services/../../outputs/R1_arp.txt
+2025-06-25 11:21:55,358 - app.services.network_automation - DEBUG - Raw ARP data for R1:
+Protocol  Address          Age (min)  Hardware Addr   Type   Interface
+Internet  10.0.1.254              -   0c0d.f8a2.0001  ARPA   GigabitEthernet0/1
+Internet  10.0.2.254              -   0c0d.f8a2.0002  ARPA   GigabitEthernet0/2
+Internet  10.11.0.1               -   0c0d.f8a2.0000  ARPA   GigabitEthernet0/0
+Internet  10.11.0.2              13   0ccd.9ded.0001  ARPA   GigabitEthernet0/0
+Internet  10.250.10.1             5   000c.2930.4f3a  ARPA   GigabitEthernet0/3
+Internet  10.250.10.111           -   0c0d.f8a2.0003  ARPA   GigabitEthernet0/3
+Internet  10.250.10.206          38   000c.29a0.559f  ARPA   GigabitEthernet0/3
+2025-06-25 11:21:55,358 - app.services.network_automation - INFO - Added ARP entry 10.0.1.254 (0c0df8a20001) on R1 to session.
+2025-06-25 11:21:55,358 - app.services.network_automation - INFO - Added ARP entry 10.0.2.254 (0c0df8a20002) on R1 to session.
+2025-06-25 11:21:55,358 - app.services.network_automation - INFO - Added ARP entry 10.11.0.1 (0c0df8a20000) on R1 to session.
+2025-06-25 11:21:55,358 - app.services.network_automation - INFO - Added ARP entry 10.11.0.2 (0ccd9ded0001) on R1 to session.
+2025-06-25 11:21:55,359 - app.services.network_automation - INFO - Added ARP entry 10.250.10.1 (000c29304f3a) on R1 to session.
+2025-06-25 11:21:55,359 - app.services.network_automation - INFO - Added ARP entry 10.250.10.111 (0c0df8a20003) on R1 to session.
+2025-06-25 11:21:55,359 - app.services.network_automation - INFO - Added ARP entry 10.250.10.206 (000c29a0559f) on R1 to session.
+2025-06-25 11:21:55,359 - app.services.network_automation - INFO - Finished adding 7 ARP entries for R1.
+2025-06-25 11:21:55,359 - app.services.network_automation - INFO - Processing routes for R1 from /home/firework/firework/app/services/../../outputs/R1_routes.txt
+2025-06-25 11:21:55,362 - app.services.network_automation - INFO - Added route 0.0.0.0/0 via 10.250.10.1 on R1 to session.
+2025-06-25 11:21:55,362 - app.services.network_automation - INFO - Added route 10.0.1.0/24 via None on R1 to session.
+2025-06-25 11:21:55,362 - app.services.network_automation - INFO - Added route 10.0.1.254/32 via None on R1 to session.
+2025-06-25 11:21:55,362 - app.services.network_automation - INFO - Added route 10.0.2.0/24 via None on R1 to session.
+2025-06-25 11:21:55,362 - app.services.network_automation - INFO - Added route 10.0.2.254/32 via None on R1 to session.
+2025-06-25 11:21:55,363 - app.services.network_automation - INFO - Added route 10.1.1.0/24 via 10.11.0.2 on R1 to session.
+2025-06-25 11:21:55,363 - app.services.network_automation - INFO - Added route 10.2.1.0/24 via 10.11.0.2 on R1 to session.
+2025-06-25 11:21:55,363 - app.services.network_automation - INFO - Added route 10.3.1.0/24 via 10.11.0.2 on R1 to session.
+2025-06-25 11:21:55,363 - app.services.network_automation - INFO - Added route 10.11.0.0/30 via None on R1 to session.
+2025-06-25 11:21:55,363 - app.services.network_automation - INFO - Added route 10.11.0.1/32 via None on R1 to session.
+2025-06-25 11:21:55,363 - app.services.network_automation - INFO - Added route 10.12.0.0/30 via 10.11.0.2 on R1 to session.
+2025-06-25 11:21:55,363 - app.services.network_automation - INFO - Added route 10.21.0.0/30 via 10.11.0.2 on R1 to session.

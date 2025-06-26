@@ -8,13 +8,13 @@
             <p class="text-gray-600"><strong>Source IP:</strong> <span class="font-semibold text-gray-800">{{ rule.source_ip }}</span></p>
             <p class="text-gray-600"><strong>Destination IP:</strong> <span class="font-semibold text-gray-800">{{ rule.destination_ip }}</span></p>
             <p class="text-gray-600"><strong>Protocol:</strong> <span class="font-semibold text-gray-800">{{ rule.protocol }}</span></p>
-            <p class="text-gray-600"><strong>Port:</strong> <span class="font-semibold text-gray-800">{{ rule.port }}</span></p>
+            <p class="text-gray-600"><strong>Ports:</strong> <span class="font-semibold text-gray-800">{{ rule.ports | join(', ') if rule.ports else 'N/A' }}</span></p>
         </div>
         <div class="bg-gray-50 p-4 rounded-md">
             <p class="text-gray-600"><strong>Current Status:</strong> <span class="font-semibold text-blue-600">{{ rule.status }}</span></p>
             <p class="text-gray-600"><strong>Approval Status:</strong> <span class="font-semibold text-purple-600">{{ rule.approval_status }}</span></p>
-            <p class="text-gray-600"><strong>Approver Comments:</strong> <span class="text-gray-800">{{ rule.approver_comment if rule.approver_comment else 'N/A' }}</span></p>
-            <p class="text-gray-600"><strong>Firewalls Involved:</strong> 
+            <p class="text-gray-600"><strong>Approver Comments:</strong> <span class="text-gray-800">{{ rule.approval_justification if rule.approval_justification else 'N/A' }}</span></p>
+            <p class="text-gray-600"><strong>Firewalls Involved:</strong>
                 {% if rule.firewalls_involved %}
                     <span class="font-semibold text-gray-800">{{ rule.firewalls_involved | join(', ') }}</span>
                 {% else %}
@@ -23,14 +23,14 @@
             </p>
 
             {# NEW: Display firewalls to provision and already configured #}
-            <p class="text-gray-600 mt-2"><strong>Firewalls Requiring Provisioning:</strong> 
+            <p class="text-gray-600 mt-2"><strong>Firewalls Requiring Provisioning:</strong>
                 {% if rule.firewalls_to_provision %}
                     <span class="font-semibold text-red-600">{{ rule.firewalls_to_provision | join(', ') }}</span>
                 {% else %}
                     <span class="text-gray-500">None (Policy is already on all firewalls in path, or no firewalls involved)</span>
                 {% endif %}
             </p>
-            <p class="text-gray-600"><strong>Firewalls Already Configured:</strong> 
+            <p class="text-gray-600"><strong>Firewalls Already Configured:</strong>
                 {% if rule.firewalls_already_configured %}
                     <span class="font-semibold text-green-600">{{ rule.firewalls_already_configured | join(', ') }}</span>
                 {% else %}
@@ -44,20 +44,23 @@
     {% if rule.status == 'Approved - Pending Implementation' %}
     {# Only show the form if there are firewalls that *actually need* provisioning #}
     {% if rule.firewalls_to_provision %}
-    <form method="POST" action="{{ url_for('routes.implement_rule', rule_id=rule.id) }}" class="space-y-4">
+    <form method="POST" action="{{ url_for('routes.implement_rule', rule_id=rule.id) }}" class="space-y-4" id="implementationForm">
         <div>
             <label for="implementer_comment" class="block text-gray-700 text-sm font-bold mb-2">Implementer Comments (Optional):</label>
             <textarea id="implementer_comment" name="implementer_comment" rows="5" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline resize-y"></textarea>
         </div>
-        
+
         <div class="flex justify-center space-x-4">
-            <button type="submit" name="action" value="provision" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Provision Rule</button>
+            {# CHANGED type to 'button' and removed onclick, now handled by event listener #}
+            <button type="button" id="provisionRuleBtn" name="action" value="provision" 
+                    class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                Provision Rule
+            </button>
             <button type="submit" name="action" value="decline_implementation" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Decline Implementation</button>
         </div>
     </form>
     {% else %}
         <p class="text-center text-lg text-green-700">This rule has been approved, and no firewalls require provisioning. It's already completed or awaiting final status update.</p>
-        {# Add a button to manually mark as complete if needed, or rely on system to do it #}
     {% endif %}
     {% else %}
         <p class="text-center text-lg text-gray-600">This rule is currently {{ rule.status }}. No implementation action is available here.</p>
@@ -67,4 +70,40 @@
         <a href="{{ url_for('routes.implementation_list') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Implementation List</a>
     </div>
 </div>
+
+<script>
+    // Re-declare showLoading function if it's not in base.html
+    function showLoading(buttonId, loadingText) {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>${loadingText}`;
+        }
+    }
+
+    // New script to handle the button click and form submission explicitly
+    document.addEventListener('DOMContentLoaded', function() {
+        const provisionBtn = document.getElementById('provisionRuleBtn');
+        const form = document.getElementById('implementationForm');
+
+        if (provisionBtn && form) {
+            provisionBtn.addEventListener('click', function() {
+                // Manually add a hidden input for the 'action' parameter.
+                // This is needed because the button's type is now 'button' (not 'submit').
+                const actionInput = document.createElement('input');
+                actionInput.type = 'hidden';
+                actionInput.name = 'action';
+                actionInput.value = 'provision'; // The value expected by your Flask route
+                form.appendChild(actionInput);
+
+                showLoading('provisionRuleBtn', 'Provisioning...');
+                
+                // Allow a brief moment for the UI to update, then submit the form
+                setTimeout(() => {
+                    form.submit();
+                }, 50); // A small delay (e.g., 50ms) to ensure the UI updates before navigation
+            });
+        }
+    });
+</script>
 {% endblock %}

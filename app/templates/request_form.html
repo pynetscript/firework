@@ -80,9 +80,12 @@
                         <p class="font-bold">Request Created Successfully!</p>
                         <p>Rule ID: ${result.rule_id}</p>
                         <p>Status: ${result.status_detail}</p>
+                        <p>Approval Status: ${result.approval_status}</p>
                         <p>Firewalls Involved: ${result.firewalls_involved.length > 0 ? result.firewalls_involved.join(', ') : 'None'}</p>
-                        <p class="mt-2"><a href="{{ url_for('routes.task_results') }}" class="text-green-700 underline hover:no-underline">View All Task Results</a></p>
-                        <p><a href="{{ url_for('routes.approvals_list') }}" class="text-green-700 underline hover:no-underline">Go to Approvals</a></p>
+                        <p class="mt-2"><a href="{{ url_for('routes.task_results') }}" class="text-green-700 underline hover:no-underline">Tasks</a></p>
+                        ${result.can_access_approvals ? // ADD THIS CONDITIONAL CHECK
+                            `<p><a href="{{ url_for('routes.approvals_list') }}" class="text-green-700 underline hover:no-underline">Approvals</a></p>` : ''
+                        }
                     `;
                     form.reset();
                 } else if (result.status === "info") {
