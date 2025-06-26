@@ -45,15 +45,14 @@ def request_form():
     """
     return render_template('request_form.html')
 
-
 @routes.route('/submit-request', methods=['POST'])
 @login_required
 @roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
 def submit_request():
     """
     Handles the submission of a new network rule request.
-    Performs validation, blacklist checks, creates the rule in the DB,
-    and initiates a pre-check if auto-approved (for superadmins/admins).
+    Performs validation, blacklist checks, initiates a pre-check,
+    creates the rule in the DB, and determines initial status based on pre-check results and roles.
     """
     app_logger.info(f"Received new network request from {current_user.username}")
     source_ip = request.form.get('source_ip')
@@ -188,92 +187,102 @@ def submit_request():
         flash("An error occurred during the blacklist check. Please try again or contact support.", 'error')
         return jsonify({"status": "error", "message": "Internal error during blacklist check."}), 500
 
-
-    # Determine initial status based on user role
-    # Superadmins and admins can auto-approve
-    initial_status = 'Pending'
-    approval_status = 'Pending'
-    if current_user.has_role('superadmin', 'admin'):
-        initial_status = 'Approved - Pending Pre-Check'
-        approval_status = 'Approved'
-        app_logger.info(f"User {current_user.username} (role: {current_user.role}) auto-approved request {source_ip} to {destination_ip}:{ports_raw}/{protocol}.")
-
-
+    # Create the new rule with a temporary status before pre-check
     new_rule = FirewallRule(
         source_ip=source_ip,
         destination_ip=destination_ip,
         protocol=protocol,
         ports=ports, # Save as a list
-        status=initial_status,
+        status='Pending Pre-Check', # Temporary status
         rule_description=rule_description,
-        approval_status=approval_status,
+        approval_status='Pending Pre-Check', # Temporary status
         requester_id=current_user.id
     )
     db.session.add(new_rule)
-    db.session.commit()
-    app_logger.info(f"Network request ID {new_rule.id} created by {current_user.username}.")
+    db.session.commit() # Commit to get an ID for the rule, important for pre-check
+    app_logger.info(f"Network request ID {new_rule.id} created by {current_user.username} with temporary status 'Pending Pre-Check'.")
 
-    # If auto-approved, trigger pre-check immediately
-    if initial_status == 'Approved - Pending Pre-Check':
-        try:
-            # Call the service here
-            all_potential_firewalls = ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2'] # EXAMPLE: ADJUST THIS
-            
-            rule_data_for_precheck = {
-                'rule_id': new_rule.id,
-                'source_ip': new_rule.source_ip,
-                'destination_ip': new_rule.destination_ip,
-                'protocol': new_rule.protocol,
-                'ports': new_rule.ports,
-                'rule_description': new_rule.rule_description
-            }
+    # --- Perform Pre-Check for ALL requests ---
+    try:
+        all_potential_firewalls = ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2'] # EXAMPLE: ADJUST THIS
+        
+        rule_data_for_precheck = {
+            'rule_id': new_rule.id,
+            'source_ip': new_rule.source_ip,
+            'destination_ip': new_rule.destination_ip,
+            'protocol': new_rule.protocol,
+            'ports': new_rule.ports,
+            'rule_description': new_rule.rule_description
+        }
 
-            stdout, stderr, firewalls_checked = get_network_automation_service().perform_pre_check(
-                rule_data=rule_data_for_precheck,
-                firewalls_involved=all_potential_firewalls
-            )
+        stdout, stderr, firewalls_checked = get_network_automation_service().perform_pre_check(
+            rule_data=rule_data_for_precheck,
+            firewalls_involved=all_potential_firewalls
+        )
 
-            db_rule = FirewallRule.query.get(new_rule.id)
-            if db_rule:
-                db_rule.firewalls_involved = rule_data_for_precheck.get('firewalls_involved')
-                db_rule.firewalls_to_provision = rule_data_for_precheck.get('firewalls_to_provision')
-                db_rule.firewalls_already_configured = rule_data_for_precheck.get('firewalls_already_configured')
+        # Retrieve the rule again in case it was modified by other processes or to ensure fresh data
+        db_rule = FirewallRule.query.get(new_rule.id)
+        if db_rule:
+            db_rule.firewalls_involved = rule_data_for_precheck.get('firewalls_involved')
+            db_rule.firewalls_to_provision = rule_data_for_precheck.get('firewalls_to_provision')
+            db_rule.firewalls_already_configured = rule_data_for_precheck.get('firewalls_already_configured')
 
-                if stdout:
-                    app_logger.info(f"Pre-check STDOUT for rule {new_rule.id}:\n{stdout}")
-                if stderr:
-                    app_logger.error(f"Pre-check STDERR for rule {new_rule.id}:\n{stderr}")
+            if stdout:
+                app_logger.info(f"Pre-check STDOUT for rule {db_rule.id}:\n{stdout}")
+            if stderr:
+                app_logger.error(f"Pre-check STDERR for rule {db_rule.id}:\n{stderr}")
 
+            # Determine final status after pre-check, considering user roles for approval
+            if current_user.has_role('superadmin', 'admin'):
+                db_rule.approval_status = 'Approved'
                 if db_rule.firewalls_to_provision and len(db_rule.firewalls_to_provision) > 0:
                     db_rule.status = 'Approved - Pending Implementation'
+                    flash_message = f"Network request ID {db_rule.id} auto-approved and moved to 'Pending Implementation' after pre-check."
                 elif db_rule.firewalls_involved and len(db_rule.firewalls_involved) > 0 and \
                      db_rule.firewalls_already_configured and \
                      set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured):
                     db_rule.status = 'Completed - No Provisioning Needed'
+                    flash_message = f"Network request ID {db_rule.id} auto-approved. Policy already exists. Marked as 'Completed - No Provisioning Needed'."
                 else:
                     db_rule.status = 'Approved - No Provisioning Needed'
-                
-                db.session.commit()
-                app_logger.info(f"Network request ID {new_rule.id} updated status to {db_rule.status} after pre-check.")
+                    flash_message = f"Network request ID {db_rule.id} auto-approved. No provisioning required."
+                app_logger.info(f"User {current_user.username} (role: {current_user.role}) auto-approved request {db_rule.id}.")
+            else:
+                # For all other roles, it goes to Pending approval after pre-check
+                db_rule.approval_status = 'Pending'
+                db_rule.status = 'Pending' # Or 'Pending Approval - Pre-Check Completed' if you want more detail
+                flash_message = f"Network request ID {db_rule.id} submitted successfully and is now 'Pending' approval after pre-check."
+                app_logger.info(f"Network request ID {db_rule.id} moved to 'Pending' approval after pre-check.")
 
-        except RuntimeError as e:
-            new_rule.status = 'Pre-Check Failed'
-            new_rule.approval_status = 'Pre-Check Failed'
             db.session.commit()
-            app_logger.error(f"Network automation pre-check failed for rule {new_rule.id}: {e}", exc_info=True)
-            flash(f"Pre-check failed: {e}", 'error')
-            return jsonify({"status": "error", "message": f"Pre-check failed: {e}"}), 500
-        except Exception as e:
-            new_rule.status = 'Error During Pre-Check'
-            new_rule.approval_status = 'Error'
+            flash(flash_message, 'success')
+#            return jsonify({"status": "success", "message": flash_message}), 200
+            return jsonify({
+                "status": "success",
+                "message": flash_message,
+                "rule_id": db_rule.id,
+                "status_detail": db_rule.status, # This will be like 'Approved - Pending Implementation', 'Pending', etc.
+                "firewalls_involved": db_rule.firewalls_involved if db_rule.firewalls_involved else []
+            }), 200
+
+    except RuntimeError as e:
+        db_rule = FirewallRule.query.get(new_rule.id) # Re-fetch in case it was not found earlier
+        if db_rule:
+            db_rule.status = 'Pre-Check Failed'
+            db_rule.approval_status = 'Pre-Check Failed'
             db.session.commit()
-            app_logger.critical(f"An unexpected error occurred during network automation pre-check for rule {new_rule.id}: {e}", exc_info=True)
-            flash(f"An unexpected error occurred during pre-check: {e}", 'error')
-            return jsonify({"status": "error", "message": f"An unexpected error occurred during pre-check: {e}"}), 500
-
-    flash(f"Network request ID {new_rule.id} submitted successfully and moved to {new_rule.status}.", 'success')
-    return jsonify({"status": "success", "message": f"Request ID {new_rule.id} submitted."}), 200
-
+        app_logger.error(f"Network automation pre-check failed for rule {new_rule.id}: {e}", exc_info=True)
+        flash(f"Pre-check failed: {e}", 'error')
+        return jsonify({"status": "error", "message": f"Pre-check failed: {e}"}), 500
+    except Exception as e:
+        db_rule = FirewallRule.query.get(new_rule.id) # Re-fetch
+        if db_rule:
+            db_rule.status = 'Error During Pre-Check'
+            db_rule.approval_status = 'Error'
+            db.session.commit()
+        app_logger.critical(f"An unexpected error occurred during network automation pre-check for rule {new_rule.id}: {e}", exc_info=True)
+        flash(f"An unexpected error occurred during pre-check: {e}", 'error')
+        return jsonify({"status": "error", "message": f"An unexpected error occurred during pre-check: {e}"}), 500
 
 @routes.route('/task-results')
 @login_required
