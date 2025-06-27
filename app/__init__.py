@@ -1,10 +1,10 @@
-from flask import Flask
+from flask import Flask, redirect, url_for, render_template, request, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-import logging
 from logging.handlers import RotatingFileHandler
+from flask_login import LoginManager, current_user
+import logging
 import os
-from flask_login import LoginManager
 
 from app.models import db, User
 
@@ -35,7 +35,6 @@ def create_app():
         return User.query.get(int(user_id))
 
     log_file_path = os.path.join(app.root_path, '..', 'firework_app.log')
-    #handler = RotatingFileHandler(log_file_path, maxBytes=100000, backupCount=10)
     handler = RotatingFileHandler(log_file_path, maxBytes=1 * 1024 * 1024 * 1024, backupCount=1)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
@@ -45,6 +44,16 @@ def create_app():
 
     app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
     app.logger.info(f"Current working directory: {app.root_path}")
+
+    @app.errorhandler(404)
+    def page_not_found(e):
+        app.logger.warning(f"404 Not Found: {request.path} from IP {request.remote_addr}")
+        if not current_user.is_authenticated:
+            # If not logged in, redirect to login page (silent)
+            return redirect(url_for('auth.login'))
+        else:
+            # If logged in, redirect to task-results page
+            return redirect(url_for('routes.task_results'))
 
     from app.routes import routes
     from app.admin_routes import admin_bp
