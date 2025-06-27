@@ -634,43 +634,34 @@ def add_blacklist_rule():
 
         if source_ip:
             try:
-                ipaddress.ip_network(source_ip, strict=False) # Allow both single IP and CIDR
+                ipaddress.ip_network(source_ip, strict=False)
             except ValueError:
                 errors.append("Invalid Source IP format.")
 
         if destination_ip:
             try:
-                ipaddress.ip_network(destination_ip, strict=False) # Allow both single IP and CIDR
+                ipaddress.ip_network(destination_ip, strict=False)
             except ValueError:
                 errors.append("Invalid Destination IP format.")
 
-        # Basic validation for protocol and port consistency
         if protocol and protocol.lower() not in ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']:
             errors.append("Invalid Protocol. Must be tcp, udp, icmp, any, or protocol number.")
 
         if destination_port:
-            # Check if port is 'any', a single number, or a range X-Y
-            if destination_port.lower() != 'any':
-                if '-' in destination_port:
-                    try:
-                        start, end = map(int, destination_port.split('-'))
-                        if not (0 <= start <= 65535 and 0 <= end <= 65535 and start <= end):
-                            errors.append("Invalid port range. Must be X-Y where X,Y are numbers 0-65535 and X <= Y.")
-                    except ValueError:
-                        errors.append("Invalid port range format. Use X-Y.")
-                else:
-                    try:
-                        port_num = int(destination_port)
-                        if not (0 <= port_num <= 65535):
-                            errors.append("Invalid port number. Must be between 0-65535.")
-                    except ValueError:
-                        errors.append("Invalid port number format.")
-            # If protocol is ICMP or ANY, destination_port should ideally be 'any' or empty, but we allow input.
+            if destination_port.lower() == 'any':
+                pass
+            else:
+                try:
+                    port_num = int(destination_port)
+                    if not (0 <= port_num <= 65535):
+                        errors.append("Invalid port number. Must be between 0-65535 or 'any'.")
+                except ValueError:
+                    errors.append("Invalid port format. Must be a single port number (0-65535) or 'any'.")
+
             if protocol and protocol.lower() in ['icmp', '1'] and destination_port and destination_port.lower() not in ['any', '']:
                 errors.append("For ICMP protocol, destination port should be 'any' or left blank.")
             if protocol and protocol.lower() == 'any' and destination_port and destination_port.lower() not in ['any', '']:
-                 errors.append("For 'any' protocol, destination port should be 'any' or left blank.")
-
+                errors.append("For 'any' protocol, destination port should be 'any' or left blank.")
 
         if errors:
             for error in errors:
@@ -835,21 +826,16 @@ def edit_blacklist_rule(rule_id):
             errors.append("Invalid Protocol. Must be tcp, udp, icmp, any, or protocol number.")
 
         if destination_port:
-            if destination_port.lower() != 'any':
-                if '-' in destination_port:
-                    try:
-                        start, end = map(int, destination_port.split('-'))
-                        if not (0 <= start <= 65535 and 0 <= end <= 65535 and start <= end):
-                            errors.append("Invalid port range. Must be X-Y where X,Y are numbers 0-65535 and X <= Y.")
-                    except ValueError:
-                        errors.append("Invalid port range format. Use X-Y.")
-                else:
-                    try:
-                        port_num = int(destination_port)
-                        if not (0 <= port_num <= 65535):
-                            errors.append("Invalid port number. Must be between 0-65535.")
-                    except ValueError:
-                        errors.append("Invalid port number format.")
+            if destination_port.lower() == 'any':
+                pass
+            else:
+                try:
+                    port_num = int(destination_port)
+                    if not (0 <= port_num <= 65535):
+                        errors.append("Invalid port number. Must be between 0-65535 or 'any'.")
+                except ValueError:
+                    errors.append("Invalid port format. Must be a single port number (0-65535) or 'any'.")
+
             if protocol and protocol.lower() in ['icmp', '1'] and destination_port and destination_port.lower() not in ['any', '']:
                 errors.append("For ICMP protocol, destination port should be 'any' or left blank.")
             if protocol and protocol.lower() == 'any' and destination_port and destination_port.lower() not in ['any', '']:
@@ -859,14 +845,12 @@ def edit_blacklist_rule(rule_id):
             for error in errors:
                 flash(error, 'error')
             app_logger.warning(f"Validation errors for editing blacklist rule {rule.id} from {current_user.username}: {errors}")
-            # Re-render the form with user's input and errors
             return render_template('add_blacklist_form.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description,
                                    title=f'Edit Blacklist Rule ID: {rule_id}')
 
-        # If no errors, update the rule object
         rule.sequence = sequence
         rule.rule_name = rule_name
         rule.enabled = enabled
