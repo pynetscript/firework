@@ -424,14 +424,14 @@ def implement_rule(rule_id):
     if request.method == 'POST':
         action = request.form.get('action')
         implementer_comment = request.form.get('implementer_comment')
-        
+
         rule.implementer_id = current_user.id
         rule.implementer_comment = implementer_comment
         rule.implemented_at = datetime.utcnow()
 
         if action == 'provision':
             firewalls_to_provision = rule.firewalls_to_provision if rule.firewalls_to_provision else []
-            
+
             if not firewalls_to_provision:
                 flash("No firewalls marked for provisioning for this rule. Marking as 'Completed - No Provisioning Needed'.", 'info')
                 rule.status = 'Completed - No Provisioning Needed'
@@ -499,7 +499,7 @@ def implement_rule(rule_id):
                     else:
                         rule.status = 'Provisioning Failed'
                         flash(f"Rule ID {rule.id} failed provisioning on all target firewalls: {', '.join(failed_provisioning)}.", 'error')
-                
+
                 db.session.commit()
                 app_logger.info(f"Implementer {current_user.username} (ID: {current_user.id}) processed rule {rule.id}. Final status: {rule.status}.")
 
@@ -551,12 +551,12 @@ def cancel_request(rule_id):
     if current_user.has_role('requester') and rule.requester_id != current_user.id:
         app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
         return jsonify({"status": "error", "message": "You are not authorized to cancel this request."}), 403
-    
+
     # Define statuses that CANNOT be cancelled via this method.
     if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
         app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}.")
         return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
-    
+
     try:
         rule.status = "Cancelled by Requester"
         rule.approval_status = "Cancelled" # Update approval status as well
@@ -637,7 +637,7 @@ def add_blacklist_rule():
                 ipaddress.ip_network(source_ip, strict=False) # Allow both single IP and CIDR
             except ValueError:
                 errors.append("Invalid Source IP format.")
-        
+
         if destination_ip:
             try:
                 ipaddress.ip_network(destination_ip, strict=False) # Allow both single IP and CIDR
@@ -647,7 +647,7 @@ def add_blacklist_rule():
         # Basic validation for protocol and port consistency
         if protocol and protocol.lower() not in ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']:
             errors.append("Invalid Protocol. Must be tcp, udp, icmp, any, or protocol number.")
-        
+
         if destination_port:
             # Check if port is 'any', a single number, or a range X-Y
             if destination_port.lower() != 'any':
@@ -779,7 +779,7 @@ def api_delete_single_blacklist_rule(rule_id):
     rule = BlacklistRule.query.get(rule_id)
     if not rule:
         return jsonify({"status": "error", "message": f"Rule with ID {rule_id} not found."}), 404
-    
+
     try:
         db.session.delete(rule)
         db.session.commit()
@@ -790,6 +790,119 @@ def api_delete_single_blacklist_rule(rule_id):
         app_logger.error(f"API: Error deleting single blacklist rule {rule_id} by {current_user.username}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": f"An error occurred during deletion: {e}"}), 500
 
+
+@routes.route('/admin/edit-blacklist-rule/<int:rule_id>', methods=['GET', 'POST'])
+@login_required
+@roles_required('superadmin', 'admin') # Ensure only authorized users can edit
+def edit_blacklist_rule(rule_id):
+    """
+    Allows superadmin and admin roles to edit existing blacklist rules.
+    """
+    rule = BlacklistRule.query.get_or_404(rule_id)
+
+    if request.method == 'POST':
+        sequence = request.form.get('sequence', type=int)
+        rule_name = request.form.get('rule_name')
+        enabled = request.form.get('enabled') == 'True'
+        source_ip = request.form.get('source_ip') or None
+        destination_ip = request.form.get('destination_ip') or None
+        protocol = request.form.get('protocol') or None
+        destination_port = request.form.get('destination_port') or None
+        description = request.form.get('description') or None
+
+        errors = []
+        if not rule_name:
+            errors.append("Rule Name is required.")
+        if sequence is None:
+            errors.append("Sequence is required and must be an integer.")
+        # Check for sequence uniqueness only if it's being changed and conflicts with another rule
+        elif sequence != rule.sequence and BlacklistRule.query.filter_by(sequence=sequence).first():
+            errors.append(f"A rule with sequence {sequence} already exists. Please choose a unique sequence number.")
+
+        if source_ip:
+            try:
+                ipaddress.ip_network(source_ip, strict=False)
+            except ValueError:
+                errors.append("Invalid Source IP format.")
+
+        if destination_ip:
+            try:
+                ipaddress.ip_network(destination_ip, strict=False)
+            except ValueError:
+                errors.append("Invalid Destination IP format.")
+
+        if protocol and protocol.lower() not in ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']:
+            errors.append("Invalid Protocol. Must be tcp, udp, icmp, any, or protocol number.")
+
+        if destination_port:
+            if destination_port.lower() != 'any':
+                if '-' in destination_port:
+                    try:
+                        start, end = map(int, destination_port.split('-'))
+                        if not (0 <= start <= 65535 and 0 <= end <= 65535 and start <= end):
+                            errors.append("Invalid port range. Must be X-Y where X,Y are numbers 0-65535 and X <= Y.")
+                    except ValueError:
+                        errors.append("Invalid port range format. Use X-Y.")
+                else:
+                    try:
+                        port_num = int(destination_port)
+                        if not (0 <= port_num <= 65535):
+                            errors.append("Invalid port number. Must be between 0-65535.")
+                    except ValueError:
+                        errors.append("Invalid port number format.")
+            if protocol and protocol.lower() in ['icmp', '1'] and destination_port and destination_port.lower() not in ['any', '']:
+                errors.append("For ICMP protocol, destination port should be 'any' or left blank.")
+            if protocol and protocol.lower() == 'any' and destination_port and destination_port.lower() not in ['any', '']:
+                errors.append("For 'any' protocol, destination port should be 'any' or left blank.")
+
+        if errors:
+            for error in errors:
+                flash(error, 'error')
+            app_logger.warning(f"Validation errors for editing blacklist rule {rule.id} from {current_user.username}: {errors}")
+            # Re-render the form with user's input and errors
+            return render_template('add_blacklist_form.html',
+                                   sequence=sequence, rule_name=rule_name, enabled=enabled,
+                                   source_ip=source_ip, destination_ip=destination_ip,
+                                   protocol=protocol, destination_port=destination_port, description=description,
+                                   title=f'Edit Blacklist Rule ID: {rule_id}')
+
+        # If no errors, update the rule object
+        rule.sequence = sequence
+        rule.rule_name = rule_name
+        rule.enabled = enabled
+        rule.source_ip = source_ip
+        rule.destination_ip = destination_ip
+        rule.protocol = protocol
+        rule.destination_port = destination_port
+        rule.description = description
+
+        try:
+            db.session.commit()
+            flash(f'Blacklist rule {rule.id} updated successfully!', 'success')
+            app_logger.info(f"Blacklist rule {rule.id} updated by {current_user.username}.")
+            return redirect(url_for('routes.blacklist_rules_list'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating blacklist rule: {e}', 'error')
+            app_logger.error(f"Error updating blacklist rule {rule.id} by {current_user.username}: {e}", exc_info=True)
+            return render_template('add_blacklist_form.html',
+                                   sequence=sequence, rule_name=rule_name, enabled=enabled,
+                                   source_ip=source_ip, destination_ip=destination_ip,
+                                   protocol=protocol, destination_port=destination_port, description=description,
+                                   title=f'Edit Blacklist Rule ID: {rule_id}')
+
+    # For GET requests (initial load of the edit page)
+    # Populate the form with the existing rule's data
+    return render_template('add_blacklist_form.html',
+                           sequence=rule.sequence,
+                           rule_name=rule.rule_name,
+                           enabled=rule.enabled,
+                           source_ip=rule.source_ip,
+                           destination_ip=rule.destination_ip,
+                           protocol=rule.protocol,
+                           destination_port=rule.destination_port,
+                           description=rule.description,
+                           title=f'Edit Blacklist Rule ID: {rule_id}')
 
 @routes.route('/profile', methods=['GET', 'POST'])
 @login_required
@@ -813,7 +926,7 @@ def profile():
             errors.append('Email is required.')
         elif email != user.email and User.query.filter_by(email=email).first():
             errors.append('Email address already registered by another user.')
-        
+
         if errors:
             for error in errors:
                 flash(error, 'error')

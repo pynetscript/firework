@@ -3,14 +3,15 @@
 <div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Blacklist Rules</h2>
 
-    <!-- Add New Rule Button -->
-    <div class="flex justify-start mb-6">
+    <div class="flex justify-between mb-6 items-center">
         <a href="{{ url_for('routes.add_blacklist_rule') }}" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
             Add New Rule
         </a>
+
+        <input type="text" id="blacklistSearchInput" placeholder="Search..."
+               class="p-2 border border-gray-300 rounded-md w-1/3 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </div>
 
-    <!-- Delete Selected Button -->
     <div class="flex justify-end mb-4">
         <button id="deleteSelectedButton" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 hidden">
             Delete Selected
@@ -37,7 +38,6 @@
                 </tr>
             </thead>
             <tbody class="text-gray-600 text-sm font-light">
-                <!-- Rules will be loaded here by JavaScript -->
                 <tr>
                     <td colspan="11" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td>
                 </tr>
@@ -60,6 +60,9 @@
         const deleteSelectedButton = document.getElementById('deleteSelectedButton');
         const noRulesMessage = document.getElementById('noRulesMessage');
         const responseMessageDiv = document.getElementById('responseMessage');
+        const blacklistSearchInput = document.getElementById('blacklistSearchInput'); // NEW
+
+        let allBlacklistRules = []; // Store all fetched rules for filtering - NEW
 
         // Function to load and display blacklist rules
         async function loadBlacklistRules() {
@@ -75,7 +78,8 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const rules = await response.json();
-                renderRulesTable(rules);
+                allBlacklistRules = rules; // Store original rules - NEW
+                filterBlacklistRules(); // Call filter function to render (initial render with empty search) - NEW
             } catch (error) {
                 console.error('Error fetching blacklist rules:', error);
                 blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-red-500">Failed to load rules. Please check server logs.</td></tr>`;
@@ -83,18 +87,36 @@
             }
         }
 
-        // Function to render the rules table
-        function renderRulesTable(rules) {
+        // Function to filter and render rules - NEW
+        function filterBlacklistRules() {
+            const searchTerm = blacklistSearchInput.value.toLowerCase();
+            const filteredRules = allBlacklistRules.filter(rule => {
+                // Adjust fields to search based on your requirements
+                return (rule.id.toString().toLowerCase().includes(searchTerm) ||
+                        rule.sequence.toString().toLowerCase().includes(searchTerm) ||
+                        rule.rule_name.toLowerCase().includes(searchTerm) ||
+                        (rule.source_ip && rule.source_ip.toLowerCase().includes(searchTerm)) ||
+                        (rule.destination_ip && rule.destination_ip.toLowerCase().includes(searchTerm)) ||
+                        (rule.protocol && rule.protocol.toLowerCase().includes(searchTerm)) ||
+                        (rule.destination_port && rule.destination_port.toString().toLowerCase().includes(searchTerm)) ||
+                        (rule.description && rule.description.toLowerCase().includes(searchTerm)) ||
+                        (rule.enabled ? 'yes' : 'no').includes(searchTerm));
+            });
+            renderRulesTable(filteredRules);
+        }
+
+        // Function to render the rules table (now accepts filtered rules)
+        function renderRulesTable(rulesToRender) { // Renamed parameter
             blacklistRulesTableBody.innerHTML = ''; // Clear existing rows
-            if (rules.length === 0) {
+            if (rulesToRender.length === 0) {
                 noRulesMessage.classList.remove('hidden');
-                blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500">No blacklist rules found.</td></tr>`;
+                blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500">No matching blacklist rules found.</td></tr>`; // Updated message
                 return;
             } else {
                 noRulesMessage.classList.add('hidden');
             }
 
-            rules.forEach(rule => {
+            rulesToRender.forEach(rule => { // Use rulesToRender
                 const row = document.createElement('tr');
                 row.classList.add('border-b', 'border-gray-200', 'hover:bg-gray-100');
                 row.innerHTML = `
@@ -164,7 +186,7 @@
         // Handle Delete Selected Button
         deleteSelectedButton.addEventListener('click', async function() {
             const selectedRuleIds = Array.from(document.querySelectorAll('.rule-checkbox:checked'))
-                                       .map(cb => cb.dataset.ruleId);
+                                             .map(cb => cb.dataset.ruleId);
             if (selectedRuleIds.length === 0) {
                 showResponseMessage('Please select at least one rule to delete.', 'error');
                 return;
@@ -220,8 +242,8 @@
             } else if (event.target.classList.contains('edit-rule-btn')) {
                 const ruleId = event.target.dataset.ruleId;
                 // Redirect to an edit page or open a modal for editing
-                alert(`Edit functionality for Rule ID ${ruleId} is not yet implemented.`); // Replace with actual edit logic
-                // window.location.href = `/admin/edit-blacklist-rule/${ruleId}`; // Example: redirect to edit page
+                // alert(`Edit functionality for Rule ID ${ruleId} is not yet implemented.`); // Replace with actual edit logic
+                window.location.href = `{{ url_for('routes.edit_blacklist_rule', rule_id=0) | replace('0', ruleId) }}`; // Example: redirect to edit page
             }
         });
 
@@ -236,6 +258,10 @@
             responseMessageDiv.innerHTML = `<p class="font-bold">${type.charAt(0).toUpperCase() + type.slice(1)}:</p><p>${message}</p>`;
             responseMessageDiv.classList.remove('hidden');
         }
+
+        // Add event listener for search input - NEW
+        blacklistSearchInput.addEventListener('input', filterBlacklistRules);
+
 
         // Initial load of rules
         loadBlacklistRules();
