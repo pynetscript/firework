@@ -5,7 +5,7 @@
 # and performs a full reset of the PostgreSQL database,
 # effectively resetting the application's environment and schema setup for a clean start.
 
-echo "--- Cleaning Firework Environment and Database (Full Reset) ---"
+echo "--- Cleaning Firework Environment and Database ---"
 
 # 1. Deactivate any active virtual environment
 echo "Deactivating any active virtual environment..."
@@ -23,11 +23,14 @@ rm -rf venv
 echo "Removing Gunicorn socket file if it exists..."
 rm -f /tmp/firework.sock
 
-# 4. Perform a full reset of the PostgreSQL database
-echo "Resetting PostgreSQL database (dropping and recreating 'fireworkdb')..."
+# 4. Reset logs
+echo "Resetting logs..."
+truncate -s 0 firework_app.log
 
+# 5. Perform a full reset of the PostgreSQL database
 # Use the 'firework' user to connect to the default 'postgres' database
 # to drop and recreate 'fireworkdb'. This relies on ~/.pgpass for password.
+echo "Resetting PostgreSQL database 'fireworkdb'..."
 
 # Drop the database (if it exists)
 psql -h localhost -U firework -d postgres -c "DROP DATABASE IF EXISTS fireworkdb;"

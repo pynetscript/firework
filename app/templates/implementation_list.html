@@ -30,7 +30,7 @@
                     <td class="py-3 px-6 text-left">{{ rule.source_ip }}</td>
                     <td class="py-3 px-6 text-left">{{ rule.destination_ip }}</td>
                     <td class="py-3 px-6 text-left">{{ rule.protocol }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.port }}</td>
+                    <td class="py-3 px-6 text-left">{{ rule.ports | join(', ') if rule.ports else 'N/A' }}</td>
                     <td class="py-3 px-6 text-left">{{ rule.status }}</td>
                     <td class="py-3 px-6 text-left">
                         {% if rule.firewalls_involved %}

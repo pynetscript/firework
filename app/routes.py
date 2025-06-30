@@ -68,7 +68,7 @@ def submit_request():
         ipaddress.ip_address(source_ip)
     except ValueError:
         errors.append('Invalid Source IP address format.')
-    
+
     try:
         ipaddress.ip_address(destination_ip)
     except ValueError:
@@ -78,7 +78,7 @@ def submit_request():
     allowed_protocols = ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']
     if protocol.lower() not in allowed_protocols and not protocol.isdigit():
         errors.append('Invalid Protocol. Must be tcp, udp, icmp, any, or a protocol number.')
-    
+
     # Process ports: Allow only a single port (0-65535) or the string "any"
     ports = []
     if protocol.lower() in ['icmp', 'any', '1']:
@@ -96,7 +96,7 @@ def submit_request():
                     errors.append(f'Invalid port: {ports_raw}. Must be a number between 0-65535 or "any".')
             except ValueError:
                 errors.append(f'Invalid port: {ports_raw}. Must be a number between 0-65535 or "any".')
-    
+
     if not ports and protocol.lower() not in ['icmp', 'any', '1']:
         errors.append('Port is required for the specified protocol. Must be a number between 0-65535 or "any".')
 
@@ -212,10 +212,8 @@ def submit_request():
     db.session.commit() # Commit to get an ID for the rule, important for pre-check
     app_logger.info(f"Network request ID {new_rule.id} created by {current_user.username} with temporary status 'Pending Pre-Check'.")
 
-    # --- Perform Pre-Check for ALL requests ---
+# --- Perform Pre-Check for ALL requests ---
     try:
-        all_potential_firewalls = ['pa_firewall_1', 'fgt_firewall_1', 'fgt_firewall_2'] # EXAMPLE: ADJUST THIS
-
         rule_data_for_precheck = {
             'rule_id': new_rule.id,
             'source_ip': new_rule.source_ip,
@@ -225,17 +223,25 @@ def submit_request():
             'rule_description': rule_description
         }
 
-        stdout, stderr, firewalls_checked = get_network_automation_service().perform_pre_check(
-            rule_data=rule_data_for_precheck,
-            firewalls_involved=all_potential_firewalls
-        )
+        # The perform_pre_check method returns 4 values.
+        stdout, stderr, discovered_firewalls, firewalls_already_configured = \
+            get_network_automation_service().perform_pre_check(
+                rule_data=rule_data_for_precheck,
+                firewalls_involved=[] # This list is dynamically populated by the service
+            )
 
-        # Retrieve the rule again in case it was modified by other processes or to ensure fresh data
+        # Retrieve the rule again to ensure we're working with the latest data after pre-check
         db_rule = FirewallRule.query.get(new_rule.id)
         if db_rule:
-            db_rule.firewalls_involved = rule_data_for_precheck.get('firewalls_involved')
-            db_rule.firewalls_to_provision = rule_data_for_precheck.get('firewalls_to_provision')
-            db_rule.firewalls_already_configured = rule_data_for_precheck.get('firewalls_already_configured')
+            # Assign the firewall lists directly from the returned values
+            db_rule.firewalls_involved = discovered_firewalls
+            db_rule.firewalls_already_configured = firewalls_already_configured
+
+            # firewalls_to_provision is populated into rule_data_for_precheck by perform_pre_check
+            db_rule.firewalls_to_provision = rule_data_for_precheck.get('firewalls_to_provision', [])
+
+            db_rule.pre_check_result_stdout = stdout
+            db_rule.pre_check_result_stderr = stderr
 
             if stdout:
                 app_logger.info(f"Pre-check STDOUT for rule {db_rule.id}:\n{stdout}")
@@ -243,57 +249,80 @@ def submit_request():
                 app_logger.error(f"Pre-check STDERR for rule {db_rule.id}:\n{stderr}")
 
             # Determine final status after pre-check, considering user roles for approval
-            if current_user.has_role('superadmin', 'admin'):
-                db_rule.approval_status = 'Approved'
+            # Check for no firewalls in path first, regardless of user role
+            if not db_rule.firewalls_involved or len(db_rule.firewalls_involved) == 0:
+                # Scenario: No firewalls found in the path for ANY role
+                db_rule.status = 'Completed - No Provisioning Needed'
+                db_rule.approval_status = 'Approved' # Implied approval if no action is needed
+                flash_message = f"Network request ID {db_rule.id} submitted. No firewalls discovered in the traffic path. Marked as 'Completed - No Provisioning Needed'."
+                app_logger.info(f"Rule {db_rule.id} completed as no firewalls were found in path for user {current_user.username}.")
+
+            elif current_user.has_role('superadmin', 'admin'):
+                # Admin/Superadmin specific logic when firewalls ARE involved
+                db_rule.approval_status = 'Approved' # Auto-approve for admins
+
                 if db_rule.firewalls_to_provision and len(db_rule.firewalls_to_provision) > 0:
-                    db_rule.status = 'Approved - Pending Implementation'
+                    db_rule.status = 'Pending Implementation'
                     flash_message = f"Network request ID {db_rule.id} auto-approved and moved to 'Pending Implementation' after pre-check."
-                elif db_rule.firewalls_involved and len(db_rule.firewalls_involved) > 0 and \
-                     db_rule.firewalls_already_configured and \
+                    app_logger.info(f"Rule {db_rule.id} approved and pending implementation on: {', '.join(db_rule.firewalls_to_provision)}")
+
+                elif db_rule.firewalls_involved and db_rule.firewalls_already_configured and \
                      set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured):
                     db_rule.status = 'Completed - No Provisioning Needed'
-                    flash_message = f"Network request ID {db_rule.id} auto-approved. Policy already exists. Marked as 'Completed - No Provisioning Needed'."
+                    flash_message = f"Network request ID {db_rule.id} auto-approved. Policy already exists on all involved firewalls. Marked as 'Completed - No Provisioning Needed'."
+                    app_logger.info(f"Rule {db_rule.id} completed as policy already exists on: {', '.join(db_rule.firewalls_already_configured)}")
                 else:
-                    db_rule.status = 'Approved - No Provisioning Needed'
-                    flash_message = f"Network request ID {db_rule.id} auto-approved. No provisioning required."
+                    db_rule.status = 'Approved - Review Needed'
+                    flash_message = f"Network request ID {db_rule.id} auto-approved. Review needed for its final status."
+                    app_logger.warning(f"Rule {db_rule.id} auto-approved but requires review: firewalls_involved={db_rule.firewalls_involved}, firewalls_to_provision={db_rule.firewalls_to_provision}, firewalls_already_configured={db_rule.firewalls_already_configured}")
+
                 app_logger.info(f"User {current_user.username} (role: {current_user.role}) auto-approved request {db_rule.id}.")
             else:
-                # For all other roles, it goes to Pending approval after pre-check
-                db_rule.approval_status = 'Pending'
-                db_rule.status = 'Pending' # Or 'Pending Approval - Pre-Check Completed' if you want more detail
-                flash_message = f"Network request ID {db_rule.id} submitted successfully and is now 'Pending' approval after pre-check."
-                app_logger.info(f"Network request ID {db_rule.id} moved to 'Pending' approval after pre-check.")
+                # For non-admin roles when firewalls ARE involved, it goes to Pending Approval
+                db_rule.status = 'Pending'
+                db_rule.approval_status = 'Pending Approval'
+                flash_message = f"Network request ID {db_rule.id} submitted successfully and is now 'Pending' after pre-check."
+                app_logger.info(f"Network request ID {db_rule.id} moved to 'Pending Approval' after pre-check for user {current_user.username}.")
 
             db.session.commit()
-            flash(flash_message, 'success')
+            flash(flash_message, 'info') # Flash messages will still work on the redirected page
+
+            # Determine if the current user can access approvals
+            can_access_approvals = current_user.has_role('approver') or \
+                                   current_user.has_role('admin') or \
+                                   current_user.has_role('superadmin')
+
             return jsonify({
                 "status": "success",
                 "message": flash_message,
-                "rule_id": db_rule.id,
-                "status_detail": db_rule.status, # Approved/Pending/Pending Implementation/etc.
-                "approval_status": db_rule.approval_status,
-                "can_access_approvals": current_user.has_role('superadmin', 'admin', 'approver'),
-                "firewalls_involved": db_rule.firewalls_involved if db_rule.firewalls_involved else []
+                "redirect_url": url_for('routes.task_results'),
+                "rule_id": db_rule.id,  # Include the rule ID
+                "status_detail": db_rule.status,  # Include the detailed status
+                "approval_status": db_rule.approval_status, # Include approval status
+                "firewalls_involved": discovered_firewalls, # Include discovered firewalls
+                "can_access_approvals": can_access_approvals # Include flag for approvals link
             }), 200
 
     except RuntimeError as e:
-        db_rule = FirewallRule.query.get(new_rule.id) # Re-fetch in case it was not found earlier
+        db.session.rollback() 
+        db_rule = FirewallRule.query.get(new_rule.id)
         if db_rule:
             db_rule.status = 'Pre-Check Failed'
             db_rule.approval_status = 'Pre-Check Failed'
             db.session.commit()
         app_logger.error(f"Network automation pre-check failed for rule {new_rule.id}: {e}", exc_info=True)
         flash(f"Pre-check failed: {e}", 'error')
-        return jsonify({"status": "error", "message": f"Pre-check failed: {e}"}), 500
+        return redirect(url_for('routes.request_form'))
     except Exception as e:
-        db_rule = FirewallRule.query.get(new_rule.id) # Re-fetch
+        db.session.rollback()
+        db_rule = FirewallRule.query.get(new_rule.id)
         if db_rule:
             db_rule.status = 'Error During Pre-Check'
             db_rule.approval_status = 'Error'
             db.session.commit()
         app_logger.critical(f"An unexpected error occurred during network automation pre-check for rule {new_rule.id}: {e}", exc_info=True)
-        flash(f"An unexpected error occurred during pre-check: {e}", 'error')
-        return jsonify({"status": "error", "message": f"An unexpected error occurred during pre-check: {e}"}), 500
+        flash(f"An unexpected error occurred during pre-check: {e}. Please contact support.", 'error')
+        return redirect(url_for('routes.request_form'))
 
 @routes.route('/task-results')
 @login_required
@@ -302,43 +331,26 @@ def task_results():
     Displays a list of network automation tasks relevant to the current user.
     - Superadmins/Admins see all tasks.
     - Requesters see tasks they have submitted.
-    - Implementers see tasks that are 'Approved - Pending Implementation' or 'Provisioning' or 'Provisioning Failed'.
+    - Implementers see tasks that are 'Pending Implementation' or 'Provisioning' or 'Provisioning Failed'.
     - Approvers see tasks they have approved or denied.
     """
     query = FirewallRule.query
 
-    # Superadmin/Admin can see all rules
     if current_user.has_role('superadmin') or current_user.has_role('admin'):
-        rules = query.all()
-    else:
-        # Build conditions for other roles using OR
-        user_rules_conditions = []
-
-        # Requesters see their own rules
-        if current_user.has_role('requester'):
-            user_rules_conditions.append(FirewallRule.requester_id == current_user.id)
-
-        # Implementers see rules pending, pending implementation, provisioning, provisioning failed, completed
-        if current_user.has_role('implementer'):
-            user_rules_conditions.append(
-                FirewallRule.status.in_(['Pending', 'Approved - Pending Implementation', 'Provisioning', 'Provisioning Failed', 'Completed'])
-            )
-
-	# Approvers see rules they have approved or denied OR rules with statuses like implementers
-        if current_user.has_role('approver'):
-            user_rules_conditions.append(
-                FirewallRule.status.in_(['Pending', 'Approved - Pending Implementation', 'Provisioning', 'Provisioning Failed', 'Completed'])
-            )
-
-        # Apply combined conditions, or an empty list if no relevant conditions
-        if user_rules_conditions:
-            rules = query.filter(db.or_(*user_rules_conditions)).all()
-        else:
-            rules = [] # If the user has no roles defined to view tasks, show an empty list
-
-    # Sort rules for consistent display (e.g., by creation date, newest first)
-    # This line can be adjusted based on desired sorting.
-    rules.sort(key=lambda r: r.created_at, reverse=True) 
+        rules = query.order_by(FirewallRule.created_at.desc()).all() # Admins see all
+    else: # For requester, approver, implementer
+        rules = query.filter(FirewallRule.status.in_([
+            'Pending',
+            'Pending Pre-Check',
+            'Pending Implementation',
+            'Provisioning',
+            'Provisioning Failed',
+            'Completed',
+            'Completed - Implemented',
+            'Completed - No Provisioning Needed',
+            "Declined by Implementer",
+            "Denied by Approver"
+        ])).order_by(FirewallRule.created_at.desc()).all()
 
     return render_template('task_results.html', rules=rules)
 
@@ -355,7 +367,7 @@ def approve_deny_request(rule_id):
     rule = FirewallRule.query.get_or_404(rule_id)
 
     # Ensure only pending rules can be acted upon by non-superadmin/admin approvers
-    if not current_user.has_role('superadmin', 'admin') and rule.approval_status != 'Pending':
+    if not current_user.has_role('superadmin', 'admin') and rule.approval_status != 'Pending Approval':
         flash('This request is not pending approval.', 'warning')
         return redirect(url_for('routes.approvals_list'))
 
@@ -367,16 +379,16 @@ def approve_deny_request(rule_id):
         rule.approval_justification = justification
 
         if action == 'approve':
+            rule.status = 'Pending Implementation'
             rule.approval_status = 'Approved'
-            rule.status = 'Approved - Pending Implementation'
             rule.approved_at = datetime.utcnow()
             app_logger.info(f"Rule {rule.id} approved by {current_user.username}. Status: {rule.status}.")
 
             flash(f"Rule {rule.id} approved and moved to 'Pending Implementation'. Automation will be triggered separately.", 'success')
 
         elif action == 'deny':
+            rule.status = 'Denied by Approver'
             rule.approval_status = 'Denied'
-            rule.status = 'Denied'
             flash(f"Rule {rule.id} denied by {current_user.username}.", 'info')
             app_logger.info(f"Rule {rule.id} denied by {current_user.username}.")
 
@@ -393,14 +405,11 @@ def approvals_list():
     Displays a list of network rule requests pending approval (for approvers)
     or all requests that are pending/approved (for superadmins/admins).
     """
-    if current_user.has_role('superadmin', 'admin'):
-        # Superadmins and Admins can see all rules that are either Pending or Approved
+    if current_user.has_role('superadmin', 'admin', 'approver'):
+        # Can see all rules that are either Pending or Approved
         rules = FirewallRule.query.filter(
-            FirewallRule.approval_status.in_(['Pending', 'Approved'])
+            FirewallRule.approval_status.in_(['Pending Approval', 'Approved'])
         ).order_by(FirewallRule.created_at.desc()).all()
-    elif current_user.has_role('approver'):
-        # Approvers only see rules explicitly pending their action
-        rules = FirewallRule.query.filter_by(approval_status='Pending').order_by(FirewallRule.created_at.asc()).all()
     else:
         # Fallback for any other role that might somehow access this (though roles_required should prevent it)
         rules = []
@@ -416,8 +425,8 @@ def implement_rule(rule_id):
     """
     rule = FirewallRule.query.get_or_404(rule_id)
 
-    # Only allow action if status is 'Approved - Pending Implementation' or 'Partially Implemented - Requires Attention'
-    if rule.status not in ['Approved - Pending Implementation', 'Partially Implemented - Requires Attention']:
+    # Only allow action if status is 'Pending Implementation' or 'Partially Implemented - Requires Attention'
+    if rule.status not in ['Pending Implementation', 'Partially Implemented - Requires Attention']:
         flash(f"Rule ID {rule_id} is currently '{rule.status}'. No implementation action available.", 'info')
         return redirect(url_for('routes.implementation_list'))
 
@@ -533,7 +542,7 @@ def implementation_list():
     Displays a list of network rule requests pending implementation.
     """
     rules = FirewallRule.query.filter(
-        FirewallRule.status.in_(['Approved - Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention'])
+        FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer'])
     ).order_by(FirewallRule.created_at.asc()).all()
     return render_template('implementation_list.html', rules=rules)
 

@@ -771,8 +771,8 @@ class NetworkAutomationService:
                 app_logger.error(f"Failed to pre-check rule {rule_data['rule_id']} on {firewall_name}: {e}")
             except Exception as e:
                 app_logger.critical(f"An unexpected error occurred during pre-check for rule {rule_data['rule_id']} on {firewall_name}: {e}")
-        
-        return pre_check_stdout, pre_check_stderr, firewalls_for_precheck
+
+        return pre_check_stdout, pre_check_stderr, firewalls_for_precheck, rule_data.get('firewalls_already_configured', [])
 
 
     def provision_firewall_rule(self, rule_data, firewalls_to_provision):
@@ -782,7 +782,7 @@ class NetworkAutomationService:
         app_logger.info(f"Attempting to provision rule {rule_data['rule_id']} on firewalls: {firewalls_to_provision}")
         provision_stdout = ""
         provision_stderr = ""
-        
+
         successfully_provisioned = []
         failed_provisioning = []
 
