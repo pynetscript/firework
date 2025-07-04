@@ -10,11 +10,11 @@
     check_source_ip: "{{ source_ip }}"
     check_destination_ip: "{{ destination_ip }}"
     check_protocol: "{{ protocol }}"
-    check_port: "{{ port }}"
+    check_port: "{{ port }}" # [WARNING]: Consider renaming 'port' to avoid conflicts with Ansible reserved names (e.g., 'service_port')
 
-    check_src_addr_name: "HOST_{{ check_source_ip | replace('.', '_') }}"
-    check_dst_addr_name: "HOST_{{ check_destination_ip | replace('.', '_') }}"
-    check_service_name: "SVC_{{ check_protocol | upper }}_{{ check_port }}"
+    # IMPORTANT: FortiGate API access token should be managed securely, e.g., via Ansible Vault
+    # For demonstration purposes, it's a variable here, but DO NOT hardcode sensitive tokens in production.
+    fortigate_api_access_token: "h4GHn5Qy9Ghyr03cHcN5jk0gG05GGz"
 
     # Flag to indicate if a policy is found
     policy_found_flag: false
@@ -24,24 +24,24 @@
       debug:
         msg: "Pre-checking for existing policy on {{ inventory_hostname }} (FortiGate) for Source: {{ check_source_ip }}, Dest: {{ check_destination_ip }}, Proto: {{ check_protocol }}, Port: {{ check_port }}"
 
-    - name: Get FortiGate Firewall Policies
-      fortinet.fortios.fortios_firewall_policy:
-        vdom: "root"
-        state: info
-      register: fgt_policies
-      ignore_errors: yes # Allow to continue if policy info cannot be retrieved
+    - name: Perform FortiGate Policy Lookup via API
+      ansible.builtin.uri:
+        # Construct the URL with dynamic variables, hardcoded srcintf, and using ansible_host for the IP
+        url: "https://{{ ansible_host }}/api/v2/monitor/firewall/policy-lookup/?access_token={{ fortigate_api_access_token }}&srcintf=port3&sourceip={{ check_source_ip }}&protocol={{ check_protocol }}&dest={{ check_destination_ip }}&destport={{ check_port }}"
+        method: GET
+        validate_certs: no # Set to 'yes' and provide 'ca_path' or 'src' for production environments
+        return_content: yes
+      register: fgt_policy_lookup_result
+      ignore_errors: yes # Allow the playbook to continue even if the API call encounters an error
 
-    - name: Check FortiGate policies for match and set flag
+    - name: Set policy_found_flag based on API lookup result
       set_fact:
         policy_found_flag: true
-      loop: "{{ fgt_policies.meta.results | default([]) }}"
-      loop_control:
-        label: "Checking FortiGate policy {{ item.name }}"
-      when:
-        - item.srcaddr is defined and (item.srcaddr | map(attribute='name') | list | contains(check_src_addr_name) or check_source_ip in item.srcaddr | map(attribute='name') | list)
-        - item.dstaddr is defined and (item.dstaddr | map(attribute='name') | list | contains(check_dst_addr_name) or check_destination_ip in item.dstaddr | map(attribute='name') | list)
-        - (check_protocol | lower == 'any' and item.service is defined and item.service | map(attribute='name') | list | contains('ALL')) or
-          (check_protocol | lower != 'any' and item.service is defined and item.service | map(attribute='name') | list | contains(check_service_name))
+      # This 'when' condition is a basic assumption.
+      # You MUST inspect the actual JSON response from the FortiGate policy-lookup API (e.g., by debugging fgt_policy_lookup_result.json)
+      # to determine the precise condition that indicates a policy match.
+      # Example: if the API returns a 'policyid' or a specific status when a policy is found.
+      when: fgt_policy_lookup_result.status == 200 and fgt_policy_lookup_result.json.results.match | default(false) == true
       run_once: true
       delegate_to: localhost # Run this locally to update the flag once
 
