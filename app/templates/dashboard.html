@@ -26,7 +26,7 @@
                         <td id="bandwidth" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Firework:</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Firework App:</td>
                         <td id="app_status" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
@@ -65,70 +65,121 @@
                         <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Closed/Implemented Tickets:</td>
                         <td id="closed_implemented" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
-                    </tbody>
+                </tbody>
             </table>
         </div>
     </div>
 </div>
 
 <script>
+    // Variables to store previous bandwidth data for calculation
+    let prevBytesSent = 0;
+    let prevBytesRecv = 0;
+    let lastBandwidthFetchTime = 0; // Timestamp of the last fetch
+
+    // Helper function to format bytes per second
+    function formatBytesPerSecond(bytes) {
+        if (bytes < 1024) {
+            return `${bytes.toFixed(1)} B/s`;
+        } else if (bytes < 1024 * 1024) {
+            return `${(bytes / 1024).toFixed(1)} KB/s`;
+        } else if (bytes < 1024 * 1024 * 1024) {
+            return `${(bytes / (1024 * 1024)).toFixed(1)} MB/s`;
+        } else {
+            return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
+        }
+    }
+
+    // Function to fetch and update System Status (including bandwidth rate)
+    async function fetchSystemStatus() {
+        try {
+            const response = await fetch('/api/dashboard/system-status');
+            const data = await response.json();
+            const currentTime = Date.now(); // Current timestamp in milliseconds
+
+            document.getElementById('cpu_load').textContent = data.cpu_load || 'N/A';
+            document.getElementById('memory_load').textContent = data.memory_load || 'N/A';
+            document.getElementById('disk_space').textContent = data.disk_space || 'N/A';
+            document.getElementById('app_status').textContent = data.firework_app || 'N/A';
+            document.getElementById('nginx_status').textContent = data.nginx || 'N/A';
+            document.getElementById('gunicorn_status').textContent = data.gunicorn || 'N/A';
+            document.getElementById('postgres_status').textContent = data.postgres || 'N/A';
+
+            // --- Bandwidth Calculation Logic ---
+            if (data.bandwidth_error) {
+                document.getElementById('bandwidth').textContent = data.bandwidth_error;
+            } else if (lastBandwidthFetchTime === 0) {
+                // First fetch, just initialize and show "Collecting data..."
+                document.getElementById('bandwidth').textContent = 'Collecting data...';
+            } else {
+                const timeDiffSeconds = (currentTime - lastBandwidthFetchTime) / 1000; // Convert ms to seconds
+
+                if (timeDiffSeconds > 0) {
+                    const sentDiff = data.bandwidth_bytes_sent - prevBytesSent;
+                    const recvDiff = data.bandwidth_bytes_recv - prevBytesRecv;
+
+                    // Ensure no negative differences if counter reset (though psutil should handle nowrap)
+                    const actualSentDiff = Math.max(0, sentDiff);
+                    const actualRecvDiff = Math.max(0, recvDiff);
+
+                    const sentRate = actualSentDiff / timeDiffSeconds;
+                    const recvRate = actualRecvDiff / timeDiffSeconds;
+
+                    document.getElementById('bandwidth').textContent =
+                        `Sent: ${formatBytesPerSecond(sentRate)}, Recv: ${formatBytesPerSecond(recvRate)}`;
+                } else {
+                    document.getElementById('bandwidth').textContent = 'Calculating...'; // Should ideally not happen
+                }
+            }
+
+            // Store current values for the next calculation
+            prevBytesSent = data.bandwidth_bytes_sent;
+            prevBytesRecv = data.bandwidth_bytes_recv;
+            lastBandwidthFetchTime = currentTime;
+
+        } catch (error) {
+            console.error('Error fetching system status:', error);
+            document.getElementById('cpu_load').textContent = 'Error';
+            document.getElementById('memory_load').textContent = 'Error';
+            document.getElementById('disk_space').textContent = 'Error';
+            document.getElementById('bandwidth').textContent = 'Error'; // Set to error on fetch failure
+            document.getElementById('app_status').textContent = 'Error';
+            document.getElementById('nginx_status').textContent = 'Error';
+            document.getElementById('gunicorn_status').textContent = 'Error';
+            document.getElementById('postgres_status').textContent = 'Error';
+        }
+    }
+
+    // Function to fetch and update Application Status (remains unchanged)
+    async function fetchApplicationStatus() {
+        try {
+            const response = await fetch('/api/dashboard/application-status');
+            const data = await response.json();
+
+            document.getElementById('open_tickets').textContent = data.open_tickets !== undefined ? data.open_tickets : 'N/A';
+            document.getElementById('pending_approval').textContent = data.pending_approval !== undefined ? data.pending_approval : 'N/A';
+            document.getElementById('pending_implementation').textContent = data.pending_implementation !== undefined ? data.pending_implementation : 'N/A';
+            document.getElementById('closed_implemented').textContent = data.closed_implemented !== undefined ? data.closed_implemented : 'N/A';
+
+        } catch (error) {
+            console.error('Error fetching application status:', error);
+            document.getElementById('open_tickets').textContent = 'Error';
+            document.getElementById('pending_approval').textContent = 'Error';
+            document.getElementById('pending_implementation').textContent = 'Error';
+            document.getElementById('closed_implemented').textContent = 'Error';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
-        // Function to fetch and update System Status
-        async function fetchSystemStatus() {
-            try {
-                const response = await fetch('/api/dashboard/system-status');
-                const data = await response.json();
-
-                document.getElementById('cpu_load').textContent = data.cpu_load || 'N/A';
-                document.getElementById('memory_load').textContent = data.memory_load || 'N/A';
-                document.getElementById('disk_space').textContent = data.disk_space || 'N/A';
-                document.getElementById('bandwidth').textContent = data.bandwidth || 'N/A';
-                document.getElementById('app_status').textContent = data.firework_app || 'N/A';
-                document.getElementById('nginx_status').textContent = data.nginx || 'N/A';
-                document.getElementById('gunicorn_status').textContent = data.gunicorn || 'N/A';
-                document.getElementById('postgres_status').textContent = data.postgres || 'N/A';
-
-            } catch (error) {
-                console.error('Error fetching system status:', error);
-                // Optionally update all fields to 'Error' or 'N/A'
-                document.getElementById('cpu_load').textContent = 'Error';
-                document.getElementById('memory_load').textContent = 'Error';
-                document.getElementById('disk_space').textContent = 'Error';
-                document.getElementById('bandwidth').textContent = 'Error';
-                document.getElementById('app_status').textContent = 'Error';
-                document.getElementById('nginx_status').textContent = 'Error';
-                document.getElementById('gunicorn_status').textContent = 'Error';
-                document.getElementById('postgres_status').textContent = 'Error';
-            }
-        }
-
-        // Function to fetch and update Application Status
-        async function fetchApplicationStatus() {
-            try {
-                const response = await fetch('/api/dashboard/application-status');
-                const data = await response.json();
-
-                document.getElementById('open_tickets').textContent = data.open_tickets !== undefined ? data.open_tickets : 'N/A';
-                document.getElementById('pending_approval').textContent = data.pending_approval !== undefined ? data.pending_approval : 'N/A';
-                document.getElementById('pending_implementation').textContent = data.pending_implementation !== undefined ? data.pending_implementation : 'N/A';
-                document.getElementById('closed_implemented').textContent = data.closed_implemented !== undefined ? data.closed_implemented : 'N/A';
-
-            } catch (error) {
-                console.error('Error fetching application status:', error);
-                document.getElementById('open_tickets').textContent = 'Error';
-                document.getElementById('pending_approval').textContent = 'Error';
-                document.getElementById('pending_implementation').textContent = 'Error';
-                document.getElementById('closed_implemented').textContent = 'Error';
-            }
-        }
-
-        // Fetch data on page load
-        fetchSystemStatus();
+        // Fetch data initially
+        fetchSystemStatus(); // Call first to initialize bandwidth counters
         fetchApplicationStatus();
 
-        // Optional: Refresh data periodically (e.g., every 30 seconds)
-        // setInterval(fetchSystemStatus, 30000);
-        // setInterval(fetchApplicationStatus, 30000);
+        // Refresh data periodically
+        // System status (including bandwidth) should update more frequently
+        setInterval(fetchSystemStatus, 3000); // Update every 3 seconds for fresher bandwidth data
+        // Application status can update less frequently as it changes less often
+        setInterval(fetchApplicationStatus, 15000); // Update every 15 seconds
     });
 </script>
 {% endblock %}

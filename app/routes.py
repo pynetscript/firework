@@ -82,26 +82,27 @@ def get_system_status():
         system_status['disk_space'] = 'N/A'
 
     try:
-        # Get network I/O for ens33
         net_io = psutil.net_io_counters(pernic=True)
         if 'ens33' in net_io:
             ens33_stats = net_io['ens33']
-            # Convert bytes to MB or GB for display
-            sent_mb = ens33_stats.bytes_sent / (1024 * 1024)
-            recv_mb = ens33_stats.bytes_recv / (1024 * 1024)
-            system_status['bandwidth'] = f"Sent: {sent_mb:.2f} MB, Recv: {recv_mb:.2f} MB"
+            # --- Return raw bytes for frontend calculation ---
+            system_status['bandwidth_bytes_sent'] = ens33_stats.bytes_sent
+            system_status['bandwidth_bytes_recv'] = ens33_stats.bytes_recv
+            # Optionally add a timestamp if needed for more precise calculation, but JS Date.now() is usually sufficient
         else:
-            system_status['bandwidth'] = 'Interface ens33 not found'
+            system_status['bandwidth_bytes_sent'] = 0
+            system_status['bandwidth_bytes_recv'] = 0
+            system_status['bandwidth_error'] = 'Interface ens33 not found' # Indicate to frontend
     except Exception:
-        system_status['bandwidth'] = 'N/A'
+        system_status['bandwidth_bytes_sent'] = 0
+        system_status['bandwidth_bytes_recv'] = 0
+        system_status['bandwidth_error'] = 'Error fetching network stats'
 
-    # --- Service Status Checks ---
-    # Firework App: If this endpoint is reachable, the app is running.
+    # --- Service Status Checks (remain as is) ---
     system_status['firework_app'] = 'running' # Implicitly running if API call succeeded
 
-    # Gunicorn: If Gunicorn is serving Flask, it's also running. Can check its process directly.
-    # Note: This is a basic check. A more robust solution might check specific PIDs.
     try:
+        # Check for gunicorn processes
         if any("gunicorn" in p.name() for p in psutil.process_iter()):
             system_status['gunicorn'] = 'running'
         else:
@@ -109,10 +110,9 @@ def get_system_status():
     except Exception:
         system_status['gunicorn'] = 'unknown'
 
-    # Nginx: Check if Nginx is listening on its default port (80 or 443)
-    def check_port(host, port):
+    def check_port(host, port, timeout=0.5):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1) # 1 second timeout
+        sock.settimeout(timeout)
         try:
             sock.connect((host, port))
             return True
@@ -122,8 +122,6 @@ def get_system_status():
             sock.close()
 
     system_status['nginx'] = 'running' if check_port('127.0.0.1', 80) or check_port('127.0.0.1', 443) else 'not running'
-
-    # PostgreSQL: Check if Postgres is listening on its default port (5432)
     system_status['postgres'] = 'running' if check_port('127.0.0.1', 5432) else 'not running'
 
     return jsonify(system_status)
