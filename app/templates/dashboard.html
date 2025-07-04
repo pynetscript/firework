@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8">
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Dashboard</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-gray-50 p-4 rounded-lg shadow-md">
+            <h3 class="text-xl font-semibold text-gray-700 mb-4">System Status</h3>
+            <table class="min-w-full divide-y divide-gray-200">
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">CPU Load:</td>
+                        <td id="cpu_load" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Memory Load:</td>
+                        <td id="memory_load" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Disk Space Left:</td>
+                        <td id="disk_space" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Bandwidth (ens33):</td>
+                        <td id="bandwidth" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Firework:</td>
+                        <td id="app_status" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Nginx:</td>
+                        <td id="nginx_status" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Gunicorn:</td>
+                        <td id="gunicorn_status" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">PostgreSQL:</td>
+                        <td id="postgres_status" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bg-gray-50 p-4 rounded-lg shadow-md">
+            <h3 class="text-xl font-semibold text-gray-700 mb-4">Application Status</h3>
+            <table class="min-w-full divide-y divide-gray-200">
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Open Tickets:</td>
+                        <td id="open_tickets" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Pending Approval:</td>
+                        <td id="pending_approval" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Pending Implementation:</td>
+                        <td id="pending_implementation" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    <tr>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Closed/Implemented Tickets:</td>
+                        <td id="closed_implemented" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
+                    </tr>
+                    </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Function to fetch and update System Status
+        async function fetchSystemStatus() {
+            try {
+                const response = await fetch('/api/dashboard/system-status');
+                const data = await response.json();
+
+                document.getElementById('cpu_load').textContent = data.cpu_load || 'N/A';
+                document.getElementById('memory_load').textContent = data.memory_load || 'N/A';
+                document.getElementById('disk_space').textContent = data.disk_space || 'N/A';
+                document.getElementById('bandwidth').textContent = data.bandwidth || 'N/A';
+                document.getElementById('app_status').textContent = data.firework_app || 'N/A';
+                document.getElementById('nginx_status').textContent = data.nginx || 'N/A';
+                document.getElementById('gunicorn_status').textContent = data.gunicorn || 'N/A';
+                document.getElementById('postgres_status').textContent = data.postgres || 'N/A';
+
+            } catch (error) {
+                console.error('Error fetching system status:', error);
+                // Optionally update all fields to 'Error' or 'N/A'
+                document.getElementById('cpu_load').textContent = 'Error';
+                document.getElementById('memory_load').textContent = 'Error';
+                document.getElementById('disk_space').textContent = 'Error';
+                document.getElementById('bandwidth').textContent = 'Error';
+                document.getElementById('app_status').textContent = 'Error';
+                document.getElementById('nginx_status').textContent = 'Error';
+                document.getElementById('gunicorn_status').textContent = 'Error';
+                document.getElementById('postgres_status').textContent = 'Error';
+            }
+        }
+
+        // Function to fetch and update Application Status
+        async function fetchApplicationStatus() {
+            try {
+                const response = await fetch('/api/dashboard/application-status');
+                const data = await response.json();
+
+                document.getElementById('open_tickets').textContent = data.open_tickets !== undefined ? data.open_tickets : 'N/A';
+                document.getElementById('pending_approval').textContent = data.pending_approval !== undefined ? data.pending_approval : 'N/A';
+                document.getElementById('pending_implementation').textContent = data.pending_implementation !== undefined ? data.pending_implementation : 'N/A';
+                document.getElementById('closed_implemented').textContent = data.closed_implemented !== undefined ? data.closed_implemented : 'N/A';
+
+            } catch (error) {
+                console.error('Error fetching application status:', error);
+                document.getElementById('open_tickets').textContent = 'Error';
+                document.getElementById('pending_approval').textContent = 'Error';
+                document.getElementById('pending_implementation').textContent = 'Error';
+                document.getElementById('closed_implemented').textContent = 'Error';
+            }
+        }
+
+        // Fetch data on page load
+        fetchSystemStatus();
+        fetchApplicationStatus();
+
+        // Optional: Refresh data periodically (e.g., every 30 seconds)
+        // setInterval(fetchSystemStatus, 30000);
+        // setInterval(fetchApplicationStatus, 30000);
+    });
+</script>
+{% endblock %}

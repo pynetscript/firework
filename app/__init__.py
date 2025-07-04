@@ -53,7 +53,7 @@ def create_app():
             return redirect(url_for('auth.login'))
         else:
             # If logged in, redirect to task-results page
-            return redirect(url_for('routes.task_results'))
+            return redirect(url_for('routes.dashboard'))
 
     from app.routes import routes
     from app.admin_routes import admin_bp

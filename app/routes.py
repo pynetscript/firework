@@ -9,6 +9,8 @@ from app.services.network_automation import NetworkAutomationService
 from app.services.network_automation import DestinationUnreachableError, PathfindingError
 from app.decorators import roles_required, no_self_approval
 import os
+import psutil
+import socket
 
 routes = Blueprint('routes', __name__)
 
@@ -27,6 +29,7 @@ def get_network_automation_service():
 
 
 @routes.route('/')
+@routes.route('/home')
 def home():
     """
     Redirects unauthenticated users to the login page.
@@ -34,7 +37,96 @@ def home():
     """
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
-    return redirect(url_for('routes.task_results'))
+    #return redirect(url_for('routes.task_results'))
+    return render_template('dashboard.html')
+
+@routes.route('/api/dashboard/application-status')
+@login_required
+def get_application_status():
+    open_tickets = FirewallRule.query.filter(
+        FirewallRule.status.in_(['Pending Pre-Check', 'Pending Approval', 'Pending Implementation'])
+    ).count()
+    pending_approval = FirewallRule.query.filter_by(approval_status='Pending Approval').count()
+    pending_implementation = FirewallRule.query.filter_by(status='Pending Implementation').count()
+    closed_implemented = FirewallRule.query.filter(
+        FirewallRule.status.in_(['Completed - Implemented', 'Completed - Route Not Found', 'Closed Manually', 'Pre-Check Failed'])
+    ).count()
+
+    return jsonify({
+        'open_tickets': open_tickets,
+        'pending_approval': pending_approval,
+        'pending_implementation': pending_implementation,
+        'closed_implemented': closed_implemented
+    })
+
+@routes.route('/api/dashboard/system-status')
+@login_required
+def get_system_status():
+    system_status = {}
+
+    try:
+        system_status['cpu_load'] = f"{psutil.cpu_percent(interval=0.5)}%"
+    except Exception:
+        system_status['cpu_load'] = 'N/A'
+
+    try:
+        mem = psutil.virtual_memory()
+        system_status['memory_load'] = f"{mem.percent}% ({mem.used / (1024**3):.2f} GB / {mem.total / (1024**3):.2f} GB)"
+    except Exception:
+        system_status['memory_load'] = 'N/A'
+
+    try:
+        disk = psutil.disk_usage('/')
+        system_status['disk_space'] = f"{disk.percent}% used ({disk.free / (1024**3):.2f} GB free)"
+    except Exception:
+        system_status['disk_space'] = 'N/A'
+
+    try:
+        # Get network I/O for ens33
+        net_io = psutil.net_io_counters(pernic=True)
+        if 'ens33' in net_io:
+            ens33_stats = net_io['ens33']
+            # Convert bytes to MB or GB for display
+            sent_mb = ens33_stats.bytes_sent / (1024 * 1024)
+            recv_mb = ens33_stats.bytes_recv / (1024 * 1024)
+            system_status['bandwidth'] = f"Sent: {sent_mb:.2f} MB, Recv: {recv_mb:.2f} MB"
+        else:
+            system_status['bandwidth'] = 'Interface ens33 not found'
+    except Exception:
+        system_status['bandwidth'] = 'N/A'
+
+    # --- Service Status Checks ---
+    # Firework App: If this endpoint is reachable, the app is running.
+    system_status['firework_app'] = 'running' # Implicitly running if API call succeeded
+
+    # Gunicorn: If Gunicorn is serving Flask, it's also running. Can check its process directly.
+    # Note: This is a basic check. A more robust solution might check specific PIDs.
+    try:
+        if any("gunicorn" in p.name() for p in psutil.process_iter()):
+            system_status['gunicorn'] = 'running'
+        else:
+            system_status['gunicorn'] = 'not running'
+    except Exception:
+        system_status['gunicorn'] = 'unknown'
+
+    # Nginx: Check if Nginx is listening on its default port (80 or 443)
+    def check_port(host, port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1) # 1 second timeout
+        try:
+            sock.connect((host, port))
+            return True
+        except (socket.timeout, ConnectionRefusedError):
+            return False
+        finally:
+            sock.close()
+
+    system_status['nginx'] = 'running' if check_port('127.0.0.1', 80) or check_port('127.0.0.1', 443) else 'not running'
+
+    # PostgreSQL: Check if Postgres is listening on its default port (5432)
+    system_status['postgres'] = 'running' if check_port('127.0.0.1', 5432) else 'not running'
+
+    return jsonify(system_status)
 
 @routes.route('/request-form')
 @login_required
