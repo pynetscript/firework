@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from flask_login import login_required, current_user
 from app.services.network_automation import NetworkAutomationService
+from app.services.network_automation import DestinationUnreachableError, PathfindingError
 from app.decorators import roles_required, no_self_approval
 import os
 
@@ -303,6 +304,21 @@ def submit_request():
                 "can_access_approvals": can_access_approvals # Include flag for approvals link
             }), 200
 
+    except DestinationUnreachableError as e:
+        db.session.rollback()
+        db_rule = FirewallRule.query.get(new_rule.id)
+        if db_rule:
+            db_rule.status = 'Completed - Route Not Found'
+            db_rule.approval_status = 'Closed'
+            db.session.commit()
+        app_logger.warning(f"Network automation pre-check indicated unreachable destination for rule {new_rule.id}: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "ticket_status": "closed",
+            "reason": "destination_not_found",
+            "rule_id": new_rule.id
+        }), 400
     except RuntimeError as e:
         db.session.rollback() 
         db_rule = FirewallRule.query.get(new_rule.id)
@@ -348,6 +364,7 @@ def task_results():
             'Completed',
             'Completed - Implemented',
             'Completed - No Provisioning Needed',
+            'Completed - Route Not Found',
             "Declined by Implementer",
             "Denied by Approver"
         ])).order_by(FirewallRule.created_at.desc()).all()

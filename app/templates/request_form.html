@@ -100,11 +100,18 @@
                 responseMessageDiv.innerHTML = `<p class="font-bold">Request Denied:</p><p>${result.message}</p>`;
             } else {
                 responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
-                let errorsHtml = '';
-                if (result.errors && result.errors.length > 0) {
-                    errorsHtml = '<ul>' + result.errors.map(err => `<li>${err}</li>`).join('') + '</ul>';
+                if (result.ticket_status === 'closed' && result.reason === 'destination_not_found') {
+                    responseMessageDiv.innerHTML = `<p class="font-bold">Destination Route Not Found:</p><p>${result.message}</p><p>Ticket ID ${result.rule_id} has been closed.</p>`;
+                } else if (result.ticket_status === 'failed' && result.reason === 'pathfinding_error') {
+                    responseMessageDiv.innerHTML = `<p class="font-bold">Pathfinding Failed:</p><p>${result.message}</p><p>Ticket ID ${result.rule_id} marked as failed.</p>`;
+                } else {
+                    // Fallback for general errors or other specific errors not yet handled
+                    let errorsHtml = '';
+                    if (result.errors && result.errors.length > 0) {
+                        errorsHtml = '<ul>' + result.errors.map(err => `<li>${err}</li>`).join('') + '</ul>';
+                    }
+                    responseMessageDiv.innerHTML = `<p class="font-bold">Error Creating Request:</p><p>${result.message}</p>${errorsHtml}`;
                 }
-                responseMessageDiv.innerHTML = `<p class="font-bold">Error Creating Request:</p><p>${result.message}</p>${errorsHtml}`;
             }
         } catch (error) {
             console.error('Fetch error:', error);

@@ -12,7 +12,13 @@ from app.models import db, Device, Interface, ArpEntry, RouteEntry
 
 app_logger = logging.getLogger(__name__)
 
-#app_logger.debug(f"DEBUG: network_automation.py is being loaded from: {os.path.abspath(__file__)}")
+class PathfindingError(Exception):
+    """Custom exception for general pathfinding failures."""
+    pass
+
+class DestinationUnreachableError(PathfindingError):
+    """Custom exception for when the destination is specifically unreachable."""
+    pass
 
 class NetworkAutomationService:
     def __init__(self, inventory_path='inventory.yml', playbook_dir='.'):
@@ -707,24 +713,51 @@ class NetworkAutomationService:
 
         pre_check_stdout = ""
         pre_check_stderr = ""
-        
+
+        discovered_firewalls = []
+
         try:
             self.run_data_collection()
         except Exception as e:
             app_logger.error(f"Initial network data collection failed during pre-check: {e}", exc_info=True)
             raise RuntimeError(f"Pre-check failed: Network data collection failed. {e}")
 
-        app_logger.info(f"Performing pathfinding from {rule_data['source_ip']} to {rule_data['destination_ip']}.")
-        path, discovered_firewalls = self._find_network_path_in_db(
-            rule_data['source_ip'], rule_data['destination_ip']
-        )
-        
-        if isinstance(path, str):
-            app_logger.error(f"Pathfinding failed: {path}")
-            raise RuntimeError(f"Pre-check failed: Pathfinding error: {path}")
+        #app_logger.info(f"Performing pathfinding from {rule_data['source_ip']} to {rule_data['destination_ip']}.")
+        #path, discovered_firewalls = self._find_network_path_in_db(
+        #    rule_data['source_ip'], rule_data['destination_ip']
+        #)
+       # 
+       # if isinstance(path, str):
+       #     app_logger.error(f"Pathfinding failed: {path}")
+       #     raise RuntimeError(f"Pre-check failed: Pathfinding error: {path}")
 
-        app_logger.info(f"Pathfinding completed. Discovered firewalls in path: {discovered_firewalls}")
-        rule_data['firewalls_involved'] = discovered_firewalls 
+        #app_logger.info(f"Pathfinding completed. Discovered firewalls in path: {discovered_firewalls}")
+        #rule_data['firewalls_involved'] = discovered_firewalls 
+
+        #firewalls_for_precheck = discovered_firewalls
+
+        try:
+            app_logger.info(f"Performing pathfinding from {rule_data['source_ip']} to {rule_data['destination_ip']}.")
+            path, discovered_firewalls = self._find_network_path_in_db(
+                rule_data['source_ip'], rule_data['destination_ip']
+            )
+
+            if isinstance(path, str):
+                app_logger.error(f"Pathfinding failed: {path}")
+                if "Could not reach" in path:
+                    raise DestinationUnreachableError(f"Destination route was not found for {rule_data['destination_ip']}.")
+                else: # For any other pathfinding failure messages
+                    raise PathfindingError(f"Pathfinding failed: {path}")
+
+            app_logger.info(f"Pathfinding completed. Discovered firewalls in path: {discovered_firewalls}")
+            rule_data['firewalls_involved'] = discovered_firewalls
+
+        except (DestinationUnreachableError, PathfindingError) as e:
+            app_logger.error(f"Pathfinding pre-check failed for rule {rule_data['rule_id']}: {e}")
+            raise e # This ensures the custom exception is propagated
+        except Exception as e:
+            app_logger.critical(f"An unexpected error occurred during pathfinding for rule {rule_data['rule_id']}: {e}", exc_info=True)
+            raise RuntimeError(f"An unexpected error occurred during network pre-check (pathfinding): {e}")
 
         firewalls_for_precheck = discovered_firewalls
 
