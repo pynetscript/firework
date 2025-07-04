@@ -78,7 +78,7 @@ class FirewallRule(db.Model):
     implementer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     implementer = db.relationship('User', foreign_keys=[implementer_id]) # Relationship to the implementer User
     implementer_comment = db.Column(db.Text, nullable=True)
-    
+
     # Store lists of firewalls relevant to the request as JSON
     firewalls_involved = db.Column(JSONEncodedList, nullable=True)
     firewalls_to_provision = db.Column(JSONEncodedList, nullable=True)
@@ -92,25 +92,6 @@ class FirewallRule(db.Model):
 
     def __repr__(self):
         return f'<FirewallRule {self.id} {self.source_ip} to {self.destination_ip}:{self.ports}/{self.protocol} Status: {self.status}>'
-
-#class BlacklistRule(db.Model):
-#    """
-#    Model for blacklisted network patterns.
-#    """
-#    id = db.Column(db.Integer, primary_key=True)
-#    sequence = db.Column(db.Integer, nullable=False, unique=True) # Order of evaluation
-#    rule_name = db.Column(db.String(100), nullable=False)
-#    enabled = db.Column(db.Boolean, default=True)
-#    source_ip = db.Column(db.String(50), nullable=True)
-#    destination_ip = db.Column(db.String(50), nullable=True)
-#    protocol = db.Column(db.String(10), nullable=True)
-#    destination_port = db.Column(db.String(50), nullable=True) # Can be single port, range, or 'any'
-#    description = db.Column(db.Text, nullable=True)
-#    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-#    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow) # Automatically update on change
-#
-#    def __repr__(self):
-#        return f'<BlacklistRule {self.id} {self.rule_name}>'
 
 class BlacklistRule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -143,10 +124,6 @@ class BlacklistRule(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
-
-
-
-# --- New Network Topology Models for PostgreSQL ---
 
 class Device(db.Model):
     """
@@ -218,4 +195,3 @@ class RouteEntry(db.Model):
 
     def __repr__(self):
         return f"<RouteEntry {self.destination_network} via {self.next_hop} on Device ID {self.device_id}>"
-
