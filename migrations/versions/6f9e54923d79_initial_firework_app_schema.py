@@ -1,8 +1,8 @@
 """Initial Firework app schema
 
-Revision ID: 50685c7bc4d8
+Revision ID: 6f9e54923d79
 Revises: 
-Create Date: 2025-07-07 11:07:23.218811
+Create Date: 2025-07-07 12:13:14.681170
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ from app.models import JSONEncodedList
 
 
 # revision identifiers, used by Alembic.
-revision = '50685c7bc4d8'
+revision = '6f9e54923d79'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -54,6 +54,18 @@ def upgrade():
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email'),
     sa.UniqueConstraint('username')
+    )
+    op.create_table('activity_log_entry',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('timestamp', sa.DateTime(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=True),
+    sa.Column('username', sa.String(length=80), nullable=False),
+    sa.Column('event_type', sa.String(length=100), nullable=False),
+    sa.Column('description', sa.Text(), nullable=False),
+    sa.Column('related_resource_id', sa.Integer(), nullable=True),
+    sa.Column('related_resource_type', sa.String(length=50), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
+    sa.PrimaryKeyConstraint('id')
     )
     op.create_table('arp_entries',
     sa.Column('arp_id', sa.Integer(), nullable=False),
@@ -124,6 +136,7 @@ def downgrade():
     op.drop_table('interfaces')
     op.drop_table('firewall_rule')
     op.drop_table('arp_entries')
+    op.drop_table('activity_log_entry')
     op.drop_table('user')
     op.drop_table('devices')
     op.drop_table('blacklist_rule')

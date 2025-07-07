@@ -54,6 +54,24 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f'<User {self.username} (Role: {self.role})>'
 
+class ActivityLogEntry(db.Model):
+    __tablename__ = 'activity_log_entry' # Explicitly name the table
+
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # Link to User, nullable for system actions
+    username = db.Column(db.String(80), nullable=False) # Denormalized for simpler queries/display
+    event_type = db.Column(db.String(100), nullable=False) # e.g., 'USER_LOGIN', 'REQUEST_CREATED', 'REQUEST_STATUS_CHANGE'
+    description = db.Column(db.Text, nullable=False) # The detailed log message
+    related_resource_id = db.Column(db.Integer, nullable=True) # e.g., network_request_id
+    related_resource_type = db.Column(db.String(50), nullable=True) # e.g., 'NetworkRequest', 'User' (for login/logout)
+
+    # Optional: Define a relationship to the User model if it exists
+    # user = db.relationship('User', backref='activity_logs') # This is now defined in the User model itself
+
+    def __repr__(self):
+        return f"<ActivityLogEntry {self.timestamp} - {self.username} - {self.event_type}>"
+
 class FirewallRule(db.Model):
     """
     Model for network firewall rule requests.

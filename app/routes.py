@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, abort
-from app.models import FirewallRule, BlacklistRule, db, User
+from app.models import FirewallRule, BlacklistRule, db, User, ActivityLogEntry
 import ipaddress
 import json
 import logging
@@ -16,7 +16,10 @@ routes = Blueprint('routes', __name__)
 
 app_logger = logging.getLogger(__name__)
 
-# --- Helper function to get the NetworkAutomationService instance attached to the blueprint.
+#######################################################################
+#                         HELPER FUNCTIONS                            #
+#######################################################################
+
 def get_network_automation_service():
     """
     Retrieves the NetworkAutomationService instance attached to the blueprint.
@@ -27,7 +30,6 @@ def get_network_automation_service():
         routes.network_automation_service = NetworkAutomationService()
     return routes.network_automation_service
 
-# --- Helper function for checking port status
 def check_port(host, port, timeout=0.5):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(timeout)
@@ -39,7 +41,6 @@ def check_port(host, port, timeout=0.5):
     finally:
         sock.close()
 
-# --- Helper function to determine color based on percentage usage
 def get_usage_color(percentage, amber_threshold, red_threshold):
     """
     Determines the color based on percentage usage and thresholds.
@@ -55,6 +56,62 @@ def get_usage_color(percentage, amber_threshold, red_threshold):
     else:
         return 'green'
 
+def log_activity(event_type, description, user=None, username=None, user_id=None, related_resource_id=None, related_resource_type=None):
+    """
+    Records an activity entry into the database.
+
+    Args:
+        event_type (str): Categorization of the event (e.g., 'USER_LOGIN', 'REQUEST_CREATED').
+        description (str): A human-readable message describing the activity.
+        user (User, optional): The User object performing the action. If provided, its id and username will be used.
+        username (str, optional): The username to log if a User object is not provided.
+        user_id (int, optional): The user ID to log if a User object is not provided.
+        related_resource_id (int, optional): ID of a related resource (e.g., FirewallRule ID). Defaults to None.
+        related_resource_type (str, optional): Type of the related resource (e.g., 'FirewallRule'). Defaults to None.
+    """
+    logged_user_id = None
+    logged_username = "System" # Default to "System" for actions not tied to a specific user
+
+    if user:
+        logged_user_id = user.id
+        logged_username = user.username
+    elif username: # Use provided username if no user object
+        logged_username = username
+        logged_user_id = user_id # Use provided user_id if no user object, and username is present
+    # If neither user nor username is provided, it remains "System" with None for user_id
+
+    try:
+        new_log = ActivityLogEntry(
+            timestamp=datetime.utcnow(),
+            user_id=logged_user_id,
+            username=logged_username,
+            event_type=event_type,
+            description=description,
+            related_resource_id=related_resource_id,
+            related_resource_type=related_resource_type
+        )
+        db.session.add(new_log)
+        db.session.commit()
+        #app_logger.info(f"Activity logged: {event_type} by {logged_username} - {description}")
+    except Exception as e:
+        db.session.rollback() # Rollback in case of error
+        app_logger.error(f"Failed to log activity: {e}", exc_info=True)
+
+#######################################################################
+#                             ROUTES                                  #
+#######################################################################
+
+#@routes.route('/')
+#@routes.route('/home')
+#def home():
+#    """
+#    Redirects unauthenticated users to the login page.
+#    Redirects authenticated users to the task results page.
+#    """
+#    if not current_user.is_authenticated:
+#        return redirect(url_for('auth.login'))
+#    return render_template('dashboard.html')
+
 @routes.route('/')
 @routes.route('/home')
 def home():
@@ -64,7 +121,8 @@ def home():
     """
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
-    return render_template('dashboard.html')
+    recent_activities = ActivityLogEntry.query.order_by(ActivityLogEntry.timestamp.desc()).limit(20).all()
+    return render_template('dashboard.html', title='Dashboard', recent_activities=recent_activities)
 
 @routes.route('/api/dashboard/application-status')
 @login_required

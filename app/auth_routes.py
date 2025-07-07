@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
 from app.models import db, User
+from app.routes import log_activity
 from flask_login import login_user, logout_user, login_required, current_user
 from datetime import datetime
 import logging
@@ -29,7 +30,15 @@ def login():
             db.session.commit()
             flash('Logged in successfully!', 'success')
             app_logger.info(f"User {username} (ID: {user.id}) logged in successfully.")
-            # Redirect to the page the user was trying to access, or home
+
+            log_activity(
+                event_type='USER_LOGIN',
+                description=f"User {user.username} logged in.",
+                user=user,
+                related_resource_type='User',
+                related_resource_id=user.id
+            )
+
             next_page = request.args.get('next')
             return redirect(next_page or url_for('routes.home'))
         else:
@@ -43,8 +52,20 @@ def login():
 @auth.route('/logout')
 @login_required # Ensure only logged-in users can logout
 def logout():
+    username = current_user.username
+    user_id = current_user.id
+
     app_logger.info(f"User {current_user.username} (ID: {current_user.id}) logged out.")
     logout_user()
     flash('You have been logged out.', 'info')
-    return redirect(url_for('auth.login'))
 
+    log_activity(
+        event_type='USER_LOGOUT',
+        description=f"User {username} logged out.",
+        user_id=user_id,
+        username=username,
+        related_resource_type='User',
+        related_resource_id=user_id
+    )
+
+    return redirect(url_for('auth.login'))
