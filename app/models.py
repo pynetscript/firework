@@ -63,8 +63,8 @@ class FirewallRule(db.Model):
     destination_ip = db.Column(db.String(50), nullable=False)
     protocol = db.Column(db.String(10), nullable=False)
     # Using JSONEncodedList for 'ports' to allow multiple ports or ranges
-    ports = db.Column(JSONEncodedList, nullable=False) # Changed from 'port' to 'ports' to match new design
-    
+    ports = db.Column(JSONEncodedList, nullable=False)
+
     status = db.Column(db.String(50), default='Pending') # e.g., Pending, Approved, Implemented, Denied, Cancelled
     rule_description = db.Column(db.Text, nullable=True)
 

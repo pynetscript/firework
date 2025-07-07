@@ -6,7 +6,7 @@ import yaml
 import ipaddress
 import re
 from sqlalchemy import func
-import time # Import time for sleep
+import time
 
 from app.models import db, Device, Interface, ArpEntry, RouteEntry
 
@@ -39,6 +39,14 @@ class NetworkAutomationService:
         os.makedirs(self.ansible_tmp_dir, exist_ok=True)
         app_logger.info(f"Ansible temporary directory set to: {self.ansible_tmp_dir}")
 
+        self.vault_password_file = os.getenv('FIREWORK_VAULT_PASS_FILE')
+        if self.vault_password_file:
+            if not os.path.exists(self.vault_password_file):
+                app_logger.warning(f"Vault password file specified in environment ({self.vault_password_file}) not found.")
+            else:
+                app_logger.info(f"Using vault password file from environment: {self.vault_password_file}")
+        else:
+            app_logger.info("FIREWORK_VAULT_PASS_FILE environment variable not set. Ansible commands requiring vault might fail.")
 
     def _execute_ansible_playbook(self, playbook_name, extra_vars=None):
         """
@@ -56,11 +64,15 @@ class NetworkAutomationService:
             '-i', self.inventory_path
         ]
 
+        if self.vault_password_file:
+            command.extend(['--vault-password-file', self.vault_password_file])
+            app_logger.debug(f"Adding --vault-password-file {self.vault_password_file} to command.")
+
         if extra_vars:
             command.extend(['--extra-vars', json.dumps(extra_vars)])
 
         env = os.environ.copy()
-        
+
         env['ANSIBLE_HOST_KEY_CHECKING'] = 'False'
         env['ANSIBLE_COLLECTIONS_PATH'] = os.path.join(self.playbook_dir, 'ansible_collections')
         if 'ANSIBLE_COLLECTIONS_PATHS' in env:
@@ -72,8 +84,13 @@ class NetworkAutomationService:
 
         app_logger.debug("--- Subprocess Environment for Ansible ---")
         for k, v in env.items():
-            if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATH', 'ANSIBLE_HOST_KEY_CHECKING']:
-                app_logger.debug(f"  {k}={v}")
+            # Exclude FIREWORK_VAULT_PASS_FILE from verbose logging if sensitive
+            if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATH', 'ANSIBLE_HOST_KEY_CHECKING', 'FIREWORK_VAULT_PASS_FILE']:
+                 # Mask sensitive path for logging
+                if k == 'FIREWORK_VAULT_PASS_FILE':
+                    app_logger.debug(f"  {k}=<masked_path_to_vault_file>")
+                else:
+                    app_logger.debug(f"  {k}={v}")
         app_logger.debug("----------------------------------------")
 
         cwd = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
@@ -124,7 +141,6 @@ class NetworkAutomationService:
     def _process_and_store_network_data(self, output_dir):
         """
         Processes collected network data from YAML/text files and stores it in the PostgreSQL database.
-        This replaces the functionality of build_db.py.
         """
         app_logger.info("Starting network topology database build process in PostgreSQL.")
 
@@ -174,7 +190,7 @@ class NetworkAutomationService:
                 file_category = 'arp'
             elif '_routes.txt' in filename or '_routes.yml' in filename:
                 file_category = 'routes'
-            
+
             if file_category:
                 if filename.startswith('R') and file_category in ['interfaces', 'arp', 'routes']:
                     hostname_match = re.match(r'(R\d+)_', filename)
@@ -304,8 +320,8 @@ class NetworkAutomationService:
                                             app_logger.info(f"Added interface '{intf_details.get('name')}' ({full_ip_cidr}) for {hostname} to session.")
                                     app_logger.info(f"Finished adding {interfaces_found} interfaces for {hostname}.")
 
-                                # --- START FGT INTERFACE PARSING UPDATE ---
-                                elif hostname == 'fgt': # FortiGate interfaces (from fgt_interfaces.yml structure)
+                                # --- Process FGT Interfaces
+                                elif hostname == 'fgt':
                                     interfaces_found = 0
                                     # The interface data for FGT is directly under 'meta.results' and then by interface name
                                     for intf_name, intf_details in interface_data.get('meta', {}).get('results', {}).items():
@@ -337,7 +353,6 @@ class NetworkAutomationService:
                                         interfaces_found += 1
                                         app_logger.info(f"Added interface '{intf_name}' ({ip_address}/{mask_prefix}) for {hostname} to session.")
                                     app_logger.info(f"Finished adding {interfaces_found} interfaces for {hostname}.")
-                                # --- END FGT INTERFACE PARSING UPDATE ---
 
                         except json.JSONDecodeError as e:
                             app_logger.error(f"JSONDecodeError when processing interfaces for {hostname} from {files_info['interfaces']}: {e}", exc_info=True)
@@ -351,7 +366,7 @@ class NetworkAutomationService:
                             app_logger.error(f"Unexpected error when processing interfaces for {hostname} from {files_info['interfaces']}: {e}", exc_info=True)
 
 
-                # Process ARP entries
+                # --- Process ARP entries
                 if files_info.get('arp') and os.path.exists(files_info['arp']):
                     app_logger.info(f"Processing ARP for {hostname} from {files_info['arp']}")
 
@@ -366,6 +381,8 @@ class NetworkAutomationService:
                                 arp_content = f.read().strip()
                                 app_logger.debug(f"Raw ARP data for {hostname}:\n{arp_content[:500]}...")
                                 arp_entries_found = 0
+
+                                # --- Proccess Cisco ARP
                                 if hostname.startswith('R') or hostname.startswith('SW'): # Cisco IOS 'show ip arp' output
                                     for line in arp_content.splitlines():
                                         match = re.match(r'Internet\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\S+\s+([0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4})(?:\s+\S+\s+\S+\s+(\S+))?', line)
@@ -383,6 +400,7 @@ class NetworkAutomationService:
                                             app_logger.info(f"Added ARP entry {ip} ({mac}) on {hostname} to session.")
                                     app_logger.info(f"Finished adding {arp_entries_found} ARP entries for {hostname}.")
 
+                                # --- Proccess Palo Alto ARP
                                 elif hostname == 'pafw': # Palo Alto ARP (JSON output)
                                     arp_data = json.loads(arp_content)
                                     for entry in arp_data.get('response', {}).get('result', {}).get('entries', {}).get('entry', []):
@@ -401,8 +419,8 @@ class NetworkAutomationService:
                                             app_logger.info(f"Added PA ARP entry {ip} ({mac}) on {hostname} to session.")
                                     app_logger.info(f"Finished adding {arp_entries_found} ARP entries for {hostname}.")
 
-                                # --- START FGT ARP PARSING UPDATE ---
-                                elif hostname == 'fgt': # FortiGate ARP (from fgt_arp.yml structure)
+                                # --- Proccess FGT ARP
+                                elif hostname == 'fgt':
                                     arp_data = yaml.safe_load(arp_content)
                                     arp_entries_found = 0
                                     # FGT ARP entries are under meta.results
@@ -421,7 +439,6 @@ class NetworkAutomationService:
                                             arp_entries_found += 1
                                             app_logger.info(f"Added FGT ARP entry {ip} ({mac}) on {hostname} to session.")
                                     app_logger.info(f"Finished adding {arp_entries_found} ARP entries for {hostname}.")
-                                # --- END FGT ARP PARSING UPDATE ---
 
                         except json.JSONDecodeError as e:
                             app_logger.error(f"JSONDecodeError when processing ARP for {hostname} from {files_info['arp']}: {e}", exc_info=True)
@@ -450,7 +467,7 @@ class NetworkAutomationService:
                                 app_logger.debug(f"Raw Route data for {hostname}:\n{route_content[:500]}...")
                                 routes_found = 0
 
-                                # --- CISCO ROUTE PARSING ---
+                                # --- Process Cisco Routes
                                 if hostname.startswith('R') or hostname.startswith('SW'):
                                     for line in route_content.splitlines():
                                         match = re.match(r'^(?:[CDLSRI]\*?|O|E[12]|N[12]|P|i|X|H|a|b|%+)\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2})(?: \[(\d+)\/(\d+)\])?(?: via (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}))?,?\s*(.+)?', line.strip())
@@ -483,7 +500,7 @@ class NetworkAutomationService:
                                             app_logger.info(f"Added route {network} via {next_hop} on {hostname} to session.")
                                     app_logger.info(f"Finished adding {routes_found} route entries for {hostname}.")
 
-                                # --- PALO ALTO ROUTE PARSING ---
+                                # --- Process Palo Alto Routes
                                 elif hostname == 'pafw':
                                     route_data = json.loads(route_content)
                                     for entry in route_data.get('response', {}).get('result', {}).get('entry', []):
@@ -513,7 +530,7 @@ class NetworkAutomationService:
                                             app_logger.info(f"Added PA route {destination} via {next_hop} on {hostname} to session.")
                                     app_logger.info(f"Finished adding {routes_found} route entries for {hostname}.")
 
-                                # --- FORTIGATE ROUTE PARSING ---
+                                # --- Process FGT ARP
                                 elif hostname == 'fgt':
                                     route_data = yaml.safe_load(route_content)
                                     routes_found = 0
@@ -527,15 +544,6 @@ class NetworkAutomationService:
                                         interface_name = entry.get('interface')
                                         route_type = entry.get('type') # 'connect', 'ospf', 'static'
 
-                                        # Construct a description similar to Cisco for consistency or leave as None
-                                        #description = None
-                                        #if route_type == 'connect':
-                                        #    description = f"is directly connected, {interface_name}"
-                                        #elif next_hop:
-                                        #    description = f"via {next_hop}, {interface_name}"
-                                        #elif interface_name:
-                                        #    description = f"is directly connected, {interface_name}"
-
                                         if destination:
                                             route_entry = RouteEntry(
                                                 device_id=device.device_id,
@@ -544,7 +552,6 @@ class NetworkAutomationService:
                                                 metric=metric,
                                                 admin_distance=ad_distance,
                                                 interface_name=interface_name,
-                                                #description=description,
                                                 route_type=route_type,
                                                 flags=entry.get('origin', '')
                                             )
@@ -582,7 +589,7 @@ class NetworkAutomationService:
         This replaces the functionality of pathfinder.py.
         """
         app_logger.info(f"Starting pathfinding from {source_ip} to {destination_ip} using DB data.")
-        
+
         path = []
         firewalls_in_path = []
 
@@ -598,7 +605,7 @@ class NetworkAutomationService:
         src_network = None
 
         app_logger.debug(f"Attempting to find source device for IP: {source_ip_obj}")
-        
+
         intf_direct_match = Interface.query.filter(
             Interface.ipv4_address == str(source_ip_obj)
         ).first()
@@ -611,14 +618,14 @@ class NetworkAutomationService:
         else:
             app_logger.debug(f"Source IP {source_ip_obj} not found directly on an interface. Checking subnets.")
             all_interfaces_with_subnets = Interface.query.filter(Interface.ipv4_subnet.isnot(None)).all()
-            
+
             app_logger.debug(f"Total interfaces with subnets found in DB: {len(all_interfaces_with_subnets)}")
 
             for intf in all_interfaces_with_subnets:
                 try:
                     interface_network = ipaddress.ip_network(intf.ipv4_subnet, strict=False)
                     app_logger.debug(f"Checking interface '{intf.name}' (Device ID: {intf.device_id}) on device {Device.query.get(intf.device_id).hostname} with subnet '{intf.ipv4_subnet}'. Is {source_ip_obj} in {interface_network}? {source_ip_obj in interface_network}")
-                    
+
                     if source_ip_obj in interface_network:
                         src_device = Device.query.get(intf.device_id)
                         src_interface = intf.name
@@ -640,10 +647,10 @@ class NetworkAutomationService:
             'interface': src_interface,
             'network': src_network
         })
-        
+
         current_ip_on_path = source_ip_obj
         current_device_on_path = src_device
-        
+
         max_hops = 10
         for hop_count in range(max_hops):
             if current_ip_on_path == destination_ip_obj:
@@ -662,7 +669,7 @@ class NetworkAutomationService:
                     dest_net = ipaddress.ip_network(route.destination_network, strict=False)
                     if destination_ip_obj in dest_net:
                         app_logger.debug(f"Found matching route on {current_device_on_path.hostname}: {route.destination_network} via {route.next_hop or 'direct'} on {route.interface_name}.")
-                        
+
                         path.append({
                             'type': 'route_hop',
                             'device': current_device_on_path.hostname,
@@ -758,20 +765,6 @@ class NetworkAutomationService:
         except Exception as e:
             app_logger.error(f"Initial network data collection failed during pre-check: {e}", exc_info=True)
             raise RuntimeError(f"Pre-check failed: Network data collection failed. {e}")
-
-        #app_logger.info(f"Performing pathfinding from {rule_data['source_ip']} to {rule_data['destination_ip']}.")
-        #path, discovered_firewalls = self._find_network_path_in_db(
-        #    rule_data['source_ip'], rule_data['destination_ip']
-        #)
-       # 
-       # if isinstance(path, str):
-       #     app_logger.error(f"Pathfinding failed: {path}")
-       #     raise RuntimeError(f"Pre-check failed: Pathfinding error: {path}")
-
-        #app_logger.info(f"Pathfinding completed. Discovered firewalls in path: {discovered_firewalls}")
-        #rule_data['firewalls_involved'] = discovered_firewalls 
-
-        #firewalls_for_precheck = discovered_firewalls
 
         try:
             app_logger.info(f"Performing pathfinding from {rule_data['source_ip']} to {rule_data['destination_ip']}.")
@@ -907,7 +900,7 @@ class NetworkAutomationService:
         app_logger.info(f"Performing post-check for rule {rule_data['rule_id']} on firewalls: {provisioned_firewalls}")
         post_check_stdout = ""
         post_check_stderr = ""
-        
+
         verified_firewalls = []
         unverified_firewalls = []
 
@@ -940,7 +933,7 @@ class NetworkAutomationService:
                 stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
                 post_check_stdout += f"\n--- {firewall_name} STDOUT ---\n" + stdout
                 post_check_stderr += f"\n--- {firewall_name} STDERR ---\n" + stderr
-                
+
                 if "POLICY_VERIFIED" in stdout:
                     app_logger.info(f"Rule {rule_data['rule_id']} successfully verified on {firewall_name}.")
                     verified_firewalls.append(firewall_name)
