@@ -16,7 +16,7 @@ routes = Blueprint('routes', __name__)
 
 app_logger = logging.getLogger(__name__)
 
-# Helper function to get the NetworkAutomationService instance attached to the blueprint.
+# --- Helper function to get the NetworkAutomationService instance attached to the blueprint.
 def get_network_automation_service():
     """
     Retrieves the NetworkAutomationService instance attached to the blueprint.
@@ -27,6 +27,33 @@ def get_network_automation_service():
         routes.network_automation_service = NetworkAutomationService()
     return routes.network_automation_service
 
+# --- Helper function for checking port status
+def check_port(host, port, timeout=0.5):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((host, port))
+        return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
+    finally:
+        sock.close()
+
+# --- Helper function to determine color based on percentage usage
+def get_usage_color(percentage, amber_threshold, red_threshold):
+    """
+    Determines the color based on percentage usage and thresholds.
+    :param percentage: Current usage percentage (0-100).
+    :param amber_threshold: Percentage at which status turns amber.
+    :param red_threshold: Percentage at which status turns red.
+    :return: 'green', 'amber', or 'red'.
+    """
+    if percentage >= red_threshold:
+        return 'red'
+    elif percentage >= amber_threshold:
+        return 'amber'
+    else:
+        return 'green'
 
 @routes.route('/')
 @routes.route('/home')
@@ -37,7 +64,6 @@ def home():
     """
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
-    #return redirect(url_for('routes.task_results'))
     return render_template('dashboard.html')
 
 @routes.route('/api/dashboard/application-status')
@@ -64,65 +90,95 @@ def get_application_status():
 def get_system_status():
     system_status = {}
 
+    # --- CPU Load ---
     try:
-        system_status['cpu_load'] = f"{psutil.cpu_percent(interval=0.5)}%"
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        system_status['cpu_load'] = {
+            'text': f"{cpu_percent}%",
+            'color': get_usage_color(cpu_percent, 70, 90) # Amber at 70%, Red at 90%
+        }
     except Exception:
-        system_status['cpu_load'] = 'N/A'
+        system_status['cpu_load'] = {'text': 'N/A', 'color': 'gray'}
 
+    # --- Memory Load ---
     try:
         mem = psutil.virtual_memory()
-        system_status['memory_load'] = f"{mem.percent}% ({mem.used / (1024**3):.2f} GB / {mem.total / (1024**3):.2f} GB)"
+        mem_percent = mem.percent
+        system_status['memory_load'] = {
+            'text': f"{mem_percent}% ({mem.used / (1024**3):.2f} GB / {mem.total / (1024**3):.2f} GB)",
+            'color': get_usage_color(mem_percent, 70, 90) # Amber at 70%, Red at 90%
+        }
     except Exception:
-        system_status['memory_load'] = 'N/A'
+        system_status['memory_load'] = {'text': 'N/A', 'color': 'gray'}
 
+    # --- Disk Space Left ---
     try:
         disk = psutil.disk_usage('/')
-        system_status['disk_space'] = f"{disk.percent}% used ({disk.free / (1024**3):.2f} GB free)"
+        disk_percent = disk.percent
+        system_status['disk_space'] = {
+            'text': f"{disk_percent}% used ({disk.free / (1024**3):.2f} GB free)",
+            'color': get_usage_color(disk_percent, 70, 90) # Amber at 70%, Red at 90%
+        }
     except Exception:
-        system_status['disk_space'] = 'N/A'
+        system_status['disk_space'] = {'text': 'N/A', 'color': 'gray'}
 
+    # --- Bandwidth (ens33) ---
+    # NOTE: Bandwidth calculation needs a time interval, which is handled on the frontend.
+    # Here, we'll just send the raw bytes. The color logic for bandwidth will be on the frontend
+    # after the rate is calculated.
     try:
         net_io = psutil.net_io_counters(pernic=True)
         if 'ens33' in net_io:
             ens33_stats = net_io['ens33']
-            # --- Return raw bytes for frontend calculation ---
             system_status['bandwidth_bytes_sent'] = ens33_stats.bytes_sent
             system_status['bandwidth_bytes_recv'] = ens33_stats.bytes_recv
-            # Optionally add a timestamp if needed for more precise calculation, but JS Date.now() is usually sufficient
+            system_status['bandwidth_error'] = None # Clear any previous error
         else:
             system_status['bandwidth_bytes_sent'] = 0
             system_status['bandwidth_bytes_recv'] = 0
-            system_status['bandwidth_error'] = 'Interface ens33 not found' # Indicate to frontend
+            system_status['bandwidth_error'] = 'Interface ens33 not found'
     except Exception:
         system_status['bandwidth_bytes_sent'] = 0
         system_status['bandwidth_bytes_recv'] = 0
         system_status['bandwidth_error'] = 'Error fetching network stats'
 
-    # --- Service Status Checks (remain as is) ---
-    system_status['firework_app'] = 'running' # Implicitly running if API call succeeded
+    # Placeholder for bandwidth color - this will be calculated on frontend
+    system_status['bandwidth'] = {'text': 'Calculating...', 'color': 'gray'}
 
+    # Firework status
+    firework_is_running = True # If this API endpoint is reachable, Firework app is generally running
+    system_status['firework_app'] = {
+        'text': 'Running' if firework_is_running else 'Not Running',
+        'color': 'green' if firework_is_running else 'red'
+    }
+
+    # Gunicorn Status
     try:
-        # Check for gunicorn processes
-        if any("gunicorn" in p.name() for p in psutil.process_iter()):
-            system_status['gunicorn'] = 'running'
-        else:
-            system_status['gunicorn'] = 'not running'
+        gunicorn_is_running = any("gunicorn" in p.name() for p in psutil.process_iter())
+        gunicorn_status_text = 'Running' if gunicorn_is_running else 'Not Running'
+        gunicorn_status_color = 'green' if gunicorn_is_running else 'red'
     except Exception:
-        system_status['gunicorn'] = 'unknown'
+        gunicorn_status_text = 'Unknown'
+        gunicorn_status_color = 'gray' # Use gray for unknown status
 
-    def check_port(host, port, timeout=0.5):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        try:
-            sock.connect((host, port))
-            return True
-        except (socket.timeout, ConnectionRefusedError):
-            return False
-        finally:
-            sock.close()
+    system_status['gunicorn'] = {
+        'text': gunicorn_status_text,
+        'color': gunicorn_status_color
+    }
 
-    system_status['nginx'] = 'running' if check_port('127.0.0.1', 80) or check_port('127.0.0.1', 443) else 'not running'
-    system_status['postgres'] = 'running' if check_port('127.0.0.1', 5432) else 'not running'
+    # Nginx Status
+    nginx_is_running = check_port('127.0.0.1', 80) or check_port('127.0.0.1', 443)
+    system_status['nginx'] = {
+        'text': 'Running' if nginx_is_running else 'Not Running',
+        'color': 'green' if nginx_is_running else 'red'
+    }
+
+    # PostgreSQL Status
+    postgres_is_running = check_port('127.0.0.1', 5432)
+    system_status['postgres'] = {
+        'text': 'Running' if postgres_is_running else 'Not Running',
+        'color': 'green' if postgres_is_running else 'red'
+    }
 
     return jsonify(system_status)
 

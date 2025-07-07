@@ -10,15 +10,15 @@
             <table class="min-w-full divide-y divide-gray-200">
                 <tbody class="bg-white divide-y divide-gray-200">
                     <tr>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">CPU:</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">CPU Load:</td>
                         <td id="cpu_load" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Memory:</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Memory Load:</td>
                         <td id="memory_load" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Disk Space:</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Disk Space Left:</td>
                         <td id="disk_space" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
@@ -26,7 +26,7 @@
                         <td id="bandwidth" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Firework:</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Firework App:</td>
                         <td id="app_status" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
@@ -77,12 +77,6 @@
     let prevBytesRecv = 0;
     let lastBandwidthFetchTime = 0; // Timestamp of the last fetch
 
-    // --- NEW: Bandwidth Interface Capacity (in bytes per second) ---
-    // IMPORTANT: Adjust this value to match the actual capacity of your 'ens33' interface.
-    // Example: 1 Gigabit Ethernet = 125,000,000 bytes/second (1000 Mbps / 8 bits/byte * 1,000,000)
-    // Example: 100 Mbps = 12,500,000 bytes/second
-    const INTERFACE_CAPACITY_BPS = 125000000; // Assuming 1 Gigabit Ethernet (1000 Mbps / 8)
-
     // Helper function to format bytes per second
     function formatBytesPerSecond(bytes) {
         if (bytes < 1024) {
@@ -96,42 +90,6 @@
         }
     }
 
-    // Helper function to determine color based on percentage usage (Frontend version)
-    function getUsageColorFrontend(percentage, amber_threshold, red_threshold) {
-        if (percentage >= red_threshold) {
-            return 'red';
-        } else if (percentage >= amber_threshold) {
-            return 'amber';
-        } else {
-            return 'green';
-        }
-    }
-
-    // Helper function to apply status styles to table cells
-    function applyStatusStyle(elementId, statusData) {
-        const element = document.getElementById(elementId);
-        if (!element) return;
-
-        // Clear existing classes that control color and background
-        element.classList.remove('text-gray-500', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800', 'bg-gray-100', 'text-gray-800');
-        
-        // Add common badge styling
-        element.classList.add('rounded-full', 'inline-block', 'px-3', 'py-1', 'whitespace-nowrap', 'text-sm', 'font-semibold');
-
-        // Apply specific color classes based on the 'color' from backend or calculated frontend
-        if (statusData.color === 'green') {
-            element.classList.add('bg-green-100', 'text-green-800');
-        } else if (statusData.color === 'red') {
-            element.classList.add('bg-red-100', 'text-red-800');
-        } else if (statusData.color === 'amber' || statusData.color === 'yellow') {
-            element.classList.add('bg-yellow-100', 'text-yellow-800');
-        } else { // Default for 'unknown' or other statuses
-            element.classList.add('bg-gray-100', 'text-gray-800');
-        }
-
-        element.textContent = statusData.text || 'N/A';
-    }
-
     // Function to fetch and update System Status (including bandwidth rate)
     async function fetchSystemStatus() {
         try {
@@ -139,27 +97,20 @@
             const data = await response.json();
             const currentTime = Date.now(); // Current timestamp in milliseconds
 
-            // --- Apply styles for CPU, Memory, Disk (now objects from backend) ---
-            applyStatusStyle('cpu_load', data.cpu_load || {text: 'N/A', color: 'gray'});
-            applyStatusStyle('memory_load', data.memory_load || {text: 'N/A', color: 'gray'});
-            applyStatusStyle('disk_space', data.disk_space || {text: 'N/A', color: 'gray'});
-            
-            // --- Apply styles for Firework, Nginx, Gunicorn, PostgreSQL ---
-            applyStatusStyle('app_status', data.firework_app || {text: 'N/A', color: 'gray'});
-            applyStatusStyle('nginx_status', data.nginx || {text: 'N/A', color: 'gray'});
-            applyStatusStyle('gunicorn_status', data.gunicorn || {text: 'N/A', color: 'gray'});
-            applyStatusStyle('postgres_status', data.postgres || {text: 'N/A', color: 'gray'});
+            document.getElementById('cpu_load').textContent = data.cpu_load || 'N/A';
+            document.getElementById('memory_load').textContent = data.memory_load || 'N/A';
+            document.getElementById('disk_space').textContent = data.disk_space || 'N/A';
+            document.getElementById('app_status').textContent = data.firework_app || 'N/A';
+            document.getElementById('nginx_status').textContent = data.nginx || 'N/A';
+            document.getElementById('gunicorn_status').textContent = data.gunicorn || 'N/A';
+            document.getElementById('postgres_status').textContent = data.postgres || 'N/A';
 
             // --- Bandwidth Calculation Logic ---
-            let bandwidthText = 'N/A';
-            let bandwidthColor = 'gray';
-
             if (data.bandwidth_error) {
-                bandwidthText = data.bandwidth_error;
-                bandwidthColor = 'red'; // Error means red
+                document.getElementById('bandwidth').textContent = data.bandwidth_error;
             } else if (lastBandwidthFetchTime === 0) {
-                bandwidthText = 'Collecting data...';
-                bandwidthColor = 'gray';
+                // First fetch, just initialize and show "Collecting data..."
+                document.getElementById('bandwidth').textContent = 'Collecting data...';
             } else {
                 const timeDiffSeconds = (currentTime - lastBandwidthFetchTime) / 1000; // Convert ms to seconds
 
@@ -167,26 +118,19 @@
                     const sentDiff = data.bandwidth_bytes_sent - prevBytesSent;
                     const recvDiff = data.bandwidth_bytes_recv - prevBytesRecv;
 
+                    // Ensure no negative differences if counter reset (though psutil should handle nowrap)
                     const actualSentDiff = Math.max(0, sentDiff);
                     const actualRecvDiff = Math.max(0, recvDiff);
 
                     const sentRate = actualSentDiff / timeDiffSeconds;
                     const recvRate = actualRecvDiff / timeDiffSeconds;
-                    const totalRate = sentRate + recvRate;
 
-                    bandwidthText = `Sent: ${formatBytesPerSecond(sentRate)}, Recv: ${formatBytesPerSecond(recvRate)}`;
-
-                    // Calculate bandwidth utilization percentage
-                    const bandwidthUtilizationPercent = (totalRate / INTERFACE_CAPACITY_BPS) * 100;
-                    bandwidthColor = getUsageColorFrontend(bandwidthUtilizationPercent, 70, 90); // Amber at 70%, Red at 90%
-
+                    document.getElementById('bandwidth').textContent =
+                        `Sent: ${formatBytesPerSecond(sentRate)}, Recv: ${formatBytesPerSecond(recvRate)}`;
                 } else {
-                    bandwidthText = 'Calculating...';
-                    bandwidthColor = 'gray';
+                    document.getElementById('bandwidth').textContent = 'Calculating...'; // Should ideally not happen
                 }
             }
-            // Apply bandwidth status style
-            applyStatusStyle('bandwidth', {text: bandwidthText, color: bandwidthColor});
 
             // Store current values for the next calculation
             prevBytesSent = data.bandwidth_bytes_sent;
@@ -195,19 +139,18 @@
 
         } catch (error) {
             console.error('Error fetching system status:', error);
-            // Update all elements to 'Error' and default gray style on fetch failure
-            applyStatusStyle('cpu_load', {text: 'Error', color: 'gray'});
-            applyStatusStyle('memory_load', {text: 'Error', color: 'gray'});
-            applyStatusStyle('disk_space', {text: 'Error', color: 'gray'});
-            applyStatusStyle('bandwidth', {text: 'Error', color: 'gray'});
-            applyStatusStyle('app_status', {text: 'Error', color: 'gray'});
-            applyStatusStyle('nginx_status', {text: 'Error', color: 'gray'});
-            applyStatusStyle('gunicorn_status', {text: 'Error', color: 'gray'});
-            applyStatusStyle('postgres_status', {text: 'Error', color: 'gray'});
+            document.getElementById('cpu_load').textContent = 'Error';
+            document.getElementById('memory_load').textContent = 'Error';
+            document.getElementById('disk_space').textContent = 'Error';
+            document.getElementById('bandwidth').textContent = 'Error'; // Set to error on fetch failure
+            document.getElementById('app_status').textContent = 'Error';
+            document.getElementById('nginx_status').textContent = 'Error';
+            document.getElementById('gunicorn_status').textContent = 'Error';
+            document.getElementById('postgres_status').textContent = 'Error';
         }
     }
 
-    // Function to fetch and update Application Status
+    // Function to fetch and update Application Status (remains unchanged)
     async function fetchApplicationStatus() {
         try {
             const response = await fetch('/api/dashboard/application-status');
