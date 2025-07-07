@@ -101,17 +101,6 @@ def log_activity(event_type, description, user=None, username=None, user_id=None
 #                             ROUTES                                  #
 #######################################################################
 
-#@routes.route('/')
-#@routes.route('/home')
-#def home():
-#    """
-#    Redirects unauthenticated users to the login page.
-#    Redirects authenticated users to the task results page.
-#    """
-#    if not current_user.is_authenticated:
-#        return redirect(url_for('auth.login'))
-#    return render_template('dashboard.html')
-
 @routes.route('/')
 @routes.route('/home')
 def home():
@@ -570,7 +559,8 @@ def task_results():
             'Completed - No Provisioning Needed',
             'Completed - Route Not Found',
             "Declined by Implementer",
-            "Denied by Approver"
+            "Denied by Approver",
+            "Partially Implemented - Requires Attention"
         ])).order_by(FirewallRule.created_at.desc()).all()
 
     return render_template('task_results.html', rules=rules)

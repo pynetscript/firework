@@ -52,8 +52,8 @@ def create_app():
             # If not logged in, redirect to login page (silent)
             return redirect(url_for('auth.login'))
         else:
-            # If logged in, redirect to task-results page
-            return redirect(url_for('routes.dashboard'))
+            # If logged in, redirect to /
+            return redirect(url_for('routes.home'))
 
     from app.routes import routes
     from app.admin_routes import admin_bp

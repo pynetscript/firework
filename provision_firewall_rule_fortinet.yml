@@ -16,78 +16,83 @@
     rule_description: "{{ rule_description }}"
 
     # Define object names based on rule parameters for consistency
-    src_addr_name: "HOST_{{ source_ip | replace('.', '_') }}"
-    dst_addr_name: "HOST_{{ destination_ip | replace('.', '_') }}"
-    
-    # FortiGate service name logic
-    fortigate_service_name: >-
-      {% if protocol | lower == 'any' %}
-      ALL
-      {% elif protocol | lower == 'icmp' %}
-      SVC_ICMP
-      {% else %}
-      SVC_{{ protocol | upper }}_{{ dest_port }}
-      {% endif %}
+    src_addr_name: "h-{{ source_ip }}"
+    dst_addr_name: "h-{{ destination_ip }}"
+    fortigate_service_name: "{{ (protocol | upper) ~ '-' ~ (dest_port | replace('-', '_')) if protocol | lower not in ['any', 'icmp'] else ('ALL_ICMP' if protocol | lower == 'icmp' else 'ALL') | trim }}"
+
 
   tasks:
     - name: Debug FortiGate Provisioning variables
       debug:
-        msg: "Provisioning Rule ID: {{ rule_id }} on {{ inventory_hostname }} (FortiGate) for Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}"
+        msg: "Provisioning Rule ID: {{ rule_id }} on {{ inventory_hostname }} (FortiGate) for Source: {{ source_ip }}, Destination: {{ destination_ip }}, Protocol: {{ protocol }}, Port: {{ dest_port }}"
 
-    # --- FortiGate Object Creation (Address & Service) ---
+#    - name: Debug Generated variables
+#      debug:
+#        msg: "src_addr_name: {{ src_addr_name }}, dst_addr_name: {{ dst_addr_name }}, fortigate_service_name: {{ fortigate_service_name }}"
+
     - name: Create FortiGate Source Address Object
       fortinet.fortios.fortios_firewall_address:
-        vdom: "root"
-        state: present
-        name: "{{ src_addr_name }}"
-        type: ipmask
-        subnet: "{{ source_ip }}/32" # Assuming /32 for host
-      
+          vdom: "root"
+          state: "present"
+          access_token: "{{ fortinet_api_access_token }}"
+          firewall_address:
+              name: "{{ src_addr_name }}"
+              subnet: "{{ source_ip }}/32" # Assuming /32 for host
+              type: "ipmask"
+
     - name: Create FortiGate Destination Address Object
       fortinet.fortios.fortios_firewall_address:
-        vdom: "root"
-        state: present
-        name: "{{ dst_addr_name }}"
-        type: ipmask
-        subnet: "{{ destination_ip }}/32" # Assuming /32 for host
-      
-    - name: Create FortiGate Service Object (TCP/UDP)
-      fortinet.fortios.fortios_firewall_service_custom:
-        vdom: "root"
-        state: present
-        name: "{{ fortigate_service_name }}"
-        protocol: "{{ protocol | lower }}"
-        tcp_portrange: "{{ dest_port }}"
-      when:
-        - protocol | lower != 'icmp'
-        - protocol | lower != 'any'
-      
-    - name: Create FortiGate ICMP Service Object
-      fortinet.fortios.fortios_firewall_service_custom:
-        vdom: "root"
-        state: present
-        name: "{{ fortigate_service_name }}"
-        protocol: icmp
-      when:
-        - protocol | lower == 'icmp'
+          vdom: "root"
+          state: "present"
+          access_token: "{{ fortinet_api_access_token }}"
+          firewall_address:
+              name: "{{ dst_addr_name }}"
+              subnet: "{{ destination_ip }}/32" # Assuming /32 for host
+              type: "ipmask"
 
-    # --- FortiGate Firewall Policy Creation ---
+    - name: Create FortiGate Service Object (TCP)
+      when:
+          - protocol | lower == 'tcp'
+      fortinet.fortios.fortios_firewall_service_custom:
+          vdom: "root"
+          state: "present"
+          access_token: "{{ fortinet_api_access_token }}"
+          firewall_service_custom:
+               name: "{{ fortigate_service_name }}"
+               protocol: "TCP/UDP/SCTP"
+               tcp_portrange: "{{ dest_port }}"
+
+    - name: Create FortiGate Service Object (UDP)
+      when:
+          - protocol | lower == 'udp'
+      fortinet.fortios.fortios_firewall_service_custom:
+          vdom: "root"
+          state: "present"
+          access_token: "{{ fortinet_api_access_token }}"
+          firewall_service_custom:
+               name: "{{ fortigate_service_name }}"
+               protocol: "TCP/UDP/SCTP"
+               udp_portrange: "{{ dest_port }}"
+
     - name: Create FortiGate Firewall Policy
       fortinet.fortios.fortios_firewall_policy:
-        vdom: "root" # Adjust vdom if necessary
-        state: present
-        policyid: "{{ rule_id }}" # Use rule_id as policy ID
-        name: "FIREWORK-RULE-{{ rule_id }}" # Use a more descriptive name
-        srcintf:
-          - name: "any" # Example: adjust source interface name, consider dynamic lookup
-        dstintf:
-          - name: "any" # Example: adjust destination interface name, consider dynamic lookup
-        srcaddr:
-          - name: "{{ src_addr_name }}" # Use created address object
-        dstaddr:
-          - name: "{{ dst_addr_name }}" # Use created address object
-        service:
-          - name: "{{ fortigate_service_name }}" # Use created service object or 'ALL'
-        action: accept
-        schedule: always
-        logtraffic: all
+          vdom: "root"
+          state: "present"
+          access_token: "{{ fortinet_api_access_token }}"
+          firewall_policy:
+              name: "firework-{{ rule_id }}"
+              policyid: "{{ rule_id }}"
+              srcintf:
+                  - name: "any"
+              dstintf:
+                  - name: "any"
+              srcaddr:
+                  - name: "{{ src_addr_name }}"
+              dstaddr:
+                  - name: "{{ dst_addr_name }}"
+              service:
+                  - name: "{{ fortigate_service_name }}"
+              action: "accept"
+              schedule: "always"
+              logtraffic: "all"
+              comments: "firework-{{ rule_id }}"
