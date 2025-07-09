@@ -248,7 +248,7 @@ def submit_request():
     Performs validation, blacklist checks, initiates a pre-check,
     creates the rule in the DB, and determines initial status based on pre-check results and roles.
     """
-    app_logger.info(f"Received new network request from {current_user.username}")
+    app_logger.info(f"Received new request from {current_user.username}")
     source_ip = request.form.get('source_ip')
     destination_ip = request.form.get('destination_ip')
     protocol = request.form.get('protocol')
@@ -404,7 +404,7 @@ def submit_request():
     )
     db.session.add(new_rule)
     db.session.commit() # Commit to get an ID for the rule, important for pre-check
-    app_logger.info(f"Network request ID {new_rule.id} created by {current_user.username} with temporary status 'Pending Pre-Check'.")
+    app_logger.info(f"Request ID {new_rule.id} created by {current_user.username} with temporary status 'Pending Pre-Check'.")
 
 # --- Perform Pre-Check for ALL requests ---
     try:
@@ -448,7 +448,7 @@ def submit_request():
                 # Scenario: No firewalls found in the path for ANY role
                 db_rule.status = 'Completed - No Provisioning Needed'
                 db_rule.approval_status = 'Approved' # Implied approval if no action is needed
-                flash_message = f"Network request ID {db_rule.id} submitted. No firewalls discovered in the traffic path. Marked as 'Completed - No Provisioning Needed'."
+                flash_message = f"Request ID {db_rule.id} submitted. No firewalls discovered in the traffic path. Marked as 'Completed - No Provisioning Needed'."
                 app_logger.info(f"Rule {db_rule.id} completed as no firewalls were found in path for user {current_user.username}.")
 
             elif current_user.has_role('superadmin', 'admin'):
@@ -457,17 +457,17 @@ def submit_request():
 
                 if db_rule.firewalls_to_provision and len(db_rule.firewalls_to_provision) > 0:
                     db_rule.status = 'Pending Implementation'
-                    flash_message = f"Network request ID {db_rule.id} auto-approved and moved to 'Pending Implementation' after pre-check."
+                    flash_message = f"Request ID {db_rule.id} auto-approved and moved to 'Pending Implementation' after pre-check."
                     app_logger.info(f"Rule {db_rule.id} approved and pending implementation on: {', '.join(db_rule.firewalls_to_provision)}")
 
                 elif db_rule.firewalls_involved and db_rule.firewalls_already_configured and \
                      set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured):
                     db_rule.status = 'Completed - No Provisioning Needed'
-                    flash_message = f"Network request ID {db_rule.id} auto-approved. Policy already exists on all involved firewalls. Marked as 'Completed - No Provisioning Needed'."
+                    flash_message = f"Request ID {db_rule.id} auto-approved. Policy already exists on all involved firewalls. Marked as 'Completed - No Provisioning Needed'."
                     app_logger.info(f"Rule {db_rule.id} completed as policy already exists on: {', '.join(db_rule.firewalls_already_configured)}")
                 else:
                     db_rule.status = 'Approved - Review Needed'
-                    flash_message = f"Network request ID {db_rule.id} auto-approved. Review needed for its final status."
+                    flash_message = f"Request ID {db_rule.id} auto-approved. Review needed for its final status."
                     app_logger.warning(f"Rule {db_rule.id} auto-approved but requires review: firewalls_involved={db_rule.firewalls_involved}, firewalls_to_provision={db_rule.firewalls_to_provision}, firewalls_already_configured={db_rule.firewalls_already_configured}")
 
                 app_logger.info(f"User {current_user.username} (role: {current_user.role}) auto-approved request {db_rule.id}.")
@@ -475,8 +475,8 @@ def submit_request():
                 # For non-admin roles when firewalls ARE involved, it goes to Pending Approval
                 db_rule.status = 'Pending'
                 db_rule.approval_status = 'Pending Approval'
-                flash_message = f"Network request ID {db_rule.id} submitted successfully and is now 'Pending' after pre-check."
-                app_logger.info(f"Network request ID {db_rule.id} moved to 'Pending Approval' after pre-check for user {current_user.username}.")
+                flash_message = f"Request ID {db_rule.id} submitted successfully and is now 'Pending' after pre-check."
+                app_logger.info(f"Request ID {db_rule.id} moved to 'Pending Approval' after pre-check for user {current_user.username}.")
 
             db.session.commit()
             flash(flash_message, 'info') # Flash messages will still work on the redirected page
@@ -763,7 +763,7 @@ def implementation_list():
 @roles_required('superadmin', 'admin', 'requester') # Only requester, superadmin, admin can cancel
 def cancel_request(rule_id):
     """
-    Allows a requester (or admin/superadmin) to cancel their own pending network requests.
+    Allows a requester (or admin/superadmin) to cancel their own requests.
     """
     rule = FirewallRule.query.get_or_404(rule_id)
 
@@ -787,7 +787,7 @@ def cancel_request(rule_id):
             rule.approver_comment = f"Request cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
 
         db.session.commit()
-        app_logger.info(f"Network request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
+        app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
         return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
     except Exception as e:
         db.session.rollback()

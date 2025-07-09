@@ -110,7 +110,7 @@
             blacklistRulesTableBody.innerHTML = ''; // Clear existing rows
             if (rulesToRender.length === 0) {
                 noRulesMessage.classList.remove('hidden');
-                blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500">No matching blacklist rules found.</td></tr>`; // Updated message
+                blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500"></td></tr>`;
                 return;
             } else {
                 noRulesMessage.classList.add('hidden');

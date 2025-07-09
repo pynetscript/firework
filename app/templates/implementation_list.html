@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8">
-    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Rules Ready for Implementation</h2>
+<div class="container mx-auto p-4 bg-white rounded-lg shadow-lg my-8 w-full max-w-full">
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Implementation</h2>
 
     <div class="flex justify-end mb-4">
         <input type="text" id="implementationSearchInput" placeholder="Search..."
@@ -9,39 +9,56 @@
     </div>
 
     {% if rules %}
-    <div class="overflow-x-auto">
-        <table class="min-w-full bg-white rounded-lg overflow-hidden shadow-md" id="implementationTable">
+    <div class="block">
+        <table class="w-full bg-white rounded-lg overflow-hidden shadow-md table-auto text-sm" id="implementationTable">
             <thead>
-                <tr class="bg-gray-100 text-gray-700 uppercase text-sm leading-normal">
-                    <th class="py-3 px-6 text-left">ID</th>
-                    <th class="py-3 px-6 text-left">Source IP</th>
-                    <th class="py-3 px-6 text-left">Destination IP</th>
-                    <th class="py-3 px-6 text-left">Protocol</th>
-                    <th class="py-3 px-6 text-left">Port</th>
-                    <th class="py-3 px-6 text-left">Status</th>
-                    <th class="py-3 px-6 text-left">FWs Involved</th>
-                    <th class="py-3 px-6 text-center">Action</th>
+                <tr class="bg-gray-100 text-gray-700 uppercase text-xs leading-normal">
+                    <th class="py-2 px-2 text-left">ID</th>
+                    <th class="py-2 px-2 text-left">Source IP</th>
+                    <th class="py-2 px-2 text-left">Destination IP</th>
+                    <th class="py-2 px-2 text-left">Protocol</th>
+                    <th class="py-2 px-2 text-left">Port</th>
+                    <th class="py-2 px-2 text-left">Status</th>
+                    <th class="py-2 px-2 text-left">Approval Status</th>
+                    <th class="py-2 px-2 text-left">Firewalls Involved</th>
+                    <th class="py-2 px-2 text-left">Firewalls to Implement</th>
+                    <th class="py-2 px-2 text-left">Firewalls Implemented</th>
+                    <th class="py-2 px-2 text-left">Created At</th>
+                    <th class="py-2 px-2 text-left">Approved At</th>
+                    <th class="py-2 px-2 text-left">Implemented At</th>
+                    <th class="py-2 px-2 text-center">Action</th>
                 </tr>
             </thead>
-            <tbody class="text-gray-600 text-sm font-light">
+            <tbody class="text-gray-600 text-xs font-light">
                 {% for rule in rules %}
                 <tr class="border-b border-gray-200 hover:bg-gray-100">
-                    <td class="py-3 px-6 text-left whitespace-nowrap">{{ rule.id }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.source_ip }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.destination_ip }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.protocol }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.ports | join(', ') if rule.ports else 'N/A' }}</td>
-                    <td class="py-3 px-6 text-left">{{ rule.status }}</td>
-                    <td class="py-3 px-6 text-left">
+                    <td class="py-2 px-2 text-left break-all">{{ rule.id }}</td>
+                    <td class="py-2 px-2 text-left break-all">{{ rule.source_ip }}</td>
+                    <td class="py-2 px-2 text-left break-all">{{ rule.destination_ip }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.protocol }}</td>
+                    <td class="py-2 px-2 text-left break-words">{% if rule.ports %}{{ rule.ports | join(', ') }}{% else %}N/A{% endif %}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.status }}</td>
+                    <td class="py-2 px-2 text-left break-words">{{ rule.approval_status }}</td>
+                    <td class="py-2 px-2 text-left break-words">
                         {% if rule.firewalls_involved %}
                             {{ rule.firewalls_involved | join(', ') }}
                         {% else %}
                             N/A
                         {% endif %}
                     </td>
-                    <td class="py-3 px-6 text-center">
+                    <td class="py-2 px-2 text-left break-words">
+                        {% if rule.firewalls_to_provision %}<span class="text-red-600">{{ rule.firewalls_to_provision | join(', ') }}</span>{% else %}None{% endif %}
+                    </td>
+                    <td class="py-2 px-2 text-left break-words">
+                        {% if rule.firewalls_already_configured %}<span class="text-green-600">{{ rule.firewalls_already_configured | join(', ') }}</span>{% else %}None{% endif %}
+                    </td>
+                    {# Added data-utc-timestamp for client-side timezone conversion #}
+                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.created_at %}{{ rule.created_at.isoformat() }}Z{% endif %}">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</td>
+                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.approved_at %}{{ rule.approved_at.isoformat() }}Z{% endif %}">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td>
+                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.implemented_at %}{{ rule.implemented_at.isoformat() }}Z{% endif %}">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td>
+                    <td class="py-2 px-2 text-center whitespace-nowrap">
                         <a href="{{ url_for('routes.implement_rule', rule_id=rule.id) }}"
-                           class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                           class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
                             Process
                         </a>
                     </td>
@@ -51,7 +68,7 @@
         </table>
     </div>
     {% else %}
-    <p class="text-center text-gray-600 mt-4">No tasks pending implementation.</p>
+    <p class="text-center text-gray-600 mt-4">No requests found.</p>
     {% endif %}
 
     <div class="text-center mt-8">
@@ -81,6 +98,34 @@
                 });
             });
         }
+
+        // --- START Timezone Conversion ---
+        const timestampCells = document.querySelectorAll('#implementationTable tbody td[data-utc-timestamp]');
+        timestampCells.forEach(cell => {
+            const utcTimestampString = cell.getAttribute('data-utc-timestamp');
+            if (utcTimestampString) {
+                const date = new Date(utcTimestampString);
+
+                const options = {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false // Use 24-hour format
+                };
+
+                // Format the date and time using 'en-GB' locale for DD/MM/YYYY and then remove the comma
+                let formattedDateTime = date.toLocaleString('en-GB', options);
+
+                // Remove the comma and replace it with a space
+                formattedDateTime = formattedDateTime.replace(', ', ' ');
+
+                cell.textContent = formattedDateTime;
+            }
+        });
+        // --- END Timezone Conversion ---
     });
 </script>
 {% endblock %}

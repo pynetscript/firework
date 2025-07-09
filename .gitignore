@@ -1,17 +1,10 @@
-# Python specific
+# Python
 *.pyc
 __pycache__/
 venv/
 .env
 
-# Database files
-*.db
-
-# Flask-Migrate / Alembic specific
-# NOTE: We DO NOT ignore the entire 'migrations/' directory
-# because you generally want to commit your migration scripts
-# (e.g., files in migrations/versions/).
-# We only ignore Python bytecode within migration directories.
+# Flask-Migrate / Alembic
 migrations/**/__pycache__/
 migrations/**/*.pyc
 
@@ -21,20 +14,18 @@ outputs/
 # Logs
 *.log
 
-# Ansible specific
+# Ansible
 .ansible/
 *.retry
 *.vault
 .vault_pass.txt
 
-# Flask specific
+# Flask
 instance/
 
-# Editor/OS specific backup files
+# Editor/OS backup files
 *.bak
 *.bak[0-9]*
 *.swp
 *~
-.DS_Store # macOS specific
-Thumbs.db # Windows specific
 trash/
