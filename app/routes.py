@@ -753,7 +753,7 @@ def implementation_list():
     Displays a list of network rule requests pending implementation.
     """
     rules = FirewallRule.query.filter(
-        FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer'])
+        FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer', 'Completed'])
     ).order_by(FirewallRule.created_at.asc()).all()
     return render_template('implementation_list.html', rules=rules)
 

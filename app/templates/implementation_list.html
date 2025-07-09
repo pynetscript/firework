@@ -7,7 +7,6 @@
         <input type="text" id="implementationSearchInput" placeholder="Search..."
                class="p-2 border border-gray-300 rounded-md w-1/3 focus:outline-none focus:ring-2 focus:ring-blue-500">
     </div>
-
     {% if rules %}
     <div class="block">
         <table class="w-full bg-white rounded-lg overflow-hidden shadow-md table-auto text-sm" id="implementationTable">
@@ -57,16 +56,21 @@
                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.approved_at %}{{ rule.approved_at.isoformat() }}Z{% endif %}">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td>
                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.implemented_at %}{{ rule.implemented_at.isoformat() }}Z{% endif %}">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td>
                     <td class="py-2 px-2 text-center whitespace-nowrap">
+                        {% if rule.status == 'Pending Implementation' %}
                         <a href="{{ url_for('routes.implement_rule', rule_id=rule.id) }}"
                            class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
                             Process
                         </a>
+                        {% else %}
+                            <span class="text-gray-500 text-xs">-</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+
     {% else %}
     <p class="text-center text-gray-600 mt-4">No requests found.</p>
     {% endif %}
@@ -75,7 +79,6 @@
         <a href="{{ url_for('routes.home') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Home</a>
     </div>
 </div>
-
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const implementationSearchInput = document.getElementById('implementationSearchInput');
@@ -85,7 +88,6 @@
         if (implementationSearchInput && implementationTableBody) { // Ensure elements exist before adding listener
             implementationSearchInput.addEventListener('input', function() {
                 const searchTerm = implementationSearchInput.value.toLowerCase();
-
                 tableRows.forEach(function(row) {
                     // Get all text content from the cells in the current row for broad search
                     const rowText = row.textContent.toLowerCase();
