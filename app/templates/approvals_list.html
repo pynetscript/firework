@@ -21,6 +21,9 @@
                      <th class="py-2 px-2 text-left">Firewalls Involved</th> 
                      <th class="py-2 px-2 text-left">Firewalls To Implement</th> 
                      <th class="py-2 px-2 text-left">Firewalls Implemented</th> 
+                     <th class="py-2 px-2 text-left">Requester</th>
+                     <th class="py-2 px-2 text-left">Approver</th>
+                     <th class="py-2 px-2 text-left">Implementer</th>
                      <th class="py-2 px-2 text-left">Created At</th> 
                      <th class="py-2 px-2 text-left">Approved At</th> 
                      <th class="py-2 px-2 text-left">Implemented At</th> 
@@ -46,9 +49,12 @@
                      <td class="py-2 px-2 text-left break-words"> 
                          {% if rule.firewalls_already_configured %}<span class="text-green-600">{{ rule.firewalls_already_configured | join(', ') }}</span>{% else %}None{% endif %} 
                      </td> 
-                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.created_at %}{{ rule.created_at.isoformat() }}Z{% endif %}">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</td>
-                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.approved_at %}{{ rule.approved_at.isoformat() }}Z{% endif %}">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else 'N/A' }}</td>
-                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.implemented_at %}{{ rule.implemented_at.isoformat() }}Z{% endif %}">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else 'N/A' }}</td>
+                     <td class="py-2 px-2 text-left break-words">{{ rule.requester_username if rule.requester_username else '' }}</td>
+                     <td class="py-2 px-2 text-left break-words">{{ rule.approver_username if rule.approver_username else '' }}</td>
+                     <td class="py-2 px-2 text-left break-words">{{ rule.implementer_username if rule.implementer_username else '' }}</td>
+                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.created_at %}{{ rule.created_at.isoformat() }}Z{% endif %}">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else '' }}</td>
+                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.approved_at %}{{ rule.approved_at.isoformat() }}Z{% endif %}">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else '' }}</td>
+                     <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.implemented_at %}{{ rule.implemented_at.isoformat() }}Z{% endif %}">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else '' }}</td>
                      <td class="py-2 px-2 text-center whitespace-nowrap"> 
                          {# Only show Review button if approval_status is 'Pending Approval' #} 
                          {% if rule.approval_status == 'Pending Approval' %} 

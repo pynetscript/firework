@@ -42,8 +42,8 @@ def create_app():
     app.logger.setLevel(logging.INFO)
     logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
 
-    app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
-    app.logger.info(f"Current working directory: {app.root_path}")
+    #app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    #app.logger.info(f"Current working directory: {app.root_path}")
 
     @app.errorhandler(404)
     def page_not_found(e):
@@ -62,5 +62,8 @@ def create_app():
     app.register_blueprint(routes)
     app.register_blueprint(admin_bp)
     app.register_blueprint(auth)
+
+    app.logger.info(f"Database URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    app.logger.info(f"Current working directory: {app.root_path}")
 
     return app

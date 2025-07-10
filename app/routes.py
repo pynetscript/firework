@@ -537,11 +537,8 @@ def submit_request():
 @login_required
 def task_results():
     """
-    Displays a list of network automation tasks relevant to the current user.
-    - Superadmins/Admins see all tasks.
-    - Requesters see tasks they have submitted.
-    - Implementers see tasks that are 'Pending Implementation' or 'Provisioning' or 'Provisioning Failed'.
-    - Approvers see tasks they have approved or denied.
+    Displays the list of all network rule requests.
+    Accessible by all authenticated users.
     """
     query = FirewallRule.query
 
@@ -560,10 +557,32 @@ def task_results():
             'Completed - Route Not Found',
             "Declined by Implementer",
             "Denied by Approver",
-            "Partially Implemented - Requires Attention"
+            "Partially Implemented - Requires Attention",
+            "Canceled"
         ])).order_by(FirewallRule.created_at.desc()).all()
 
-    return render_template('task_results.html', rules=rules)
+    # Enrich rules with usernames
+    for rule in rules:
+        if rule.requester_id:
+            requester = User.query.get(rule.requester_id)
+            rule.requester_username = requester.username if requester else ''
+        else:
+            rule.requester_username = ''
+
+        if rule.approver_id:
+            approver = User.query.get(rule.approver_id)
+            rule.approver_username = approver.username if approver else ''
+        else:
+            rule.approver_username = ''
+
+        if rule.implementer_id:
+            implementer = User.query.get(rule.implementer_id)
+            rule.implementer_username = implementer.username if implementer else ''
+        else:
+            rule.implementer_username = ''
+
+    # Pass rules to the template
+    return render_template('task_results.html', title='Request', rules=rules)
 
 @routes.route('/approve-deny-request/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
@@ -606,6 +625,13 @@ def approve_deny_request(rule_id):
         db.session.commit()
         return redirect(url_for('routes.approvals_list'))
 
+    # Enrich rule with usernames for display
+    if rule.requester_id:
+        requester = User.query.get(rule.requester_id)
+        rule.requester_username = requester.username if requester else ''
+    else:
+        rule.requester_username = ''
+
     return render_template('approval_detail.html', rule=rule)
 
 @routes.route('/approvals')
@@ -616,14 +642,38 @@ def approvals_list():
     Displays a list of network rule requests pending approval (for approvers)
     or all requests that are pending/approved (for superadmins/admins).
     """
-    if current_user.has_role('superadmin', 'admin', 'approver'):
-        # Can see all rules that are either Pending or Approved
+    if current_user.has_role('superadmin') or current_user.has_role('admin'):
+        # Can see all rules that are either Pending Approval or Approved
         rules = FirewallRule.query.filter(
             FirewallRule.approval_status.in_(['Pending Approval', 'Approved'])
         ).order_by(FirewallRule.created_at.desc()).all()
+    elif current_user.has_role('approver'):
+        # Approvers only see rules pending their approval
+        rules = FirewallRule.query.filter(FirewallRule.approval_status.in_(['Pending Approval', 'Approved'])).order_by(FirewallRule.created_at.desc()).all()
     else:
         # Fallback for any other role that might somehow access this (though roles_required should prevent it)
         rules = []
+
+    # Enrich rules with requester, approver, and implementer usernames
+    for rule in rules:
+        if rule.requester_id:
+            requester = User.query.get(rule.requester_id)
+            rule.requester_username = requester.username if requester else ''
+        else:
+            rule.requester_username = ''
+
+        if rule.approver_id:
+            approver = User.query.get(rule.approver_id)
+            rule.approver_username = approver.username if approver else ''
+        else:
+            rule.approver_username = ''
+
+        if rule.implementer_id:
+            implementer = User.query.get(rule.implementer_id)
+            rule.implementer_username = implementer.username if implementer else ''
+        else:
+            rule.implementer_username = ''
+
     return render_template('approvals_list.html', rules=rules)
 
 @routes.route('/implement/<int:rule_id>', methods=['GET', 'POST'])
@@ -635,6 +685,25 @@ def implement_rule(rule_id):
     Triggers provisioning and post-checks.
     """
     rule = FirewallRule.query.get_or_404(rule_id)
+
+    # Enrich the single 'rule' object with usernames
+    if rule.requester_id:
+        requester = User.query.get(rule.requester_id)
+        rule.requester_username = requester.username if requester else ''
+    else:
+        rule.requester_username = ''
+
+    if rule.approver_id:
+        approver = User.query.get(rule.approver_id)
+        rule.approver_username = approver.username if approver else ''
+    else:
+        rule.approver_username = ''
+
+    if rule.implementer_id:
+        implementer = User.query.get(rule.implementer_id)
+        rule.implementer_username = implementer.username if implementer else ''
+    else:
+        rule.implementer_username = ''
 
     # Only allow action if status is 'Pending Implementation' or 'Partially Implemented - Requires Attention'
     if rule.status not in ['Pending Implementation', 'Partially Implemented - Requires Attention']:
@@ -651,7 +720,6 @@ def implement_rule(rule_id):
 
         if action == 'provision':
             firewalls_to_provision = rule.firewalls_to_provision if rule.firewalls_to_provision else []
-
             if not firewalls_to_provision:
                 flash("No firewalls marked for provisioning for this rule. Marking as 'Completed - No Provisioning Needed'.", 'info')
                 rule.status = 'Completed - No Provisioning Needed'
@@ -744,7 +812,6 @@ def implement_rule(rule_id):
 
     return render_template('implementation_detail.html', rule=rule)
 
-
 @routes.route('/implementation')
 @login_required
 @roles_required('superadmin', 'admin', 'implementer')
@@ -755,34 +822,88 @@ def implementation_list():
     rules = FirewallRule.query.filter(
         FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer', 'Completed'])
     ).order_by(FirewallRule.created_at.asc()).all()
+
+    # Enrich rules with usernames
+    for rule in rules:
+        if rule.requester_id:
+            requester = User.query.get(rule.requester_id)
+            rule.requester_username = requester.username if requester else ''
+        else:
+            rule.requester_username = ''
+
+        if rule.approver_id:
+            approver = User.query.get(rule.approver_id)
+            rule.approver_username = approver.username if approver else ''
+        else:
+            rule.approver_username = ''
+
+        if rule.implementer_id:
+            implementer = User.query.get(rule.implementer_id)
+            rule.implementer_username = implementer.username if implementer else ''
+        else:
+            rule.implementer_username = ''
+
     return render_template('implementation_list.html', rules=rules)
 
+#@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
+#@login_required
+#@roles_required('superadmin', 'admin', 'requester') # Only requester, superadmin, admin can cancel
+#def cancel_request(rule_id):
+#    """
+#    Allows a requester (or admin/superadmin) to cancel their own requests.
+#    """
+#    rule = FirewallRule.query.get_or_404(rule_id)
+#
+#    # A requester can only cancel their own rules that are not yet completed/denied/in progress.
+#    if current_user.has_role('requester') and rule.requester_id != current_user.id:
+#        app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
+#        return jsonify({"status": "error", "message": "You are not authorized to cancel this request."}), 403
+#
+#    # Define statuses that CANNOT be cancelled via this method.
+#    if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
+#        app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}.")
+#        return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
+#
+#    try:
+#        rule.status = "Cancelled"
+#        rule.approval_status = "Cancelled"
+#        if rule.approver_comment:
+#            rule.approver_comment += f"\\nRequest cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
+#        else:
+#            rule.approver_comment = f"Request cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
+#
+#        db.session.commit()
+#        app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
+#        return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
+#    except Exception as e:
+#        db.session.rollback()
+#        app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
+#        return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {e}"}), 500
 
 @routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
 @login_required
-@roles_required('superadmin', 'admin', 'requester') # Only requester, superadmin, admin can cancel
 def cancel_request(rule_id):
     """
-    Allows a requester (or admin/superadmin) to cancel their own requests.
+    Allows the user who created the request to cancel it.
     """
     rule = FirewallRule.query.get_or_404(rule_id)
 
-    # A requester can only cancel their own rules that are not yet completed/denied/in progress.
-    if current_user.has_role('requester') and rule.requester_id != current_user.id:
+    # Only the user who created the request can cancel it.
+    if rule.requester_id != current_user.id:
         app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
-        return jsonify({"status": "error", "message": "You are not authorized to cancel this request."}), 403
+        return jsonify({"status": "error", "message": "You are not authorized to cancel this request. Only the original creator can cancel their own requests."}), 403
 
     # Define statuses that CANNOT be cancelled via this method.
     if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
-        app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}.")
+        app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}. Current status: {rule.status}")
         return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
 
     try:
-        rule.status = "Cancelled by Requester"
+        rule.status = "Cancelled"
         rule.approval_status = "Cancelled" # Update approval status as well
         # Optionally, add a comment indicating who cancelled it
         if rule.approver_comment:
-            rule.approver_comment += f"\\nRequest cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
+            rule.approver_comment += f"\nRequest cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
         else:
             rule.approver_comment = f"Request cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
 
@@ -793,7 +914,6 @@ def cancel_request(rule_id):
         db.session.rollback()
         app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {e}"}), 500
-
 
 @routes.route('/blacklist-rules')
 @login_required

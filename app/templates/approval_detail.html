@@ -14,7 +14,7 @@
         <div class="bg-gray-50 p-4 rounded-md">
             <p class="text-gray-600"><strong>Status:</strong> <span class="font-semibold text-blue-600">{{ rule.status }}</span></p>
             <p class="text-gray-600"><strong>Approval Status:</strong> <span class="font-semibold text-purple-600">{{ rule.approval_status }}</span></p>
-            <p class="text-gray-600"><strong>Approver Comments:</strong> <span class="text-gray-800">{{ rule.approval_justification if rule.approval_justification else 'N/A' }}</span></p> {# CHANGE: From rule.approver_comment to rule.approval_justification #}
+            <p class="text-gray-600"><strong>Approver Comments:</strong> <span class="text-gray-800">{{ rule.approval_justification if rule.approval_justification else '' }}</span></p>
             <p class="text-gray-600"><strong>Firewalls Involved:</strong>
                 {% if rule.firewalls_involved %}
                     <span class="font-semibold text-gray-800">{{ rule.firewalls_involved | join(', ') }}</span>
@@ -36,6 +36,7 @@
                     <span class="text-gray-500">None</span>
                 {% endif %}
             </p>
+            <p class="text-gray-600"><strong>Requester:</strong> <span class="font-semibold text-blue-600">{{ rule.requester_username if rule.requester_username else '' }}</span></p>
         </div>
     </div>
 

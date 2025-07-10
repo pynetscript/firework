@@ -36,7 +36,9 @@
                     <span class="text-gray-500">None</span>
                 {% endif %}
             </p>
-        </div>
+            <p class="text-gray-600"><strong>Requester:</strong> <span class="font-semibold text-blue-600">{{ rule.requester_username if rule.requester_username else '' }}</span></p>
+            <p class="text-gray-600"><strong>Approver:</strong> <span class="font-semibold text-blue-600">{{ rule.approver_username if rule.approver_username else '' }}</span></p> 
+       </div>
     </div>
 
     {% if rule.status == 'Pending Implementation' %}
