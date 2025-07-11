@@ -98,7 +98,7 @@ def log_activity(event_type, description, user=None, username=None, user_id=None
         app_logger.error(f"Failed to log activity: {e}", exc_info=True)
 
 #######################################################################
-#                             ROUTES                                  #
+#                           MAIN ROUTES                               #
 #######################################################################
 
 @routes.route('/')
@@ -229,6 +229,10 @@ def get_system_status():
 
     return jsonify(system_status)
 
+#######################################################################
+#                         REQUEST ROUTES                              #
+#######################################################################
+
 @routes.route('/request-form')
 @login_required
 @roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
@@ -293,7 +297,6 @@ def submit_request():
 
     if not ports and protocol.lower() not in ['icmp', 'any', '1']:
         errors.append('Port is required for the specified protocol. Must be a number between 0-65535 or "any".')
-
 
     if errors:
         for error in errors:
@@ -406,7 +409,7 @@ def submit_request():
     db.session.commit() # Commit to get an ID for the rule, important for pre-check
     app_logger.info(f"Request ID {new_rule.id} created by {current_user.username} with temporary status 'Pending Pre-Check'.")
 
-# --- Perform Pre-Check for ALL requests ---
+    # --- Perform Pre-Check for ALL requests ---
     try:
         rule_data_for_precheck = {
             'rule_id': new_rule.id,
@@ -584,7 +587,81 @@ def task_results():
     # Pass rules to the template
     return render_template('task_results.html', title='Request', rules=rules)
 
-@routes.route('/approve-deny-request/<int:rule_id>', methods=['GET', 'POST'])
+@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
+@login_required
+def cancel_request(rule_id):
+    """
+    Allows the user who created the request to cancel it.
+    """
+    rule = FirewallRule.query.get_or_404(rule_id)
+
+    # Only the user who created the request can cancel it.
+    if rule.requester_id != current_user.id:
+        app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
+        return jsonify({"status": "error", "message": "You are not authorized to cancel this request. Only the original creator can cancel their own requests."}), 403
+
+    # Define statuses that CANNOT be cancelled via this method.
+    if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
+        app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}. Current status: {rule.status}")
+        return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
+
+    try:
+        rule.status = "Cancelled"
+        rule.approval_status = "Cancelled"
+        db.session.commit()
+        app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
+        return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
+    except Exception as e:
+        db.session.rollback()
+        app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {e}"}), 500
+
+#######################################################################
+#                         APPROVAL ROUTES                             #
+#######################################################################
+
+@routes.route('/approvals')
+@login_required
+@roles_required('superadmin', 'admin', 'approver')
+def approvals_list():
+    """
+    Displays a list of network rule requests pending approval (for approvers)
+    or all requests that are pending/approved (for superadmins/admins).
+    """
+    if current_user.has_role('superadmin') or current_user.has_role('admin'):
+        rules = FirewallRule.query.filter(
+            FirewallRule.approval_status.in_(['Pending Approval', 'Approved'])
+        ).order_by(FirewallRule.created_at.desc()).all()
+    elif current_user.has_role('approver'):
+        rules = FirewallRule.query.filter(FirewallRule.approval_status.in_(['Pending Approval', 'Approved'])).order_by(FirewallRule.created_at.desc()).all()
+    else:
+        # Fallback for any other role that might somehow access this (though roles_required should prevent it)
+        rules = []
+
+    # Enrich rules with requester, approver, and implementer usernames
+    for rule in rules:
+        if rule.requester_id:
+            requester = User.query.get(rule.requester_id)
+            rule.requester_username = requester.username if requester else ''
+        else:
+            rule.requester_username = ''
+
+        if rule.approver_id:
+            approver = User.query.get(rule.approver_id)
+            rule.approver_username = approver.username if approver else ''
+        else:
+            rule.approver_username = ''
+
+        if rule.implementer_id:
+            implementer = User.query.get(rule.implementer_id)
+            rule.implementer_username = implementer.username if implementer else ''
+        else:
+            rule.implementer_username = ''
+
+    return render_template('approvals_list.html', rules=rules)
+
+
+@routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
 @roles_required('superadmin', 'admin', 'approver')
 @no_self_approval # Prevent approvers from approving their own requests
@@ -634,27 +711,22 @@ def approve_deny_request(rule_id):
 
     return render_template('approval_detail.html', rule=rule)
 
-@routes.route('/approvals')
-@login_required
-@roles_required('superadmin', 'admin', 'approver')
-def approvals_list():
-    """
-    Displays a list of network rule requests pending approval (for approvers)
-    or all requests that are pending/approved (for superadmins/admins).
-    """
-    if current_user.has_role('superadmin') or current_user.has_role('admin'):
-        # Can see all rules that are either Pending Approval or Approved
-        rules = FirewallRule.query.filter(
-            FirewallRule.approval_status.in_(['Pending Approval', 'Approved'])
-        ).order_by(FirewallRule.created_at.desc()).all()
-    elif current_user.has_role('approver'):
-        # Approvers only see rules pending their approval
-        rules = FirewallRule.query.filter(FirewallRule.approval_status.in_(['Pending Approval', 'Approved'])).order_by(FirewallRule.created_at.desc()).all()
-    else:
-        # Fallback for any other role that might somehow access this (though roles_required should prevent it)
-        rules = []
+#######################################################################
+#                      IMPLEMENTATION ROUTES                          #
+#######################################################################
 
-    # Enrich rules with requester, approver, and implementer usernames
+@routes.route('/implementation')
+@login_required
+@roles_required('superadmin', 'admin', 'implementer')
+def implementation_list():
+    """
+    Displays a list of network rule requests pending implementation.
+    """
+    rules = FirewallRule.query.filter(
+        FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer', 'Completed'])
+    ).order_by(FirewallRule.created_at.asc()).all()
+
+    # Enrich rules with usernames
     for rule in rules:
         if rule.requester_id:
             requester = User.query.get(rule.requester_id)
@@ -674,9 +746,10 @@ def approvals_list():
         else:
             rule.implementer_username = ''
 
-    return render_template('approvals_list.html', rules=rules)
+    return render_template('implementation_list.html', rules=rules)
 
-@routes.route('/implement/<int:rule_id>', methods=['GET', 'POST'])
+
+@routes.route('/implementation/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
 @roles_required('superadmin', 'admin', 'implementer')
 def implement_rule(rule_id):
@@ -812,110 +885,7 @@ def implement_rule(rule_id):
 
     return render_template('implementation_detail.html', rule=rule)
 
-@routes.route('/implementation')
-@login_required
-@roles_required('superadmin', 'admin', 'implementer')
-def implementation_list():
-    """
-    Displays a list of network rule requests pending implementation.
-    """
-    rules = FirewallRule.query.filter(
-        FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer', 'Completed'])
-    ).order_by(FirewallRule.created_at.asc()).all()
-
-    # Enrich rules with usernames
-    for rule in rules:
-        if rule.requester_id:
-            requester = User.query.get(rule.requester_id)
-            rule.requester_username = requester.username if requester else ''
-        else:
-            rule.requester_username = ''
-
-        if rule.approver_id:
-            approver = User.query.get(rule.approver_id)
-            rule.approver_username = approver.username if approver else ''
-        else:
-            rule.approver_username = ''
-
-        if rule.implementer_id:
-            implementer = User.query.get(rule.implementer_id)
-            rule.implementer_username = implementer.username if implementer else ''
-        else:
-            rule.implementer_username = ''
-
-    return render_template('implementation_list.html', rules=rules)
-
-#@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
-#@login_required
-#@roles_required('superadmin', 'admin', 'requester') # Only requester, superadmin, admin can cancel
-#def cancel_request(rule_id):
-#    """
-#    Allows a requester (or admin/superadmin) to cancel their own requests.
-#    """
-#    rule = FirewallRule.query.get_or_404(rule_id)
-#
-#    # A requester can only cancel their own rules that are not yet completed/denied/in progress.
-#    if current_user.has_role('requester') and rule.requester_id != current_user.id:
-#        app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
-#        return jsonify({"status": "error", "message": "You are not authorized to cancel this request."}), 403
-#
-#    # Define statuses that CANNOT be cancelled via this method.
-#    if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
-#        app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}.")
-#        return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
-#
-#    try:
-#        rule.status = "Cancelled"
-#        rule.approval_status = "Cancelled"
-#        if rule.approver_comment:
-#            rule.approver_comment += f"\\nRequest cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
-#        else:
-#            rule.approver_comment = f"Request cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
-#
-#        db.session.commit()
-#        app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
-#        return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
-#    except Exception as e:
-#        db.session.rollback()
-#        app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
-#        return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {e}"}), 500
-
-@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
-@login_required
-def cancel_request(rule_id):
-    """
-    Allows the user who created the request to cancel it.
-    """
-    rule = FirewallRule.query.get_or_404(rule_id)
-
-    # Only the user who created the request can cancel it.
-    if rule.requester_id != current_user.id:
-        app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
-        return jsonify({"status": "error", "message": "You are not authorized to cancel this request. Only the original creator can cancel their own requests."}), 403
-
-    # Define statuses that CANNOT be cancelled via this method.
-    if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
-        app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}. Current status: {rule.status}")
-        return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
-
-    try:
-        rule.status = "Cancelled"
-        rule.approval_status = "Cancelled" # Update approval status as well
-        # Optionally, add a comment indicating who cancelled it
-        if rule.approver_comment:
-            rule.approver_comment += f"\nRequest cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
-        else:
-            rule.approver_comment = f"Request cancelled by {current_user.username} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}."
-
-        db.session.commit()
-        app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
-        return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
-    except Exception as e:
-        db.session.rollback()
-        app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": f"An error occurred while cancelling the request: {e}"}), 500
-
-@routes.route('/blacklist-rules')
+@routes.route('/admin/blacklist-rules')
 @login_required
 @roles_required('superadmin', 'admin')
 def blacklist_rules_list():
@@ -923,31 +893,9 @@ def blacklist_rules_list():
     Displays a list of all blacklist rules.
     Accessible only by superadmin and admin roles.
     """
-    # NO DATABASE QUERY HERE - The JavaScript in the template will fetch rules via API
-    app_logger.info("Rendering blacklist rules list page. Data will be loaded via JavaScript API call.")
-    return render_template('blacklist_rules_list.html') # Remove rules=rules, error_message=str(e) from here
+    return render_template('blacklist_rules_list.html')
 
-
-@routes.route('/api/blacklist_rules', methods=['GET'])
-@login_required
-@roles_required('superadmin', 'admin')
-def api_get_blacklist_rules():
-    """
-    API endpoint to retrieve all blacklist rules as JSON.
-    """
-    app_logger.info("API: Attempting to retrieve all blacklist rules.")
-    try:
-        rules = BlacklistRule.query.order_by(BlacklistRule.sequence.asc()).all()
-        # Convert list of model objects to list of dictionaries
-        rules_data = [rule.to_dict() for rule in rules]
-        app_logger.info(f"API: Successfully retrieved {len(rules_data)} blacklist rules.")
-        return jsonify(rules_data), 200
-    except Exception as e:
-        app_logger.error(f"API: Error retrieving blacklist rules: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": "Failed to retrieve blacklist rules."}), 500
-
-
-@routes.route('/blacklist-rules/add', methods=['GET', 'POST'])
+@routes.route('/admin/blacklist-rules/add', methods=['GET', 'POST'])
 @login_required
 @roles_required('superadmin', 'admin')
 def add_blacklist_rule():
@@ -1040,7 +988,7 @@ def add_blacklist_rule():
     return render_template('add_blacklist_form.html')
 
 
-@routes.route('/blacklist-rules/detail/<int:rule_id>')
+@routes.route('/admin/blacklist-rules/detail/<int:rule_id>')
 @login_required
 @roles_required('superadmin', 'admin')
 def blacklist_rule_detail(rule_id):
@@ -1051,7 +999,7 @@ def blacklist_rule_detail(rule_id):
     return render_template('blacklist_rule_detail.html', rule=rule)
 
 
-@routes.route('/blacklist-rules/delete/<int:rule_id>', methods=['POST'])
+@routes.route('/admin/blacklist-rules/delete/<int:rule_id>', methods=['POST'])
 @login_required
 @roles_required('superadmin', 'admin')
 def delete_blacklist_rule(rule_id):
@@ -1069,58 +1017,6 @@ def delete_blacklist_rule(rule_id):
         db.session.rollback()
         app_logger.error(f"Error deleting blacklist rule {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"Error deleting rule: {e}"}), 500
-
-# API endpoint for deleting multiple blacklist rules
-@routes.route('/api/blacklist_rules', methods=['DELETE'])
-@login_required
-@roles_required('superadmin', 'admin')
-def api_delete_blacklist_rules():
-    """
-    API endpoint to delete multiple blacklist rules by IDs.
-    """
-    data = request.get_json()
-    rule_ids = data.get('ids', [])
-    if not rule_ids:
-        return jsonify({"status": "error", "message": "No rule IDs provided for deletion."}), 400
-
-    try:
-        deleted_count = 0
-        for rule_id in rule_ids:
-            rule = BlacklistRule.query.get(rule_id)
-            if rule:
-                db.session.delete(rule)
-                deleted_count += 1
-        db.session.commit()
-        app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {rule_ids}.")
-        return jsonify({"status": "success", "message": f"{deleted_count} rule(s) deleted successfully."}), 200
-    except Exception as e:
-        db.session.rollback()
-        app_logger.error(f"API: Error deleting multiple blacklist rules by {current_user.username}: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": f"An error occurred during bulk deletion: {e}"}), 500
-
-
-# API endpoint for deleting a single blacklist rule (used by individual delete buttons)
-@routes.route('/api/blacklist_rules/<int:rule_id>', methods=['DELETE'])
-@login_required
-@roles_required('superadmin', 'admin')
-def api_delete_single_blacklist_rule(rule_id):
-    """
-    API endpoint to delete a single blacklist rule by ID.
-    """
-    rule = BlacklistRule.query.get(rule_id)
-    if not rule:
-        return jsonify({"status": "error", "message": f"Rule with ID {rule_id} not found."}), 404
-
-    try:
-        db.session.delete(rule)
-        db.session.commit()
-        app_logger.info(f"API: Blacklist rule ID {rule_id} deleted by {current_user.username}.")
-        return jsonify({"status": "success", "message": f"Rule ID {rule_id} deleted successfully."}), 200
-    except Exception as e:
-        db.session.rollback()
-        app_logger.error(f"API: Error deleting single blacklist rule {rule_id} by {current_user.username}: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": f"An error occurred during deletion: {e}"}), 500
-
 
 @routes.route('/admin/edit-blacklist-rule/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
@@ -1227,6 +1123,72 @@ def edit_blacklist_rule(rule_id):
                            destination_port=rule.destination_port,
                            description=rule.description,
                            title=f'Edit Blacklist Rule ID: {rule_id}')
+
+@routes.route('/api/blacklist_rules', methods=['GET'])
+@login_required
+@roles_required('superadmin', 'admin')
+def api_get_blacklist_rules():
+    """
+    API endpoint to retrieve all blacklist rules as JSON.
+    """
+    app_logger.info("API: Attempting to retrieve all blacklist rules.")
+    try:
+        rules = BlacklistRule.query.order_by(BlacklistRule.sequence.asc()).all()
+        # Convert list of model objects to list of dictionaries
+        rules_data = [rule.to_dict() for rule in rules]
+        app_logger.info(f"API: Successfully retrieved {len(rules_data)} blacklist rules.")
+        return jsonify(rules_data), 200
+    except Exception as e:
+        app_logger.error(f"API: Error retrieving blacklist rules: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Failed to retrieve blacklist rules."}), 500
+
+@routes.route('/api/blacklist_rules/<int:rule_id>', methods=['DELETE'])
+@login_required
+@roles_required('superadmin', 'admin')
+def api_delete_single_blacklist_rule(rule_id):
+    """
+    API endpoint to delete a single blacklist rule by ID.
+    """
+    rule = BlacklistRule.query.get(rule_id)
+    if not rule:
+        return jsonify({"status": "error", "message": f"Rule with ID {rule_id} not found."}), 404
+
+    try:
+        db.session.delete(rule)
+        db.session.commit()
+        app_logger.info(f"API: Blacklist rule ID {rule_id} deleted by {current_user.username}.")
+        return jsonify({"status": "success", "message": f"Rule ID {rule_id} deleted successfully."}), 200
+    except Exception as e:
+        db.session.rollback()
+        app_logger.error(f"API: Error deleting single blacklist rule {rule_id} by {current_user.username}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"An error occurred during deletion: {e}"}), 500
+
+@routes.route('/api/blacklist_rules', methods=['DELETE'])
+@login_required
+@roles_required('superadmin', 'admin')
+def api_delete_blacklist_rules():
+    """
+    API endpoint to delete multiple blacklist rules by IDs.
+    """
+    data = request.get_json()
+    rule_ids = data.get('ids', [])
+    if not rule_ids:
+        return jsonify({"status": "error", "message": "No rule IDs provided for deletion."}), 400
+
+    try:
+        deleted_count = 0
+        for rule_id in rule_ids:
+            rule = BlacklistRule.query.get(rule_id)
+            if rule:
+                db.session.delete(rule)
+                deleted_count += 1
+        db.session.commit()
+        app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {rule_ids}.")
+        return jsonify({"status": "success", "message": f"{deleted_count} rule(s) deleted successfully."}), 200
+    except Exception as e:
+        db.session.rollback()
+        app_logger.error(f"API: Error deleting multiple blacklist rules by {current_user.username}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"An error occurred during bulk deletion: {e}"}), 500
 
 @routes.route('/profile', methods=['GET', 'POST'])
 @login_required
