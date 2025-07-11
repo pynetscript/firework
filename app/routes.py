@@ -337,6 +337,11 @@ def submit_request():
         for error in errors:
             flash(error, 'error')
         app_logger.warning(f"Validation errors for new request from {current_user.username}: {errors}")
+        log_activity(
+            event_type='REQUEST_FAILED',
+            description=f"User '{current_user.username}' failed to submit request due to validation errors: {', '.join(errors)}.",
+            user=current_user
+        )
         return jsonify({"status": "error", "message": "Validation failed", "errors": errors}), 400
 
     # Blacklist check
@@ -412,7 +417,6 @@ def submit_request():
                         app_logger.warning(f"Error parsing port in blacklist check for rule {rule.id}. Requested: {requested_port_value}, Rule: {rule_dest_port_lower}")
                         port_match = False # Treat as non-match if parsing fails
 
-
             if ip_match and protocol_match and port_match:
                 blacklisted = True
                 app_logger.warning(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} BLOCKED by blacklist rule ID {rule.id} ('{rule.rule_name}') for user {current_user.username}.")
@@ -420,6 +424,11 @@ def submit_request():
 
         if blacklisted:
             flash(f"Your request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} matches a blacklisted pattern and cannot be submitted. Contact an administrator for details.", 'error')
+            log_activity(
+                event_type='REQUEST_DENIED_BLACKLIST',
+                description=f"User '{current_user.username}' attempted to submit a request which was blocked by blacklist rule '{matching_blacklist_rule_name}'.",
+                user=current_user
+            )
             return jsonify({"status": "error", "message": "Request blocked by blacklist rule."}), 403
         else:
             app_logger.info(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} passed blacklist check for user {current_user.username}.")
@@ -427,6 +436,11 @@ def submit_request():
     except Exception as e:
         app_logger.error(f"Error during blacklist check: {e}", exc_info=True)
         flash("An error occurred during the blacklist check. Please try again or contact support.", 'error')
+        log_activity(
+            event_type='REQUEST_FAILED_BLACKLIST_ERROR',
+            description=f"User '{current_user.username}' encountered an error during blacklist check: {str(e)}.",
+            user=current_user
+        )
         return jsonify({"status": "error", "message": "Internal error during blacklist check."}), 500
 
     # Create the new rule with a temporary status before pre-check
@@ -488,6 +502,13 @@ def submit_request():
                 db_rule.approval_status = 'Approved' # Implied approval if no action is needed
                 flash_message = f"Request ID {db_rule.id} submitted. No firewalls discovered in the traffic path. Marked as 'Completed - No Provisioning Needed'."
                 app_logger.info(f"Rule {db_rule.id} completed as no firewalls were found in path for user {current_user.username}.")
+                log_activity(
+                    event_type='REQUEST_COMPLETED',
+                    description=f"Request ID {db_rule.id} submitted by '{current_user.username}' completed as no firewalls were involved.",
+                    user=current_user,
+                    related_resource_id=db_rule.id,
+                    related_resource_type='FirewallRule'
+                )
 
             elif current_user.has_role('superadmin', 'admin'):
                 # Admin/Superadmin specific logic when firewalls ARE involved
@@ -497,16 +518,37 @@ def submit_request():
                     db_rule.status = 'Pending Implementation'
                     flash_message = f"Request ID {db_rule.id} auto-approved and moved to 'Pending Implementation' after pre-check."
                     app_logger.info(f"Rule {db_rule.id} approved and pending implementation on: {', '.join(db_rule.firewalls_to_provision)}")
+                    log_activity(
+                        event_type='REQUEST_CREATED',
+                        description=f"Request ID {db_rule.id} submitted by '{current_user.username}' auto-approved and pending implementation on firewalls: {', '.join(db_rule.firewalls_to_provision)}.",
+                        user=current_user,
+                        related_resource_id=db_rule.id,
+                        related_resource_type='FirewallRule'
+                    )
 
                 elif db_rule.firewalls_involved and db_rule.firewalls_already_configured and \
                      set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured):
                     db_rule.status = 'Completed - No Provisioning Needed'
                     flash_message = f"Request ID {db_rule.id} auto-approved. Policy already exists on all involved firewalls. Marked as 'Completed - No Provisioning Needed'."
                     app_logger.info(f"Rule {db_rule.id} completed as policy already exists on: {', '.join(db_rule.firewalls_already_configured)}")
+                    log_activity(
+                        event_type='REQUEST_COMPLETED',
+                        description=f"Request ID {db_rule.id} submitted by '{current_user.username}' auto-approved and found to be already configured on all involved firewalls: {', '.join(db_rule.firewalls_already_configured)}.",
+                        user=current_user,
+                        related_resource_id=db_rule.id,
+                        related_resource_type='FirewallRule'
+                    )
                 else:
                     db_rule.status = 'Approved - Review Needed'
                     flash_message = f"Request ID {db_rule.id} auto-approved. Review needed for its final status."
                     app_logger.warning(f"Rule {db_rule.id} auto-approved but requires review: firewalls_involved={db_rule.firewalls_involved}, firewalls_to_provision={db_rule.firewalls_to_provision}, firewalls_already_configured={db_rule.firewalls_already_configured}")
+                    log_activity(
+                        event_type='REQUEST_CREATED_REVIEW_NEEDED',
+                        description=f"Request ID {db_rule.id} submitted by '{current_user.username}' auto-approved but requires manual review.",
+                        user=current_user,
+                        related_resource_id=db_rule.id,
+                        related_resource_type='FirewallRule'
+                    )
 
                 app_logger.info(f"User {current_user.username} (role: {current_user.role}) auto-approved request {db_rule.id}.")
             else:
@@ -515,6 +557,13 @@ def submit_request():
                 db_rule.approval_status = 'Pending Approval'
                 flash_message = f"Request ID {db_rule.id} submitted successfully and is now 'Pending' after pre-check."
                 app_logger.info(f"Request ID {db_rule.id} moved to 'Pending Approval' after pre-check for user {current_user.username}.")
+                log_activity(
+                    event_type='REQUEST_CREATED',
+                    description=f"Request ID {db_rule.id} submitted by '{current_user.username}' is now pending approval.",
+                    user=current_user,
+                    related_resource_id=db_rule.id,
+                    related_resource_type='FirewallRule'
+                )
 
             db.session.commit()
             flash(flash_message, 'info') # Flash messages will still work on the redirected page
@@ -543,6 +592,13 @@ def submit_request():
             db_rule.approval_status = 'Closed'
             db.session.commit()
         app_logger.warning(f"Network automation pre-check indicated unreachable destination for rule {new_rule.id}: {e}")
+        log_activity(
+            event_type='REQUEST_FAILED',
+            description=f"Pre-check failed for request ID {new_rule.id}: Destination unreachable. Error: {str(e)}.",
+            user=current_user,
+            related_resource_id=new_rule.id,
+            related_resource_type='FirewallRule'
+        )
         return jsonify({
             "status": "error",
             "message": str(e),
@@ -559,6 +615,13 @@ def submit_request():
             db.session.commit()
         app_logger.error(f"Network automation pre-check failed for rule {new_rule.id}: {e}", exc_info=True)
         flash(f"Pre-check failed: {e}", 'error')
+        log_activity(
+            event_type='REQUEST_FAILED',
+            description=f"Pre-check failed for request ID {new_rule.id}. Runtime error: {str(e)}.",
+            user=current_user,
+            related_resource_id=new_rule.id,
+            related_resource_type='FirewallRule'
+        )
         return redirect(url_for('routes.request_form'))
     except Exception as e:
         db.session.rollback()
@@ -569,6 +632,13 @@ def submit_request():
             db.session.commit()
         app_logger.critical(f"An unexpected error occurred during network automation pre-check for rule {new_rule.id}: {e}", exc_info=True)
         flash(f"An unexpected error occurred during pre-check: {e}. Please contact support.", 'error')
+        log_activity(
+            event_type='REQUEST_FAILED',
+            description=f"An unexpected error occurred during pre-check for request ID {new_rule.id}. Error: {str(e)}.",
+            user=current_user,
+            related_resource_id=new_rule.id,
+            related_resource_type='FirewallRule'
+        )
         return redirect(url_for('routes.request_form'))
 
 @routes.route('/request/cancel/<int:rule_id>', methods=['POST'])
@@ -988,7 +1058,7 @@ def add_blacklist_rule():
             flash(f"Blacklist rule '{rule_name}' added successfully!", 'success')
             app_logger.info(f"Blacklist rule ID {new_rule.id} ('{new_rule.rule_name}') added by {current_user.username}.")
             log_activity(
-                event_type='BLACKLIST_RULE_ADDED',
+                event_type='BLACKLIST_RULE_ADD_SUCCESS',
                 description=f"Blacklist rule '{new_rule.rule_name}' (ID: {new_rule.id}, Sequence: {new_rule.sequence}) was added.",
                 user=current_user,
                 related_resource_id=new_rule.id,
@@ -1039,7 +1109,7 @@ def delete_blacklist_rule(rule_id):
         flash(f"Blacklist rule '{rule.rule_name}' deleted successfully.", 'success')
         app_logger.info(f"Blacklist rule ID {rule_id} ('{rule.rule_name}') deleted by {current_user.username}.")
         log_activity(
-            event_type='BLACKLIST_RULE_DELETED',
+            event_type='BLACKLIST_RULE_DELETE',
             description=f"Blacklist rule '{rule_name}' (ID: {rule_id}) was deleted.",
             user=current_user,
             related_resource_id=rule_id,
@@ -1199,7 +1269,7 @@ def api_delete_single_blacklist_rule(rule_id):
         db.session.commit()
         app_logger.info(f"API: Blacklist rule ID {rule_id} deleted by {current_user.username}.")
         log_activity(
-            event_type='BLACKLIST_RULE_DELETED',
+            event_type='BLACKLIST_RULE_DELETE',
             description=f"Blacklist rule '{rule_name}' (ID: {rule_id},) was deleted.",
             user=current_user,
             related_resource_id=rule_id,
@@ -1268,7 +1338,7 @@ def api_delete_blacklist_rules():
         app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {deleted_rule_ids}.")
 
         log_activity(
-            event_type='BLACKLIST_RULES_BULK_DELETED',
+            event_type='BLACKLIST_RULES_BULK_DELETE',
             description=f"{deleted_count} blacklist rule(s) deleted via API. IDs: {deleted_rule_ids}. Names: {deleted_rule_names}.",
             user=current_user
         )
