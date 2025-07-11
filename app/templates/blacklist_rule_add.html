@@ -1,9 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 max-w-md">
-    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Add New Blacklist Rule</h2>
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Add Blacklist Rule</h2>
 
-    {# Removed the id="addRuleForm" from the form tag and the associated JavaScript event listener #}
     <form method="POST" action="{{ url_for('routes.add_blacklist_rule') }}" class="space-y-4">
         <div>
             <label for="sequence" class="block text-gray-700 text-sm font-bold mb-2">Sequence (Order of evaluation):</label>
@@ -42,7 +41,7 @@
         </div>
         
         <div>
-            <label for="destination_port" class="block text-gray-700 text-sm font-bold mb-2">Destination Port (e.g., 80, 443, any):</label>
+            <label for="destination_port" class="block text-gray-700 text-sm font-bold mb-2">Port (e.g., 80, 443, any):</label>
             <input type="text" id="destination_port" name="destination_port"
                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
         </div>
@@ -58,12 +57,8 @@
         </div>
     </form>
 
-    {# Removed the responseMessage div and its associated JavaScript #}
-
     <div class="text-center mt-8">
         <a href="{{ url_for('routes.blacklist_rules_list') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Blacklist Rules</a>
     </div>
 </div>
-
-{# Removed the entire script block #}
 {% endblock %}

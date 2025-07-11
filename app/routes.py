@@ -1018,7 +1018,7 @@ def delete_blacklist_rule(rule_id):
         app_logger.error(f"Error deleting blacklist rule {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
         return jsonify({"status": "error", "message": f"Error deleting rule: {e}"}), 500
 
-@routes.route('/admin/edit-blacklist-rule/<int:rule_id>', methods=['GET', 'POST'])
+@routes.route('/admin/blacklist-rules/edit/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
 @roles_required('superadmin', 'admin') # Ensure only authorized users can edit
 def edit_blacklist_rule(rule_id):

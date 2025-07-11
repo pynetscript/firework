@@ -242,6 +242,7 @@
             } else if (event.target.classList.contains('edit-rule-btn')) {
                 const ruleId = event.target.dataset.ruleId;
                 // Redirect to an edit page or open a modal for editing
+                console.log('Edit button clicked. ruleId:', ruleId);
                 window.location.href = `{{ url_for('routes.edit_blacklist_rule', rule_id=0) | replace('0', ruleId) }}`; // Example: redirect to edit page
             }
         });
