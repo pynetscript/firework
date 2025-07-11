@@ -221,7 +221,7 @@ def get_system_status():
 @login_required
 def request_list():
     """
-    Displays the list of all network rule requests.
+    Displays the list of all requests.
     Accessible by all authenticated users.
     """
     query = FirewallRule.query
@@ -273,7 +273,7 @@ def request_list():
 @roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
 def request_form():
     """
-    Renders the form for submitting a new network rule request.
+    Renders the form for submitting a new request.
     Accessible by superadmin, admin, requester, approver, and implementer roles.
     """
     return render_template('request_form.html')
@@ -283,7 +283,7 @@ def request_form():
 @roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
 def submit_request():
     """
-    Handles the submission of a new network rule request.
+    Handles the submission of a new request.
     Performs validation, blacklist checks, initiates a pre-check,
     creates the rule in the DB, and determines initial status based on pre-check results and roles.
     """
@@ -343,6 +343,9 @@ def submit_request():
             user=current_user
         )
         return jsonify({"status": "error", "message": "Validation failed", "errors": errors}), 400
+
+    blacklisted = False
+    matching_blacklist_rule_name = None
 
     # Blacklist check
     try:
@@ -425,20 +428,25 @@ def submit_request():
         if blacklisted:
             flash(f"Your request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} matches a blacklisted pattern and cannot be submitted. Contact an administrator for details.", 'error')
             log_activity(
-                event_type='REQUEST_DENIED_BLACKLIST',
-                description=f"User '{current_user.username}' attempted to submit a request which was blocked by blacklist rule '{matching_blacklist_rule_name}'.",
+                event_type='BLACKLIST_DENIED',
+                description=f"Request ID {rule.id} was denied by blacklist rule '{matching_blacklist_rule_name or 'N/A'}'.",
                 user=current_user
             )
             return jsonify({"status": "error", "message": "Request blocked by blacklist rule."}), 403
         else:
+            log_activity(
+                event_type='BLACKLIST_PASSED',
+                description=f"Request ID {rule.id} passed the blacklist check.",
+                user=current_user
+            )
             app_logger.info(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} passed blacklist check for user {current_user.username}.")
 
     except Exception as e:
         app_logger.error(f"Error during blacklist check: {e}", exc_info=True)
         flash("An error occurred during the blacklist check. Please try again or contact support.", 'error')
         log_activity(
-            event_type='REQUEST_FAILED_BLACKLIST_ERROR',
-            description=f"User '{current_user.username}' encountered an error during blacklist check: {str(e)}.",
+            event_type='BLACKLIST_ERROR',
+            description=f"Error during blacklist check: {str(e)}. Matching rule was '{matching_blacklist_rule_name or 'None'}'.",
             user=current_user
         )
         return jsonify({"status": "error", "message": "Internal error during blacklist check."}), 500
@@ -594,7 +602,7 @@ def submit_request():
         app_logger.warning(f"Network automation pre-check indicated unreachable destination for rule {new_rule.id}: {e}")
         log_activity(
             event_type='REQUEST_FAILED',
-            description=f"Pre-check failed for request ID {new_rule.id}: Destination unreachable. Error: {str(e)}.",
+            description=f"Pre-check failed for request ID {new_rule.id}. Error: {str(e)}.",
             user=current_user,
             related_resource_id=new_rule.id,
             related_resource_type='FirewallRule'
@@ -631,10 +639,10 @@ def submit_request():
             db_rule.approval_status = 'Error'
             db.session.commit()
         app_logger.critical(f"An unexpected error occurred during network automation pre-check for rule {new_rule.id}: {e}", exc_info=True)
-        flash(f"An unexpected error occurred during pre-check: {e}. Please contact support.", 'error')
+        flash(f"An unexpected error occurred during pre-check: {e}. Please contact the administartor.", 'error')
         log_activity(
             event_type='REQUEST_FAILED',
-            description=f"An unexpected error occurred during pre-check for request ID {new_rule.id}. Error: {str(e)}.",
+            description=f"An unexpected error occurred during pre-check for request ID {new_rule.id}. Please contact the administrator. Error: {str(e)}.",
             user=current_user,
             related_resource_id=new_rule.id,
             related_resource_type='FirewallRule'
@@ -680,7 +688,7 @@ def cancel_request(rule_id):
         app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
         log_activity(
             event_type='REQUEST_CANCELLED',
-            description=f"Firewall rule ID {rule_id} successfully cancelled.",
+            description=f"Request ID {rule_id} successfully cancelled.",
             user=current_user,
             related_resource_id=rule_id,
             related_resource_type='FirewallRule'
@@ -700,7 +708,7 @@ def cancel_request(rule_id):
 @roles_required('superadmin', 'admin', 'approver')
 def approvals_list():
     """
-    Displays a list of network rule requests pending approval (for approvers)
+    Displays a list of requests pending approval (for approvers)
     or all requests that are pending/approved (for superadmins/admins).
     """
     if current_user.has_role('superadmin') or current_user.has_role('admin'):
@@ -742,7 +750,7 @@ def approvals_list():
 @no_self_approval # Prevent approvers from approving their own requests
 def approve_deny_request(rule_id):
     """
-    Allows approvers to review, approve, or deny network rule requests.
+    Allows approvers to review, approve, or deny requests.
     Approval will transition the request to 'Pending Implementation' status
     without triggering automation.
     """
@@ -795,7 +803,7 @@ def approve_deny_request(rule_id):
 @roles_required('superadmin', 'admin', 'implementer')
 def implementation_list():
     """
-    Displays a list of network rule requests pending implementation.
+    Displays a list of requests pending implementation.
     """
     rules = FirewallRule.query.filter(
         FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer', 'Completed'])
@@ -829,7 +837,7 @@ def implementation_list():
 @roles_required('superadmin', 'admin', 'implementer')
 def implement_rule(rule_id):
     """
-    Allows implementers to review and provision network rules.
+    Allows implementers to review and provision requests.
     Triggers provisioning and post-checks.
     """
     rule = FirewallRule.query.get_or_404(rule_id)
@@ -1031,7 +1039,7 @@ def add_blacklist_rule():
                 flash(error, 'error')
             app_logger.warning(f"Validation errors for new blacklist rule from {current_user.username}: {errors}")
             log_activity(
-                event_type='BLACKLIST_RULE_ADD_FAILED',
+                event_type='BLACKLIST_RULE_FAILED',
                 description=f"Failed to add blacklist rule due to validation errors: {', '.join(errors)}",
                 user=current_user,
                 status='failed',
@@ -1058,8 +1066,8 @@ def add_blacklist_rule():
             flash(f"Blacklist rule '{rule_name}' added successfully!", 'success')
             app_logger.info(f"Blacklist rule ID {new_rule.id} ('{new_rule.rule_name}') added by {current_user.username}.")
             log_activity(
-                event_type='BLACKLIST_RULE_ADD_SUCCESS',
-                description=f"Blacklist rule '{new_rule.rule_name}' (ID: {new_rule.id}, Sequence: {new_rule.sequence}) was added.",
+                event_type='BLACKLIST_RULE_CREATED',
+                description=f"Blacklist rule '{new_rule.rule_name}' (ID: {new_rule.id}, Sequence: {new_rule.sequence}) was created.",
                 user=current_user,
                 related_resource_id=new_rule.id,
                 related_resource_type='BlacklistRule'
@@ -1070,7 +1078,7 @@ def add_blacklist_rule():
             flash(f"Error adding blacklist rule: {e}", 'error')
             app_logger.error(f"Error adding blacklist rule by {current_user.username}: {e}", exc_info=True)
             log_activity(
-                event_type='BLACKLIST_RULE_ADD_FAILED',
+                event_type='BLACKLIST_RULE_FAILED',
                 description=f"Failed to add blacklist rule '{rule_name}' (Sequence: {sequence}): {str(e)}",
                 user=current_user,
                 status='failed',

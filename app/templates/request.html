@@ -249,9 +249,9 @@
                     } else {
                         responseMessageDiv.classList.add('bg-red-100', 'text-red-800');
                         if (result.ticket_status === 'closed' && result.reason === 'destination_not_found') {
-                            responseMessageDiv.innerHTML = `<p class="font-bold">Destination Route Not Found:</p><p>${result.message}</p><p>Ticket ID ${result.rule_id} has been closed.</p>`;
+                            responseMessageDiv.innerHTML = `<p class="font-bold">Destination Route Not Found:</p><p>${result.message}</p><p>Request ID ${result.rule_id} has been closed.</p>`;
                         } else if (result.ticket_status === 'failed' && result.reason === 'pathfinding_error') {
-                            responseMessageDiv.innerHTML = `<p class="font-bold">Pathfinding Failed:</p><p>${result.message}</p><p>Ticket ID ${result.rule_id} marked as failed.</p>`;
+                            responseMessageDiv.innerHTML = `<p class="font-bold">Pathfinding Failed:</p><p>${result.message}</p><p>Request ID ${result.rule_id} marked as failed.</p>`;
                         } else {
                             let errorsHtml = '';
                             if (result.errors && result.errors.length > 0) {
