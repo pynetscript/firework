@@ -66,9 +66,6 @@ class ActivityLogEntry(db.Model):
     related_resource_id = db.Column(db.Integer, nullable=True) # e.g., network_request_id
     related_resource_type = db.Column(db.String(50), nullable=True) # e.g., 'NetworkRequest', 'User' (for login/logout)
 
-    # Optional: Define a relationship to the User model if it exists
-    # user = db.relationship('User', backref='activity_logs') # This is now defined in the User model itself
-
     def __repr__(self):
         return f"<ActivityLogEntry {self.timestamp} - {self.username} - {self.event_type}>"
 

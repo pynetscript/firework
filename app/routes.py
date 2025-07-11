@@ -233,7 +233,58 @@ def get_system_status():
 #                         REQUEST ROUTES                              #
 #######################################################################
 
-@routes.route('/request-form')
+@routes.route('/request')
+@login_required
+def request_list():
+    """
+    Displays the list of all network rule requests.
+    Accessible by all authenticated users.
+    """
+    query = FirewallRule.query
+
+    if current_user.has_role('superadmin') or current_user.has_role('admin'):
+        rules = query.order_by(FirewallRule.created_at.desc()).all() # Admins see all
+    else: # For requester, approver, implementer
+        rules = query.filter(FirewallRule.status.in_([
+            'Pending',
+            'Pending Pre-Check',
+            'Pending Implementation',
+            'Provisioning',
+            'Provisioning Failed',
+            'Completed',
+            'Completed - Implemented',
+            'Completed - No Provisioning Needed',
+            'Completed - Route Not Found',
+            "Declined by Implementer",
+            "Denied by Approver",
+            "Partially Implemented - Requires Attention",
+            "Canceled"
+        ])).order_by(FirewallRule.created_at.desc()).all()
+
+    # Enrich rules with usernames
+    for rule in rules:
+        if rule.requester_id:
+            requester = User.query.get(rule.requester_id)
+            rule.requester_username = requester.username if requester else ''
+        else:
+            rule.requester_username = ''
+
+        if rule.approver_id:
+            approver = User.query.get(rule.approver_id)
+            rule.approver_username = approver.username if approver else ''
+        else:
+            rule.approver_username = ''
+
+        if rule.implementer_id:
+            implementer = User.query.get(rule.implementer_id)
+            rule.implementer_username = implementer.username if implementer else ''
+        else:
+            rule.implementer_username = ''
+
+    # Pass rules to the template
+    return render_template('request.html', title='Request', rules=rules)
+
+@routes.route('/request/add')
 @login_required
 @roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
 def request_form():
@@ -243,7 +294,7 @@ def request_form():
     """
     return render_template('request_form.html')
 
-@routes.route('/submit-request', methods=['POST'])
+@routes.route('/request/submit', methods=['POST'])
 @login_required
 @roles_required('superadmin', 'admin', 'requester', 'approver', 'implementer')
 def submit_request():
@@ -492,7 +543,7 @@ def submit_request():
             return jsonify({
                 "status": "success",
                 "message": flash_message,
-                "redirect_url": url_for('routes.task_results'),
+                "redirect_url": url_for('routes.request_list'),
                 "rule_id": db_rule.id,  # Include the rule ID
                 "status_detail": db_rule.status,  # Include the detailed status
                 "approval_status": db_rule.approval_status, # Include approval status
@@ -536,58 +587,7 @@ def submit_request():
         flash(f"An unexpected error occurred during pre-check: {e}. Please contact support.", 'error')
         return redirect(url_for('routes.request_form'))
 
-@routes.route('/task-results')
-@login_required
-def task_results():
-    """
-    Displays the list of all network rule requests.
-    Accessible by all authenticated users.
-    """
-    query = FirewallRule.query
-
-    if current_user.has_role('superadmin') or current_user.has_role('admin'):
-        rules = query.order_by(FirewallRule.created_at.desc()).all() # Admins see all
-    else: # For requester, approver, implementer
-        rules = query.filter(FirewallRule.status.in_([
-            'Pending',
-            'Pending Pre-Check',
-            'Pending Implementation',
-            'Provisioning',
-            'Provisioning Failed',
-            'Completed',
-            'Completed - Implemented',
-            'Completed - No Provisioning Needed',
-            'Completed - Route Not Found',
-            "Declined by Implementer",
-            "Denied by Approver",
-            "Partially Implemented - Requires Attention",
-            "Canceled"
-        ])).order_by(FirewallRule.created_at.desc()).all()
-
-    # Enrich rules with usernames
-    for rule in rules:
-        if rule.requester_id:
-            requester = User.query.get(rule.requester_id)
-            rule.requester_username = requester.username if requester else ''
-        else:
-            rule.requester_username = ''
-
-        if rule.approver_id:
-            approver = User.query.get(rule.approver_id)
-            rule.approver_username = approver.username if approver else ''
-        else:
-            rule.approver_username = ''
-
-        if rule.implementer_id:
-            implementer = User.query.get(rule.implementer_id)
-            rule.implementer_username = implementer.username if implementer else ''
-        else:
-            rule.implementer_username = ''
-
-    # Pass rules to the template
-    return render_template('task_results.html', title='Request', rules=rules)
-
-@routes.route('/cancel-request/<int:rule_id>', methods=['POST'])
+@routes.route('/request/cancel/<int:rule_id>', methods=['POST'])
 @login_required
 def cancel_request(rule_id):
     """
@@ -658,7 +658,7 @@ def approvals_list():
         else:
             rule.implementer_username = ''
 
-    return render_template('approvals_list.html', rules=rules)
+    return render_template('approval_list.html', rules=rules)
 
 
 @routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
@@ -893,7 +893,7 @@ def blacklist_rules_list():
     Displays a list of all blacklist rules.
     Accessible only by superadmin and admin roles.
     """
-    return render_template('blacklist_rules_list.html')
+    return render_template('blacklist_rule_list.html')
 
 @routes.route('/admin/blacklist-rules/add', methods=['GET', 'POST'])
 @login_required
@@ -955,7 +955,7 @@ def add_blacklist_rule():
             for error in errors:
                 flash(error, 'error')
             app_logger.warning(f"Validation errors for new blacklist rule from {current_user.username}: {errors}")
-            return render_template('add_blacklist_form.html',
+            return render_template('blacklist_rule_add.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description)
@@ -980,12 +980,12 @@ def add_blacklist_rule():
             db.session.rollback()
             flash(f"Error adding blacklist rule: {e}", 'error')
             app_logger.error(f"Error adding blacklist rule by {current_user.username}: {e}", exc_info=True)
-            return render_template('add_blacklist_form.html',
+            return render_template('blacklist_rule_add.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description)
 
-    return render_template('add_blacklist_form.html')
+    return render_template('blacklist_rule_add.html')
 
 
 @routes.route('/admin/blacklist-rules/detail/<int:rule_id>')
@@ -1081,7 +1081,7 @@ def edit_blacklist_rule(rule_id):
             for error in errors:
                 flash(error, 'error')
             app_logger.warning(f"Validation errors for editing blacklist rule {rule.id} from {current_user.username}: {errors}")
-            return render_template('add_blacklist_form.html',
+            return render_template('blacklist_rule_add.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description,
@@ -1105,7 +1105,7 @@ def edit_blacklist_rule(rule_id):
             db.session.rollback()
             flash(f'Error updating blacklist rule: {e}', 'error')
             app_logger.error(f"Error updating blacklist rule {rule.id} by {current_user.username}: {e}", exc_info=True)
-            return render_template('add_blacklist_form.html',
+            return render_template('blacklist_rule_add.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description,
@@ -1113,7 +1113,7 @@ def edit_blacklist_rule(rule_id):
 
     # For GET requests (initial load of the edit page)
     # Populate the form with the existing rule's data
-    return render_template('add_blacklist_form.html',
+    return render_template('blacklist_rule_add.html',
                            sequence=rule.sequence,
                            rule_name=rule.rule_name,
                            enabled=rule.enabled,
