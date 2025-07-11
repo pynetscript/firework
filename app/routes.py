@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, abort
 from app.models import FirewallRule, BlacklistRule, db, User, ActivityLogEntry
+from app.utils import log_activity
 import ipaddress
 import json
 import logging
@@ -56,62 +57,48 @@ def get_usage_color(percentage, amber_threshold, red_threshold):
     else:
         return 'green'
 
-def log_activity(event_type, description, user=None, username=None, user_id=None, related_resource_id=None, related_resource_type=None):
-    """
-    Records an activity entry into the database.
-
-    Args:
-        event_type (str): Categorization of the event (e.g., 'USER_LOGIN', 'REQUEST_CREATED').
-        description (str): A human-readable message describing the activity.
-        user (User, optional): The User object performing the action. If provided, its id and username will be used.
-        username (str, optional): The username to log if a User object is not provided.
-        user_id (int, optional): The user ID to log if a User object is not provided.
-        related_resource_id (int, optional): ID of a related resource (e.g., FirewallRule ID). Defaults to None.
-        related_resource_type (str, optional): Type of the related resource (e.g., 'FirewallRule'). Defaults to None.
-    """
-    logged_user_id = None
-    logged_username = "System" # Default to "System" for actions not tied to a specific user
-
-    if user:
-        logged_user_id = user.id
-        logged_username = user.username
-    elif username: # Use provided username if no user object
-        logged_username = username
-        logged_user_id = user_id # Use provided user_id if no user object, and username is present
-    # If neither user nor username is provided, it remains "System" with None for user_id
-
-    try:
-        new_log = ActivityLogEntry(
-            timestamp=datetime.utcnow(),
-            user_id=logged_user_id,
-            username=logged_username,
-            event_type=event_type,
-            description=description,
-            related_resource_id=related_resource_id,
-            related_resource_type=related_resource_type
-        )
-        db.session.add(new_log)
-        db.session.commit()
-        #app_logger.info(f"Activity logged: {event_type} by {logged_username} - {description}")
-    except Exception as e:
-        db.session.rollback() # Rollback in case of error
-        app_logger.error(f"Failed to log activity: {e}", exc_info=True)
-
 #######################################################################
-#                           MAIN ROUTES                               #
+#                           HOME ROUTES                               #
 #######################################################################
 
 @routes.route('/')
-@routes.route('/home')
+@routes.route('/home', methods=['GET'])
+@login_required
 def home():
     """
     Redirects unauthenticated users to the login page.
-    Redirects authenticated users to the task results page.
+    Redirects authenticated users to the dashboard with paginated activity logs.
     """
+
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
-    recent_activities = ActivityLogEntry.query.order_by(ActivityLogEntry.timestamp.desc()).limit(20).all()
-    return render_template('dashboard.html', title='Dashboard', recent_activities=recent_activities)
+
+    # --- Pagination
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    search_query = request.args.get('search', '', type=str).strip()
+    query = ActivityLogEntry.query.order_by(ActivityLogEntry.timestamp.desc())
+
+    if search_query:
+        query = query.filter(
+            db.or_(
+                ActivityLogEntry.username.ilike(f'%{search_query}%'),
+                ActivityLogEntry.event_type.ilike(f'%{search_query}%'),
+                ActivityLogEntry.description.ilike(f'%{search_query}%'),
+                ActivityLogEntry.related_resource_type.ilike(f'%{search_query}%')
+            )
+        )
+
+    paginated_activities = query.paginate(page=page, per_page=per_page, error_out=False)
+    recent_activities = paginated_activities.items
+
+    return render_template(
+        'dashboard.html',
+        title='Dashboard',
+        recent_activities=recent_activities,
+        pagination=paginated_activities,
+        search_query=search_query
+    )
 
 @routes.route('/api/dashboard/application-status')
 @login_required
@@ -137,7 +124,7 @@ def get_application_status():
 def get_system_status():
     system_status = {}
 
-    # --- CPU Load ---
+    # --- CPU ---
     try:
         cpu_percent = psutil.cpu_percent(interval=0.5)
         system_status['cpu_load'] = {
@@ -147,7 +134,7 @@ def get_system_status():
     except Exception:
         system_status['cpu_load'] = {'text': 'N/A', 'color': 'gray'}
 
-    # --- Memory Load ---
+    # --- Memory ---
     try:
         mem = psutil.virtual_memory()
         mem_percent = mem.percent
@@ -158,7 +145,7 @@ def get_system_status():
     except Exception:
         system_status['memory_load'] = {'text': 'N/A', 'color': 'gray'}
 
-    # --- Disk Space Left ---
+    # --- Disk ---
     try:
         disk = psutil.disk_usage('/')
         disk_percent = disk.percent
@@ -170,16 +157,13 @@ def get_system_status():
         system_status['disk_space'] = {'text': 'N/A', 'color': 'gray'}
 
     # --- Bandwidth (ens33) ---
-    # NOTE: Bandwidth calculation needs a time interval, which is handled on the frontend.
-    # Here, we'll just send the raw bytes. The color logic for bandwidth will be on the frontend
-    # after the rate is calculated.
     try:
         net_io = psutil.net_io_counters(pernic=True)
         if 'ens33' in net_io:
             ens33_stats = net_io['ens33']
             system_status['bandwidth_bytes_sent'] = ens33_stats.bytes_sent
             system_status['bandwidth_bytes_recv'] = ens33_stats.bytes_recv
-            system_status['bandwidth_error'] = None # Clear any previous error
+            system_status['bandwidth_error'] = None
         else:
             system_status['bandwidth_bytes_sent'] = 0
             system_status['bandwidth_bytes_recv'] = 0
@@ -192,14 +176,14 @@ def get_system_status():
     # Placeholder for bandwidth color - this will be calculated on frontend
     system_status['bandwidth'] = {'text': 'Calculating...', 'color': 'gray'}
 
-    # Firework status
+    # Firework
     firework_is_running = True # If this API endpoint is reachable, Firework app is generally running
     system_status['firework_app'] = {
         'text': 'Running' if firework_is_running else 'Not Running',
         'color': 'green' if firework_is_running else 'red'
     }
 
-    # Gunicorn Status
+    # Gunicorn
     try:
         gunicorn_is_running = any("gunicorn" in p.name() for p in psutil.process_iter())
         gunicorn_status_text = 'Running' if gunicorn_is_running else 'Not Running'
@@ -213,14 +197,14 @@ def get_system_status():
         'color': gunicorn_status_color
     }
 
-    # Nginx Status
+    # Nginx
     nginx_is_running = check_port('127.0.0.1', 80) or check_port('127.0.0.1', 443)
     system_status['nginx'] = {
         'text': 'Running' if nginx_is_running else 'Not Running',
         'color': 'green' if nginx_is_running else 'red'
     }
 
-    # PostgreSQL Status
+    # PostgreSQL
     postgres_is_running = check_port('127.0.0.1', 5432)
     system_status['postgres'] = {
         'text': 'Running' if postgres_is_running else 'Not Running',
@@ -598,11 +582,25 @@ def cancel_request(rule_id):
     # Only the user who created the request can cancel it.
     if rule.requester_id != current_user.id:
         app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
+        log_activity(
+            event_type='UNAUTHORIZED_CANCELLATION_ATTEMPT',
+            description=f"Unauthorized attempt to cancel rule ID {rule_id} by user {current_user.username}.",
+            user=current_user,
+            related_resource_id=rule_id,
+            related_resource_type='FirewallRule'
+        )
         return jsonify({"status": "error", "message": "You are not authorized to cancel this request. Only the original creator can cancel their own requests."}), 403
 
     # Define statuses that CANNOT be cancelled via this method.
     if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
         app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}. Current status: {rule.status}")
+        log_activity(
+            event_type='CANCELLATION_BLOCKED',
+            description=f"Cancellation of rule ID {rule_id} by {current_user.username} blocked due to current status: '{rule.status}'.",
+            user=current_user,
+            related_resource_id=rule_id,
+            related_resource_type='FirewallRule'
+        )
         return jsonify({"status": "error", "message": f"This request is currently '{rule.status}' and cannot be cancelled."}), 400
 
     try:
@@ -610,6 +608,13 @@ def cancel_request(rule_id):
         rule.approval_status = "Cancelled"
         db.session.commit()
         app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
+        log_activity(
+            event_type='REQUEST_CANCELLED',
+            description=f"Firewall rule ID {rule_id} successfully cancelled.",
+            user=current_user,
+            related_resource_id=rule_id,
+            related_resource_type='FirewallRule'
+        )
         return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
     except Exception as e:
         db.session.rollback()
@@ -1197,17 +1202,20 @@ def profile():
     Allows a user to view and update their profile information (email, first/last name, password).
     Username and role are not editable by the user.
     """
-    user = current_user # The Flask-Login current_user object
+    user = current_user
 
     if request.method == 'POST':
+        original_email = user.email
+        original_first_name = user.first_name
+        original_last_name = user.last_name
+
         email = request.form.get('email')
         first_name = request.form.get('first_name')
         last_name = request.form.get('last_name')
-        password = request.form.get('password') # New password, if provided
+        password = request.form.get('password')
 
         errors = []
 
-        # Validate email
         if not email:
             errors.append('Email is required.')
         elif email != user.email and User.query.filter_by(email=email).first():
@@ -1217,22 +1225,54 @@ def profile():
             for error in errors:
                 flash(error, 'error')
             app_logger.warning(f"Profile update failed for {user.username}: {errors}")
-            # Re-render the form with current data and errors
             return render_template('profile.html', user=user)
+
+        password_changed = False
+        if password:
+            user.set_password(password)
+            flash('Password updated successfully.', 'success')
+            app_logger.info(f"User {user.username} (ID: {user.id}) updated their password.")
+            log_activity(
+                event_type='USER_PASSWORD_CHANGED',
+                description=f"User {user.username} (ID: {user.id}) changed their own password.",
+                user=user,
+                related_resource_id=user.id,
+                related_resource_type='User'
+            )
+            password_changed = True
 
         user.email = email
         user.first_name = first_name
         user.last_name = last_name
 
-        if password: # Only update password if a new one is provided
-            user.set_password(password)
-            flash('Password updated successfully.', 'success')
-            app_logger.info(f"User {user.username} (ID: {user.id}) updated their password.")
-
         try:
+            changes_made = False
+            change_details = []
+
+            if user.email != original_email:
+                change_details.append(f"Email changed from '{original_email}' to '{user.email}'")
+                changes_made = True
+            if user.first_name != original_first_name:
+                change_details.append(f"First name changed from '{original_first_name}' to '{user.first_name}'")
+                changes_made = True
+            if user.last_name != original_last_name:
+                change_details.append(f"Last name changed from '{original_last_name}' to '{user.last_name}'")
+                changes_made = True
+
             db.session.commit()
             flash('Profile updated successfully!', 'success')
             app_logger.info(f"User {user.username} (ID: {user.id}) updated their profile.")
+
+            if changes_made:
+                log_activity(
+                    event_type='PROFILE_UPDATED',
+                    description=f"User {user.username} (ID: {user.id}) updated his profile. Changes: {'; '.join(change_details)}",
+                    user=user,
+                    related_resource_id=user.id,
+                    related_resource_type='User'
+                )
+            elif  password_changed:
+                pass
             return redirect(url_for('routes.profile'))
         except Exception as e:
             db.session.rollback()
