@@ -960,6 +960,13 @@ def add_blacklist_rule():
             for error in errors:
                 flash(error, 'error')
             app_logger.warning(f"Validation errors for new blacklist rule from {current_user.username}: {errors}")
+            log_activity(
+                event_type='BLACKLIST_RULE_ADD_FAILED',
+                description=f"Failed to add blacklist rule due to validation errors: {', '.join(errors)}",
+                user=current_user,
+                status='failed',
+                context={'rule_name': rule_name, 'sequence': sequence, 'source_ip': source_ip, 'destination_ip': destination_ip}
+            )
             return render_template('blacklist_rule_add.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
@@ -980,11 +987,25 @@ def add_blacklist_rule():
             db.session.commit()
             flash(f"Blacklist rule '{rule_name}' added successfully!", 'success')
             app_logger.info(f"Blacklist rule ID {new_rule.id} ('{new_rule.rule_name}') added by {current_user.username}.")
+            log_activity(
+                event_type='BLACKLIST_RULE_ADDED',
+                description=f"Blacklist rule '{new_rule.rule_name}' (ID: {new_rule.id}, Sequence: {new_rule.sequence}) was added.",
+                user=current_user,
+                related_resource_id=new_rule.id,
+                related_resource_type='BlacklistRule'
+            )
             return redirect(url_for('routes.blacklist_rules_list')) # Redirect to the list view
         except Exception as e:
             db.session.rollback()
             flash(f"Error adding blacklist rule: {e}", 'error')
             app_logger.error(f"Error adding blacklist rule by {current_user.username}: {e}", exc_info=True)
+            log_activity(
+                event_type='BLACKLIST_RULE_ADD_FAILED',
+                description=f"Failed to add blacklist rule '{rule_name}' (Sequence: {sequence}): {str(e)}",
+                user=current_user,
+                status='failed',
+                context={'rule_name': rule_name, 'sequence': sequence}
+            )
             return render_template('blacklist_rule_add.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
@@ -1017,6 +1038,13 @@ def delete_blacklist_rule(rule_id):
         db.session.commit()
         flash(f"Blacklist rule '{rule.rule_name}' deleted successfully.", 'success')
         app_logger.info(f"Blacklist rule ID {rule_id} ('{rule.rule_name}') deleted by {current_user.username}.")
+        log_activity(
+            event_type='BLACKLIST_RULE_DELETED',
+            description=f"Blacklist rule '{rule_name}' (ID: {rule_id}) was deleted.",
+            user=current_user,
+            related_resource_id=rule_id,
+            related_resource_type='BlacklistRule'
+        )
         return jsonify({"status": "success", "message": "Rule deleted."}), 200
     except Exception as e:
         db.session.rollback()
@@ -1025,7 +1053,7 @@ def delete_blacklist_rule(rule_id):
 
 @routes.route('/admin/blacklist-rules/edit/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
-@roles_required('superadmin', 'admin') # Ensure only authorized users can edit
+@roles_required('superadmin', 'admin')
 def edit_blacklist_rule(rule_id):
     """
     Allows superadmin and admin roles to edit existing blacklist rules.
@@ -1136,12 +1164,9 @@ def api_get_blacklist_rules():
     """
     API endpoint to retrieve all blacklist rules as JSON.
     """
-    app_logger.info("API: Attempting to retrieve all blacklist rules.")
     try:
         rules = BlacklistRule.query.order_by(BlacklistRule.sequence.asc()).all()
-        # Convert list of model objects to list of dictionaries
         rules_data = [rule.to_dict() for rule in rules]
-        app_logger.info(f"API: Successfully retrieved {len(rules_data)} blacklist rules.")
         return jsonify(rules_data), 200
     except Exception as e:
         app_logger.error(f"API: Error retrieving blacklist rules: {e}", exc_info=True)
@@ -1156,16 +1181,42 @@ def api_delete_single_blacklist_rule(rule_id):
     """
     rule = BlacklistRule.query.get(rule_id)
     if not rule:
+        app_logger.warning(f"API: Attempted to delete non-existent blacklist rule ID {rule_id} by {current_user.username}.")
+        log_activity(
+            event_type='BLACKLIST_RULE_DELETE_FAILED',
+            description=f"Attempted to delete non-existent blacklist rule ID {rule_id}.",
+            user=current_user,
+            status='failed',
+            related_resource_id=rule_id,
+            related_resource_type='BlacklistRule'
+        )
         return jsonify({"status": "error", "message": f"Rule with ID {rule_id} not found."}), 404
+
+    rule_name = rule.rule_name
 
     try:
         db.session.delete(rule)
         db.session.commit()
         app_logger.info(f"API: Blacklist rule ID {rule_id} deleted by {current_user.username}.")
+        log_activity(
+            event_type='BLACKLIST_RULE_DELETED',
+            description=f"Blacklist rule '{rule_name}' (ID: {rule_id},) was deleted.",
+            user=current_user,
+            related_resource_id=rule_id,
+            related_resource_type='BlacklistRule'
+        )
         return jsonify({"status": "success", "message": f"Rule ID {rule_id} deleted successfully."}), 200
     except Exception as e:
         db.session.rollback()
         app_logger.error(f"API: Error deleting single blacklist rule {rule_id} by {current_user.username}: {e}", exc_info=True)
+        log_activity(
+            event_type='BLACKLIST_RULE_DELETE_FAILED',
+            description=f"Failed to delete blacklist rule '{rule_name}' (ID: {rule_id}).: {str(e)}",
+            user=current_user,
+            related_resource_id=rule_id,
+            related_resource_type='BlacklistRule',
+            status='failed'
+        )
         return jsonify({"status": "error", "message": f"An error occurred during deletion: {e}"}), 500
 
 @routes.route('/api/blacklist_rules', methods=['DELETE'])
@@ -1177,21 +1228,59 @@ def api_delete_blacklist_rules():
     """
     data = request.get_json()
     rule_ids = data.get('ids', [])
+
     if not rule_ids:
+        log_activity(
+            event_type='BLACKLIST_RULES_BULK_DELETE_FAILED',
+            description="Attempted bulk deletion of blacklist rules but no IDs were provided.",
+            user=current_user
+        )
+        app_logger.warning(f"API: No rule IDs provided for bulk deletion by {current_user.username}.")
         return jsonify({"status": "error", "message": "No rule IDs provided for deletion."}), 400
 
+    deleted_rule_names = []
+    deleted_rule_ids = []
+
     try:
-        deleted_count = 0
+        rules_to_delete = []
         for rule_id in rule_ids:
             rule = BlacklistRule.query.get(rule_id)
             if rule:
-                db.session.delete(rule)
-                deleted_count += 1
+                deleted_rule_names.append(rule.rule_name)
+                deleted_rule_ids.append(rule.id)
+                rules_to_delete.append(rule)
+            else:
+                log_activity(
+                    event_type='BLACKLIST_RULE_DELETE_FAILED',
+                    description=f"Attempted to delete non-existent blacklist rule ID {rule_id} during bulk operation.",
+                    user=current_user,
+                    related_resource_id=rule_id,
+                    related_resource_type='BlacklistRule'
+                )
+                app_logger.warning(f"API: Blacklist rule ID {rule_id} not found for bulk deletion by {current_user.username}.")
+
+        for rule_obj in rules_to_delete:
+            db.session.delete(rule_obj)
+
         db.session.commit()
-        app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {rule_ids}.")
+
+        deleted_count = len(deleted_rule_ids)
+        app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {deleted_rule_ids}.")
+
+        log_activity(
+            event_type='BLACKLIST_RULES_BULK_DELETED',
+            description=f"{deleted_count} blacklist rule(s) deleted via API. IDs: {deleted_rule_ids}. Names: {deleted_rule_names}.",
+            user=current_user
+        )
         return jsonify({"status": "success", "message": f"{deleted_count} rule(s) deleted successfully."}), 200
+
     except Exception as e:
         db.session.rollback()
+        log_activity(
+            event_type='BLACKLIST_RULES_BULK_DELETE_FAILED',
+            description=f"Failed to delete multiple blacklist rules via API. Attempted IDs: {rule_ids}. Error: {str(e)}",
+            user=current_user
+        )
         app_logger.error(f"API: Error deleting multiple blacklist rules by {current_user.username}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": f"An error occurred during bulk deletion: {e}"}), 500
 
