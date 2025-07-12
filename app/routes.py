@@ -285,7 +285,7 @@ def submit_request():
     """
     Handles the submission of a new request.
     Performs validation, blacklist checks, initiates a pre-check,
-    creates the rule in the DB, and determines initial status based on pre-check results and roles.
+    creates the request in the DB, and determines initial status based on pre-check results and roles.
     """
     app_logger.info(f"Received new request from {current_user.username}")
     source_ip = request.form.get('source_ip')
@@ -422,11 +422,12 @@ def submit_request():
 
             if ip_match and protocol_match and port_match:
                 blacklisted = True
-                app_logger.warning(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} BLOCKED by blacklist rule ID {rule.id} ('{rule.rule_name}') for user {current_user.username}.")
+                app_logger.warning(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} denied by blacklist rule ID {rule.id} ('{rule.rule_name}') for user {current_user.username}.")
                 break # Exit loop if a blacklist rule matches
 
         if blacklisted:
-            flash(f"Your request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} matches a blacklisted pattern and cannot be submitted. Contact an administrator for details.", 'error')
+            flash(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.", 'error')
+            app_logger.info(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.")
             log_activity(
                 event_type='BLACKLIST_DENIED',
                 description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.",
@@ -434,19 +435,19 @@ def submit_request():
             )
             return jsonify({"status": "error", "message": "Request blocked by blacklist rule."}), 403
         else:
+            app_logger.info(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] by user {current_user.username} passed blacklist check.")
             log_activity(
                 event_type='BLACKLIST_PASSED',
                 description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] passed blacklist check.",
                 user=current_user
             )
-            app_logger.info(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} passed blacklist check for user {current_user.username}.")
 
     except Exception as e:
         app_logger.error(f"Error during blacklist check: {e}", exc_info=True)
-        flash("An error occurred during the blacklist check. Please try again or contact support.", 'error')
+        flash("Error occurred during blacklist check.", 'error')
         log_activity(
             event_type='BLACKLIST_ERROR',
-            description=f"Error during blacklist check: {str(e)}. Matching rule was '{matching_blacklist_rule_name or 'None'}'.",
+            description=f"Error occured during blacklist check: {str(e)}. Matching rule was '{matching_blacklist_rule_name or 'None'}'.",
             user=current_user
         )
         return jsonify({"status": "error", "message": "Internal error during blacklist check."}), 500
@@ -498,9 +499,9 @@ def submit_request():
             db_rule.pre_check_result_stderr = stderr
 
             if stdout:
-                app_logger.info(f"Pre-check STDOUT for rule {db_rule.id}:\n{stdout}")
+                app_logger.info(f"Pre-check STDOUT for request ID {db_rule.id}:\n{stdout}")
             if stderr:
-                app_logger.error(f"Pre-check STDERR for rule {db_rule.id}:\n{stderr}")
+                app_logger.error(f"Pre-check STDERR for request ID {db_rule.id}:\n{stderr}")
 
             # Determine final status after pre-check, considering user roles for approval
             # Check for no firewalls in path first, regardless of user role
@@ -508,8 +509,8 @@ def submit_request():
                 # Scenario: No firewalls found in the path for ANY role
                 db_rule.status = 'Completed - No Provisioning Needed'
                 db_rule.approval_status = 'Approved' # Implied approval if no action is needed
-                flash_message = f"Request ID {db_rule.id} submitted. No firewalls discovered in the traffic path. Marked as 'Completed - No Provisioning Needed'."
-                app_logger.info(f"Rule {db_rule.id} completed as no firewalls were found in path for user {current_user.username}.")
+                flash_message = f"Request ID {db_rule.id} submitted as no firewalls were involved."
+                app_logger.info(f"Request ID {db_rule.id} submitted by '{current_user.username}' completed as no firewalls were involved.")
                 log_activity(
                     event_type='REQUEST_COMPLETED',
                     description=f"Request ID {db_rule.id} submitted by '{current_user.username}' completed as no firewalls were involved.",
@@ -524,11 +525,11 @@ def submit_request():
 
                 if db_rule.firewalls_to_provision and len(db_rule.firewalls_to_provision) > 0:
                     db_rule.status = 'Pending Implementation'
-                    flash_message = f"Request ID {db_rule.id} auto-approved and moved to 'Pending Implementation' after pre-check."
-                    app_logger.info(f"Rule {db_rule.id} approved and pending implementation on: {', '.join(db_rule.firewalls_to_provision)}")
+                    flash_message = f"Request ID {db_rule.id} auto-approved and pending implementation."
+                    app_logger.info(f"Request ID {db_rule.id} auto-approved and pending implementation on firewalls: {', '.join(db_rule.firewalls_to_provision)}")
                     log_activity(
                         event_type='REQUEST_CREATED',
-                        description=f"Request ID {db_rule.id} submitted by '{current_user.username}' auto-approved and pending implementation on firewalls: {', '.join(db_rule.firewalls_to_provision)}.",
+                        description=f"Request ID {db_rule.id} auto-approved and pending implementation on firewalls: {', '.join(db_rule.firewalls_to_provision)}.",
                         user=current_user,
                         related_resource_id=db_rule.id,
                         related_resource_type='FirewallRule'
@@ -537,22 +538,22 @@ def submit_request():
                 elif db_rule.firewalls_involved and db_rule.firewalls_already_configured and \
                      set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured):
                     db_rule.status = 'Completed - No Provisioning Needed'
-                    flash_message = f"Request ID {db_rule.id} auto-approved. Policy already exists on all involved firewalls. Marked as 'Completed - No Provisioning Needed'."
-                    app_logger.info(f"Rule {db_rule.id} completed as policy already exists on: {', '.join(db_rule.firewalls_already_configured)}")
+                    flash_message = f"Request ID {db_rule.id} auto-approved and completed as policy already exists on: {', '.join(db_rule.firewalls_already_configured)}"
+                    app_logger.info(f"Request ID {db_rule.id} auto-approved and completed as policy already exists on: {', '.join(db_rule.firewalls_already_configured)}")
                     log_activity(
                         event_type='REQUEST_COMPLETED',
-                        description=f"Request ID {db_rule.id} submitted by '{current_user.username}' auto-approved and found to be already configured on all involved firewalls: {', '.join(db_rule.firewalls_already_configured)}.",
+                        description=f"Request ID {db_rule.id} auto-approved and completed as policy already exists on: {', '.join(db_rule.firewalls_already_configured)}.",
                         user=current_user,
                         related_resource_id=db_rule.id,
                         related_resource_type='FirewallRule'
                     )
                 else:
                     db_rule.status = 'Approved - Review Needed'
-                    flash_message = f"Request ID {db_rule.id} auto-approved. Review needed for its final status."
-                    app_logger.warning(f"Rule {db_rule.id} auto-approved but requires review: firewalls_involved={db_rule.firewalls_involved}, firewalls_to_provision={db_rule.firewalls_to_provision}, firewalls_already_configured={db_rule.firewalls_already_configured}")
+                    flash_message = f"Request ID {db_rule.id} auto-approved but requires manual review. firewalls_involved={db_rule.firewalls_involved}, firewalls_to_provision={db_rule.firewalls_to_provision}, firewalls_already_configured={db_rule.firewalls_already_configured}"
+                    app_logger.warning(f"Request ID {db_rule.id} auto-approved but requires manual review: firewalls_involved={db_rule.firewalls_involved}, firewalls_to_provision={db_rule.firewalls_to_provision}, firewalls_already_configured={db_rule.firewalls_already_configured}")
                     log_activity(
                         event_type='REQUEST_CREATED_REVIEW_NEEDED',
-                        description=f"Request ID {db_rule.id} submitted by '{current_user.username}' auto-approved but requires manual review.",
+                        description=f"Request ID {db_rule.id} auto-approved but requires manual review. firewalls_involved={db_rule.firewalls_involved}, firewalls_to_provision={db_rule.firewalls_to_provision}, firewalls_already_configured={db_rule.firewalls_already_configured}",
                         user=current_user,
                         related_resource_id=db_rule.id,
                         related_resource_type='FirewallRule'
@@ -563,11 +564,11 @@ def submit_request():
                 # For non-admin roles when firewalls ARE involved, it goes to Pending Approval
                 db_rule.status = 'Pending'
                 db_rule.approval_status = 'Pending Approval'
-                flash_message = f"Request ID {db_rule.id} submitted successfully and is now 'Pending' after pre-check."
-                app_logger.info(f"Request ID {db_rule.id} moved to 'Pending Approval' after pre-check for user {current_user.username}.")
+                flash_message = f"Request ID {db_rule.id} submitted successfully"
+                app_logger.info(f"Request ID {db_rule.id} submitted successfully by user {current_user.username}.")
                 log_activity(
                     event_type='REQUEST_CREATED',
-                    description=f"Request ID {db_rule.id} submitted by '{current_user.username}' is now pending approval.",
+                    description=f"Request ID {db_rule.id} submitted successfully.",
                     user=current_user,
                     related_resource_id=db_rule.id,
                     related_resource_type='FirewallRule'
@@ -599,10 +600,10 @@ def submit_request():
             db_rule.status = 'Completed - Route Not Found'
             db_rule.approval_status = 'Closed'
             db.session.commit()
-        app_logger.warning(f"Network automation pre-check indicated unreachable destination for rule {new_rule.id}: {e}")
+        app_logger.warning(f"Network automation pre-check failed for request ID {new_rule.id}: {e}")
         log_activity(
             event_type='REQUEST_FAILED',
-            description=f"Pre-check failed for request ID {new_rule.id}. Error: {str(e)}.",
+            description=f"Network automation pre-check failed for request ID {new_rule.id}. Error: {str(e)}.",
             user=current_user,
             related_resource_id=new_rule.id,
             related_resource_type='FirewallRule'
@@ -621,11 +622,11 @@ def submit_request():
             db_rule.status = 'Pre-Check Failed'
             db_rule.approval_status = 'Pre-Check Failed'
             db.session.commit()
-        app_logger.error(f"Network automation pre-check failed for rule {new_rule.id}: {e}", exc_info=True)
+        app_logger.error(f"Network automation pre-check failed for request ID {new_rule.id}: {e}", exc_info=True)
         flash(f"Pre-check failed: {e}", 'error')
         log_activity(
             event_type='REQUEST_FAILED',
-            description=f"Pre-check failed for request ID {new_rule.id}. Runtime error: {str(e)}.",
+            description=f"Netowkr automation pre-check failed for request ID {new_rule.id}. Runtime error: {str(e)}.",
             user=current_user,
             related_resource_id=new_rule.id,
             related_resource_type='FirewallRule'
@@ -638,11 +639,11 @@ def submit_request():
             db_rule.status = 'Error During Pre-Check'
             db_rule.approval_status = 'Error'
             db.session.commit()
-        app_logger.critical(f"An unexpected error occurred during network automation pre-check for rule {new_rule.id}: {e}", exc_info=True)
-        flash(f"An unexpected error occurred during pre-check: {e}. Please contact the administartor.", 'error')
+        app_logger.critical(f"An unexpected error occurred during network automation pre-check for request ID {new_rule.id}: {e}", exc_info=True)
+        flash(f"An unexpected error occurred during network automation pre-check: {e}.", 'error')
         log_activity(
             event_type='REQUEST_FAILED',
-            description=f"An unexpected error occurred during pre-check for request ID {new_rule.id}. Please contact the administrator. Error: {str(e)}.",
+            description=f"An unexpected error occurred during network automation pre-check for request ID {new_rule.id}. Error: {str(e)}.",
             user=current_user,
             related_resource_id=new_rule.id,
             related_resource_type='FirewallRule'
@@ -661,20 +662,20 @@ def cancel_request(rule_id):
     if rule.requester_id != current_user.id:
         app_logger.warning(f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.")
         log_activity(
-            event_type='UNAUTHORIZED_CANCELLATION_ATTEMPT',
-            description=f"Unauthorized attempt to cancel rule ID {rule_id} by user {current_user.username}.",
+            event_type='REQUEST_CANCEL_FAILED',
+            description=f"Unauthorized cancellation attempt: User {current_user.username} (ID: {current_user.id}) tried to cancel rule {rule_id} owned by {rule.requester_id}.",
             user=current_user,
             related_resource_id=rule_id,
             related_resource_type='FirewallRule'
         )
-        return jsonify({"status": "error", "message": "You are not authorized to cancel this request. Only the original creator can cancel their own requests."}), 403
+        return jsonify({"status": "error", "message": "You are not authorized to cancel this request. Only the owner of this request can cancel it."}), 403
 
     # Define statuses that CANNOT be cancelled via this method.
     if rule.status in ['Completed', 'Completed - No Provisioning Needed', 'Denied by Approver', 'Declined by Implementer', 'Partially Implemented - Requires Attention', 'Provisioning In Progress']:
         app_logger.warning(f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}. Current status: {rule.status}")
         log_activity(
-            event_type='CANCELLATION_BLOCKED',
-            description=f"Cancellation of rule ID {rule_id} by {current_user.username} blocked due to current status: '{rule.status}'.",
+            event_type='REQUEST_CANCEL_DENIED',
+            description=f"Cancellation attempt failed: Rule ID {rule_id} (status: {rule.status}) cannot be cancelled by {current_user.username}. Current status: {rule.status}",
             user=current_user,
             related_resource_id=rule_id,
             related_resource_type='FirewallRule'
@@ -685,15 +686,15 @@ def cancel_request(rule_id):
         rule.status = "Cancelled"
         rule.approval_status = "Cancelled"
         db.session.commit()
-        app_logger.info(f"request ID {rule_id} cancelled by {current_user.username} (ID: {current_user.id}).")
+        app_logger.info(f"Request ID {rule_id} sucessfully cancelled by {current_user.username}.")
         log_activity(
-            event_type='REQUEST_CANCELLED',
+            event_type='REQUEST_CANCEL_SUCCESS',
             description=f"Request ID {rule_id} successfully cancelled.",
             user=current_user,
             related_resource_id=rule_id,
             related_resource_type='FirewallRule'
         )
-        return jsonify({"status": "success", "message": f"Request ID {rule_id} has been successfully cancelled."}), 200
+        return jsonify({"status": "success", "message": f"Request ID {rule_id} successfully cancelled."}), 200
     except Exception as e:
         db.session.rollback()
         app_logger.error(f"Error cancelling request ID {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
@@ -758,7 +759,7 @@ def approve_deny_request(rule_id):
 
     # Ensure only pending rules can be acted upon by non-superadmin/admin approvers
     if not current_user.has_role('superadmin', 'admin') and rule.approval_status != 'Pending Approval':
-        flash('This request is not pending approval.', 'warning')
+        flash('Request ID {rule.id} is not pending approval.', 'warning')
         app_logger.info(f"Request ID {rule.id} is not pedning approval. Status: {rule.approval_status}).")
         log_activity(
             event_type='APPROVAL_FAILED',
@@ -780,11 +781,11 @@ def approve_deny_request(rule_id):
             rule.status = 'Pending Implementation'
             rule.approval_status = 'Approved'
             rule.approved_at = datetime.utcnow()
-            flash(f"Request ID {rule.id} successfully approved!", 'success')
-            app_logger.info(f"Request ID {rule.id} approved by {current_user.username}. Status: {rule.status}.")
+            flash(f"Request ID {rule.id} sucessfully approved.", 'success')
+            app_logger.info(f"Request ID {rule.id} sucessfully approved by {current_user.username}. Status: {rule.status}.")
             log_activity(
                 event_type='APPROVAL_SUCCESSFUL',
-                description=f"Request ID {rule.id} successfully approved! Justification: '{justification or 'None'}'.",
+                description=f"Request ID {rule.id} sucessfully approved. Justification: '{justification or 'None'}'.",
                 user=current_user,
                 related_resource_id=rule.id,
                 related_resource_type='FirewallRule'
@@ -793,11 +794,11 @@ def approve_deny_request(rule_id):
         elif action == 'deny':
             rule.status = 'Denied by Approver'
             rule.approval_status = 'Denied'
-            flash(f"Rule {rule.id} denied by {current_user.username}.", 'info')
-            app_logger.info(f"Rule {rule.id} denied by {current_user.username}.")
+            flash(f"Request ID {rule.id} denied by {current_user.username}.", 'info')
+            app_logger.info(f"Request ID {rule.id} denied by {current_user.username}.")
             log_activity(
                 event_type='APPROVAL_DENIED',
-                description=f"Request ID {rule.id} denied by approver '{current_user.username}'. Justification: '{justification or 'None'}'.",
+                description=f"Request ID {rule.id} denied by '{current_user.username}'. Justification: '{justification or 'None'}'.",
                 user=current_user,
                 related_resource_id=rule.id,
                 related_resource_type='FirewallRule'
@@ -807,8 +808,8 @@ def approve_deny_request(rule_id):
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            app_logger.error(f"Error committing rule ID {rule.id} by {current_user.username}: {e}", exc_info=True)
-            flash(f"Error commiting rule ID {rule.id}: {e}", 'error')
+            app_logger.error(f"Request ID {rule.id} by {current_user.username} failed: {e}", exc_info=True)
+            flash(f"Request ID {rule.id} failed: {e}", 'error')
             log_activity(
                 event_type='APPROVAL_FAILED',
                 description=f"Request ID {rule.id} failed. Action: {action}. Error: {str(e)}.",
@@ -866,7 +867,6 @@ def implementation_list():
 
     return render_template('implementation_list.html', rules=rules)
 
-
 @routes.route('/implementation/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
 @roles_required('superadmin', 'admin', 'implementer')
@@ -898,7 +898,15 @@ def implement_rule(rule_id):
 
     # Only allow action if status is 'Pending Implementation' or 'Partially Implemented - Requires Attention'
     if rule.status not in ['Pending Implementation', 'Partially Implemented - Requires Attention']:
-        flash(f"Rule ID {rule_id} is currently '{rule.status}'. No implementation action available.", 'info')
+        flash(f"Request ID {rule_id} is currently '{rule.status}'. No implementation action available.", 'info')
+        app_logger.info(f"Request ID {rule_id} is currently '{rule.status}'. No implementation action available.")
+        log_activity(
+            event_type='IMPLEMENTATION_FAILED',
+            description=f"Request ID {rule.id} is currently '{rule.status}'. No implementation action available.",
+            user=current_user,
+            related_resource_id=rule.id,
+            related_resource_type='FirewallRule'
+        )
         return redirect(url_for('routes.implementation_list'))
 
     if request.method == 'POST':
@@ -912,10 +920,17 @@ def implement_rule(rule_id):
         if action == 'provision':
             firewalls_to_provision = rule.firewalls_to_provision if rule.firewalls_to_provision else []
             if not firewalls_to_provision:
-                flash("No firewalls marked for provisioning for this rule. Marking as 'Completed - No Provisioning Needed'.", 'info')
                 rule.status = 'Completed - No Provisioning Needed'
                 db.session.commit()
-                app_logger.info(f"Rule {rule.id} marked as 'Completed - No Provisioning Needed' by {current_user.username} (no firewalls to provision).")
+                flash(f"Request ID {rule.id} marked as 'Completed - No Provisioning Needed' (no firewalls to provision).", 'info')
+                app_logger.info(f"Request ID {rule.id} marked as 'Completed - No Provisioning Needed' by {current_user.username} (no firewalls to provision).")
+                log_activity(
+                    event_type='IMPLEMENTATION_NOT_REQUIRED',
+                    description=f"Request ID {rule.id} marked as 'Completed - No Provisioning Needed' by {current_user.username} (no firewalls to provision).",
+                    user=current_user,
+                    related_resource_id=rule.id,
+                    related_resource_type='FirewallRule'
+                )
                 return redirect(url_for('routes.implementation_list'))
 
             try:
@@ -937,9 +952,9 @@ def implement_rule(rule_id):
                     )
 
                 if provision_stdout:
-                    app_logger.info(f"Provisioning STDOUT for rule {rule.id}:\n{provision_stdout}")
+                    app_logger.info(f"Provisioning STDOUT for request ID {rule.id}:\n{provision_stdout}")
                 if provision_stderr:
-                    app_logger.error(f"Provisioning STDERR for rule {rule.id}:\n{provision_stderr}")
+                    app_logger.error(f"Provisioning STDERR for request ID {rule.id}:\n{provision_stderr}")
 
                 rule.firewalls_already_configured = list(set(rule.firewalls_already_configured or []) | set(successfully_provisioned))
                 rule.firewalls_to_provision = [fw for fw in firewalls_to_provision if fw not in successfully_provisioned]
@@ -960,44 +975,112 @@ def implement_rule(rule_id):
                             provisioned_firewalls=successfully_provisioned
                         )
                     if post_check_stdout:
-                        app_logger.info(f"Post-check STDOUT for rule {rule.id}:\n{post_check_stdout}")
+                        app_logger.info(f"Post-check STDOUT for request ID {rule.id}:\n{post_check_stdout}")
                     if post_check_stderr:
-                        app_logger.error(f"Post-check STDERR for rule {rule.id}:\n{post_check_stderr}")
+                        app_logger.error(f"Post-check STDERR for request ID {rule.id}:\n{post_check_stderr}")
 
                     if len(unverified_firewalls) == 0:
                         rule.status = 'Completed'
-                        flash(f"Rule ID {rule.id} successfully provisioned and verified on all target firewalls.", 'success')
+                        flash(f"Request ID {rule.id} successfully provisioned and verified on all target firewalls.", 'success')
+                        app_logger.info(f"Request ID {rule.id} by '{current_user.username} successfully provisioned and verified on all target firewalls: {', '.join(successfully_provisioned)}.")
+                        log_activity(
+                             event_type='IMPLEMENTATION_SUCCESS',
+                             description=f"Request ID {rule.id} successfully provisioned and verified on all target firewalls: {', '.join(successfully_provisioned)}.",
+                             user=current_user,
+                             related_resource_id=rule.id,
+                             related_resource_type='FirewallRule'
+                         )
                     else:
                         rule.status = 'Partially Implemented - Requires Attention'
-                        flash(f"Rule ID {rule.id} provisioned but failed verification on some firewalls: {', '.join(unverified_firewalls)}. Please investigate.", 'warning')
+                        flash(f"Request ID {rule.id} provisioned but failed verification on some firewalls: {', '.join(unverified_firewalls)}. Provisioned on: {', '.join(successfully_provisioned)}.", 'warning')
+                        app_logger.info(f"Request ID {rule.id} by '{current_user.username} provisioned but failed verification on some firewalls: {', '.join(unverified_firewalls)}. Provisioned on: {', '.join(successfully_provisioned)}.")
+                        log_activity(
+                            event_type='IMPLEMENTATION_PARTIAL',
+                            description=f"Request ID {rule.id} provisioned but failed verification on some firewalls: {', '.join(unverified_firewalls)}. Provisioned on: {', '.join(successfully_provisioned)}.",
+                            user=current_user,
+                            related_resource_id=rule.id,
+                            related_resource_type='FirewallRule'
+                        )
 
                 else: # Some provisioning failed
                     if len(successfully_provisioned) > 0:
                         rule.status = 'Partially Implemented - Requires Attention'
-                        flash(f"Rule ID {rule.id} partially provisioned. Failed on: {', '.join(failed_provisioning)}. Please investigate.", 'warning')
+                        flash(f"Request ID {rule.id} partially implemented. Failed on: {', '.join(failed_provisioning)}. Successful on: {', '.join(successfully_provisioned)}.", 'warning')
+                        app_logger.info(f"Request ID {rule.id} partially implemented by '{current_user.username}'. Failed on: {', '.join(failed_provisioning)}. Successful on: {', '.join(successfully_provisioned)}.")
+                        log_activity(
+                            event_type='IMPLEMENTATION_PARTIAL',
+                            description=f"Request ID {rule.id} partially implemented. Failed on: {', '.join(failed_provisioning)}. Successful on: {', '.join(successfully_provisioned)}.",
+                            user=current_user,
+                            related_resource_id=rule.id,
+                            related_resource_type='FirewallRule'
+                        )
                     else:
                         rule.status = 'Provisioning Failed'
-                        flash(f"Rule ID {rule.id} failed provisioning on all target firewalls: {', '.join(failed_provisioning)}.", 'error')
+                        flash(f"Request ID {rule.id} failed implementation on all target firewalls: {', '.join(failed_provisioning)}.", 'error')
+                        app_logger.info(f"Request ID {rule.id} failed implementation by '{current_user.username}' on all target firewalls {', '.join(failed_provisioning)}.")
+                        log_activity(
+                            event_type='IMPLEMENTATION_FAILED',
+                            description=f"Request ID {rule.id} failed implementation on all target firewalls {', '.join(failed_provisioning)}.",
+                            user=current_user,
+                            related_resource_id=rule.id,
+                            related_resource_type='FirewallRule'
+                        )
 
                 db.session.commit()
-                app_logger.info(f"Implementer {current_user.username} (ID: {current_user.id}) processed rule {rule.id}. Final status: {rule.status}.")
+                app_logger.info(f"Implementer {current_user.username} processed request ID {rule.id}. Final status: {rule.status}.")
 
             except RuntimeError as e:
                 rule.status = 'Implementation Failed - Automation Error'
                 db.session.commit()
-                app_logger.error(f"Automation failed during provisioning/post-check for rule {rule.id}: {e}", exc_info=True)
-                flash(f"Implementation failed due to automation error: {e}", 'error')
+                flash(f"Automation runtime error during implementation for request ID {rule.id}: {e}", 'error')
+                app_logger.error(f"Automation runtime error during implementation for request ID {rule.id}: {e}", exc_info=True)
+                log_activity(
+                    event_type='IMPLEMENTATION_ERROR',
+                    description=f"Automation runtime error during implementation for request ID {rule.id}. Error: {str(e)}.",
+                    user=current_user,
+                    related_resource_id=rule.id,
+                    related_resource_type='FirewallRule'
+                )
             except Exception as e:
                 rule.status = 'Implementation Failed - Unexpected Error'
                 db.session.commit()
-                app_logger.critical(f"An unexpected error occurred during implementation for rule {rule.id}: {e}", exc_info=True)
-                flash(f"An unexpected error occurred during implementation: {e}", 'error')
+                flash(f"An unexpected error occurred during implementation for request ID {rule.id}: {e}", 'error')
+                app_logger.critical(f"An unexpected error occurred during implementation for request ID {rule.id}: {e}", exc_info=True)
+                log_activity(
+                    event_type='IMPLEMENTATION_ERROR',
+                    description=f"An unexpected error occurred during implementation for request ID {rule.id}. Error: {str(e)}.",
+                    user=current_user,
+                    related_resource_id=rule.id,
+                    related_resource_type='FirewallRule'
+                )
 
         elif action == 'decline_implementation':
             rule.status = 'Declined by Implementer'
-            flash(f"Rule ID {rule.id} implementation declined.", 'warning')
             db.session.commit()
-            app_logger.info(f"Implementer {current_user.username} (ID: {current_user.id}) declined implementation for rule {rule.id}.")
+            flash(f"Implementer '{current_user.username}' declined implementation for request ID {rule.id}.", 'warning')
+            app_logger.info(f"Implementer '{current_user.username}' declined implementation for request ID {rule.id}.")
+            log_activity(
+                event_type='IMPLEMENTATION_DECLINED',
+                description=f"Implementer '{current_user.username}' declined implementation for request ID {rule.id}. Justification: '{implementer_comment or 'None'}'.",
+                user=current_user,
+                related_resource_id=rule.id,
+                related_resource_type='FirewallRule'
+            )
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Failed to commit final implementation status for request ID {rule.id}: {e}", 'error')
+            app_logger.error(f"Failed to commit final implementation status for request ID {rule.id} by {current_user.username}: {e}", exc_info=True)
+            log_activity(
+                event_type='IMPLEMENTATION_ERROR',
+                description=f"Failed to commit final implementation status for request ID {rule.id}. Action: {action}. Error: {str(e)}.",
+                user=current_user,
+                related_resource_id=rule.id,
+                related_resource_type='FirewallRule'
+            )
+            return redirect(url_for('routes.implementation_list'))
 
         return redirect(url_for('routes.implementation_list'))
 
@@ -1072,7 +1155,7 @@ def add_blacklist_rule():
         if errors:
             for error in errors:
                 flash(error, 'error')
-            app_logger.warning(f"Validation errors for new blacklist rule from {current_user.username}: {errors}")
+            app_logger.warning(f"User {current_user.username} failed to add blacklist rule due to validation errors: {errors}")
             log_activity(
                 event_type='BLACKLIST_RULE_FAILED',
                 description=f"Failed to add blacklist rule due to validation errors: {', '.join(errors)}",
@@ -1107,7 +1190,7 @@ def add_blacklist_rule():
                 related_resource_id=new_rule.id,
                 related_resource_type='BlacklistRule'
             )
-            return redirect(url_for('routes.blacklist_rules_list')) # Redirect to the list view
+            return redirect(url_for('routes.blacklist_rules_list'))
         except Exception as e:
             db.session.rollback()
             flash(f"Error adding blacklist rule: {e}", 'error')
