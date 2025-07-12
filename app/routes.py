@@ -429,14 +429,14 @@ def submit_request():
             flash(f"Your request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} matches a blacklisted pattern and cannot be submitted. Contact an administrator for details.", 'error')
             log_activity(
                 event_type='BLACKLIST_DENIED',
-                description=f"Request ID {rule.id} was denied by blacklist rule '{matching_blacklist_rule_name or 'N/A'}'.",
+                description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.",
                 user=current_user
             )
             return jsonify({"status": "error", "message": "Request blocked by blacklist rule."}), 403
         else:
             log_activity(
                 event_type='BLACKLIST_PASSED',
-                description=f"Request ID {rule.id} passed the blacklist check.",
+                description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] passed blacklist check.",
                 user=current_user
             )
             app_logger.info(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} passed blacklist check for user {current_user.username}.")
@@ -759,6 +759,14 @@ def approve_deny_request(rule_id):
     # Ensure only pending rules can be acted upon by non-superadmin/admin approvers
     if not current_user.has_role('superadmin', 'admin') and rule.approval_status != 'Pending Approval':
         flash('This request is not pending approval.', 'warning')
+        app_logger.info(f"Request ID {rule.id} is not pedning approval. Status: {rule.approval_status}).")
+        log_activity(
+            event_type='APPROVAL_FAILED',
+            description=f"Request ID {rule.id} is not pending approval. Status: {rule.approval_status}).",
+            user=current_user,
+            related_resource_id=rule.id,
+            related_resource_type='FirewallRule'
+        )
         return redirect(url_for('routes.approvals_list'))
 
     if request.method == 'POST':
@@ -772,17 +780,44 @@ def approve_deny_request(rule_id):
             rule.status = 'Pending Implementation'
             rule.approval_status = 'Approved'
             rule.approved_at = datetime.utcnow()
-            app_logger.info(f"Rule {rule.id} approved by {current_user.username}. Status: {rule.status}.")
-
-            flash(f"Rule {rule.id} approved and moved to 'Pending Implementation'. Automation will be triggered separately.", 'success')
+            flash(f"Request ID {rule.id} successfully approved!", 'success')
+            app_logger.info(f"Request ID {rule.id} approved by {current_user.username}. Status: {rule.status}.")
+            log_activity(
+                event_type='APPROVAL_SUCCESSFUL',
+                description=f"Request ID {rule.id} successfully approved! Justification: '{justification or 'None'}'.",
+                user=current_user,
+                related_resource_id=rule.id,
+                related_resource_type='FirewallRule'
+            )
 
         elif action == 'deny':
             rule.status = 'Denied by Approver'
             rule.approval_status = 'Denied'
             flash(f"Rule {rule.id} denied by {current_user.username}.", 'info')
             app_logger.info(f"Rule {rule.id} denied by {current_user.username}.")
+            log_activity(
+                event_type='APPROVAL_DENIED',
+                description=f"Request ID {rule.id} denied by approver '{current_user.username}'. Justification: '{justification or 'None'}'.",
+                user=current_user,
+                related_resource_id=rule.id,
+                related_resource_type='FirewallRule'
+            )
 
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app_logger.error(f"Error committing rule ID {rule.id} by {current_user.username}: {e}", exc_info=True)
+            flash(f"Error commiting rule ID {rule.id}: {e}", 'error')
+            log_activity(
+                event_type='APPROVAL_FAILED',
+                description=f"Request ID {rule.id} failed. Action: {action}. Error: {str(e)}.",
+                user=current_user,
+                related_resource_id=rule.id,
+                related_resource_type='FirewallRule'
+            )
+            return redirect(url_for('routes.approvals_list'))
+
         return redirect(url_for('routes.approvals_list'))
 
     # Enrich rule with usernames for display
