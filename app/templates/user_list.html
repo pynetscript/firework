@@ -42,7 +42,7 @@
                     <td class="py-3 px-6 text-left whitespace-nowrap">{{ user.created_at.strftime('%Y-%m-%d %H:%M:%S') if user.created_at else 'N/A' }}</td>
                     <td class="py-3 px-6 text-left whitespace-nowrap">{{ user.last_login.strftime('%Y-%m-%d %H:%M:%S') if user.last_login else 'N/A' }}</td>
                     <td class="py-3 px-6 text-center whitespace-nowrap">
-                        <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                        <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
                             Edit
                         </a>
                         <button type="button" onclick="confirmDelete({{ user.id }}, '{{ user.username }}')" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105 ml-2">
