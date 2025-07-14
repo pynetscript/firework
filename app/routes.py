@@ -704,7 +704,7 @@ def cancel_request(rule_id):
 #                         APPROVAL ROUTES                             #
 #######################################################################
 
-@routes.route('/approvals')
+@routes.route('/approval')
 @login_required
 @roles_required('superadmin', 'admin', 'approver')
 def approvals_list():
@@ -745,7 +745,7 @@ def approvals_list():
     return render_template('approval_list.html', rules=rules)
 
 
-@routes.route('/approvals/<int:rule_id>', methods=['GET', 'POST'])
+@routes.route('/approval/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
 @roles_required('superadmin', 'admin', 'approver')
 @no_self_approval # Prevent approvers from approving their own requests
@@ -1608,3 +1608,25 @@ def profile():
             return render_template('profile.html', user=user)
 
     return render_template('profile.html', user=user)
+
+@routes.route('/admin/debug')
+@login_required
+@roles_required('superadmin')
+def admin_debug():
+    """
+    Displays the content of the firework_app.log file for superadmins.
+    """
+    log_content = "Log file not found."
+    log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'firework_app.log')
+
+    try:
+        with open(log_file_path, 'r') as f:
+            log_content = f.read()
+    except FileNotFoundError:
+        app_logger.error(f"firework_app.log not found at: {log_file_path}")
+        flash("Error: Log file 'firework_app.log' could not be found.", 'error')
+    except Exception as e:
+        app_logger.error(f"Error reading firework_app.log: {e}", exc_info=True)
+        flash(f"Error reading log file: {e}", 'error')
+
+    return render_template('debug.html', log_content=log_content, title='Debug')

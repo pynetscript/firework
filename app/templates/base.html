@@ -127,6 +127,7 @@
 
                 {%- if current_user.has_role('superadmin') -%}
                     <a href="{{ url_for('admin.user_list') }}" class="font-bold">Users</a>
+                    <a href="{{ url_for('routes.admin_debug') }}" class="font-bold">Debug</a>
                 {%- endif -%}
             {%- endif -%}
         </nav>
