@@ -15,15 +15,56 @@
         </div>
         <div class="bg-gray-50 p-4 rounded-md">
             <p class="text-gray-600"><strong>Description:</strong> <span class="text-gray-800">{{ rule.description if rule.description else 'N/A' }}</span></p>
-            <p class="text-gray-600"><strong>Created At:</strong> <span class="font-semibold text-gray-800">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else 'N/A' }}</span></p>
-            <p class="text-gray-600"><strong>Last Updated:</strong> <span class="font-semibold text-gray-800">{{ rule.updated_at.strftime('%Y-%m-%d %H:%M:%S') if rule.updated_at else 'N/A' }}</span></p>
+            {# Added data-utc-timestamp for JS conversion #}
+            <p class="text-gray-600"><strong>Created At:</strong> <span id="created_at_display" class="font-semibold text-gray-800" data-utc-timestamp="{{ created_at_utc }}">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if rule.created_at else 'N/A' }}</span></p>
+            {# Added data-utc-timestamp for JS conversion #}
+            <p class="text-gray-600"><strong>Last Updated:</strong> <span id="updated_at_display" class="font-semibold text-gray-800" data-utc-timestamp="{{ updated_at_utc }}">{{ rule.updated_at.strftime('%Y-%m-%d %H:%M:%S UTC') if rule.updated_at else 'N/A' }}</span></p>
         </div>
     </div>
 
     <div class="flex justify-center mt-8 space-x-4">
         <a href="{{ url_for('routes.blacklist_rules_list') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">← Back to Blacklist Rules</a>
-        {# You might add an Edit button here later if edit functionality is implemented #}
-        {# <a href="{{ url_for('routes.edit_blacklist_rule', rule_id=rule.id) }}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Edit Rule</a> #}
+        <a href="{{ url_for('routes.edit_blacklist_rule', rule_id=rule.id) }}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Edit Rule</a>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const timestampElements = [
+            { id: 'created_at_display', utc_timestamp: '{{ created_at_utc }}' },
+            { id: 'updated_at_display', utc_timestamp: '{{ updated_at_utc }}' }
+        ];
+
+        timestampElements.forEach(item => {
+            const element = document.getElementById(item.id);
+            const utcTimestampString = item.utc_timestamp;
+
+            if (element && utcTimestampString && utcTimestampString !== 'None') {
+                try {
+                    // Create a JavaScript Date object. It automatically handles the client's local timezone
+                    const date = new Date(utcTimestampString);
+
+                    // Format the date for display in a user-friendly way
+                    const options = {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false // Use 24-hour format
+                    };
+                    // 'en-GB' format gives DD/MM/YYYY, HH:MM:SS
+                    element.textContent = date.toLocaleString('en-GB', options);
+                } catch (e) {
+                    console.error('Error parsing date:', e);
+                    element.textContent = 'Invalid Date'; // Fallback for parsing errors
+                }
+            } else if (element) {
+                // If timestamp is None or not provided, ensure it shows N/A or appropriate fallback
+                element.textContent = 'N/A';
+            }
+        });
+    });
+</script>
 {% endblock %}

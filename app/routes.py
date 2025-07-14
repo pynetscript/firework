@@ -1217,17 +1217,24 @@ def add_blacklist_rule():
                            is_edit_mode=False,
                            title='Add New Blacklist Rule')
 
-
 @routes.route('/admin/blacklist-rules/detail/<int:rule_id>')
 @login_required
 @roles_required('superadmin', 'admin')
 def blacklist_rule_detail(rule_id):
     """
-    Displays detailed information for a specific blacklist rule.
+    Displays detailed information about a specific blacklist rule.
     """
     rule = BlacklistRule.query.get_or_404(rule_id)
-    return render_template('blacklist_rule_detail.html', rule=rule)
 
+    created_at_utc = rule.created_at.isoformat() + 'Z' if rule.created_at else None
+    updated_at_utc = rule.updated_at.isoformat() + 'Z' if rule.updated_at else None
+
+    return render_template('blacklist_rule_detail.html',
+                           rule=rule,
+                           created_at_utc=created_at_utc,
+                           updated_at_utc=updated_at_utc,
+                           title=f'Blacklist Rule Details (ID: {rule_id})'
+                           )
 
 @routes.route('/admin/blacklist-rules/delete/<int:rule_id>', methods=['POST'])
 @login_required
