@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8">
+{# Main container uses w-full max-w-full to maximize horizontal space #}
+<div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 w-full max-w-full">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Blacklist Rules</h2>
 
     <div class="flex justify-between mb-6 items-center">
@@ -18,35 +19,42 @@
         </button>
     </div>
 
-    <div class="overflow-x-auto">
+    {# --- START: Table wrapper - Removing overflow-x-auto entirely. #}
+    {# We want to force it to fit, so no scrolling should be explicitly allowed here. #}
+    <div>
         <table id="blacklistRulesTable" class="min-w-full bg-white rounded-lg overflow-hidden shadow-md table-auto">
             <thead>
-                <tr class="bg-gray-100 text-gray-700 uppercase text-sm leading-normal">
-                    <th class="py-3 px-6 text-left">
+                <tr class="bg-gray-100 text-gray-700 uppercase text-xs leading-normal"> {# Reduced text size to xs for headers #}
+                    <th class="py-2 px-2 text-left"> {# Reduced padding #}
                         <input type="checkbox" id="selectAllRules" class="form-checkbox h-4 w-4 text-blue-600 rounded">
                     </th>
-                    <th class="py-3 px-6 text-left">ID</th>
-                    <th class="py-3 px-6 text-left">Sequence</th>
-                    <th class="py-3 px-6 text-left">Rule Name</th>
-                    <th class="py-3 px-6 text-left">Enabled</th>
-                    <th class="py-3 px-6 text-left">Source IP</th>
-                    <th class="py-3 px-6 text-left">Destination IP</th>
-                    <th class="py-3 px-6 text-left">Protocol</th>
-                    <th class="py-3 px-6 text-left">Port</th>
-                    <th class="py-3 px-6 text-left">Description</th>
-                    <th class="py-3 px-6 text-center">Actions</th>
+                    <th class="py-2 px-2 text-left whitespace-nowrap">ID</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left whitespace-nowrap">Sequence</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left whitespace-nowrap">Rule Name</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left whitespace-nowrap">Enabled</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left whitespace-nowrap">Source IP</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left whitespace-nowrap">Destination IP</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left whitespace-nowrap">Protocol</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left whitespace-nowrap">Port</th> {# Reduced padding #}
+                    <th class="py-2 px-2 text-left">Description</th> {# Reduced padding, REMOVED whitespace-nowrap for wrapping #}
+                    <th class="py-2 px-2 text-left">Created At</th> {# Reduced padding, REMOVED whitespace-nowrap for wrapping #}
+                    <th class="py-2 px-2 text-left">Created By</th> {# Reduced padding, REMOVED whitespace-nowrap for wrapping #}
+                    <th class="py-2 px-2 text-left">Last Updated</th> {# Reduced padding, REMOVED whitespace-nowrap for wrapping #}
+                    <th class="py-2 px-2 text-left">Last Updated By</th> {# Reduced padding, REMOVED whitespace-nowrap for wrapping #}
+                    <th class="py-2 px-2 text-center whitespace-nowrap">Actions</th> {# Reduced padding, ENSURED whitespace-nowrap for buttons #}
                 </tr>
             </thead>
             <tbody class="text-gray-600 text-sm font-light">
                 <tr>
-                    <td colspan="11" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td>
+                    <td colspan="15" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td>
                 </tr>
             </tbody>
         </table>
     </div>
+    {# --- END: Table wrapper --- #}
+
     <div id="noRulesMessage" class="text-center text-gray-600 mt-4 hidden">No blacklist rules found.</div>
 
-    {# This div is for JavaScript-based messages (e.g., for bulk delete). Flask flash messages are handled in base.html #}
     <div id="responseMessage" class="mt-4 p-3 rounded-md text-center hidden"></div>
 
     <div class="text-center mt-8">
@@ -67,7 +75,7 @@
 
         // Function to load and display blacklist rules
         async function loadBlacklistRules() {
-            blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td></tr>`;
+            blacklistRulesTableBody.innerHTML = `<tr><td colspan="15" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td></tr>`;
             noRulesMessage.classList.add('hidden');
             deleteSelectedButton.classList.add('hidden'); // Hide delete button initially
             selectAllRulesCheckbox.checked = false; // Uncheck select all
@@ -83,7 +91,7 @@
                 filterBlacklistRules(); // Call filter function to render (initial render with empty search)
             } catch (error) {
                 console.error('Error fetching blacklist rules:', error);
-                blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-red-500">Failed to load rules. Please check server logs.</td></tr>`;
+                blacklistRulesTableBody.innerHTML = `<tr><td colspan="15" class="py-4 px-6 text-center text-red-500">Failed to load rules. Please check server logs.</td></tr>`;
                 showResponseMessage('Failed to load rules. Please check server logs.', 'error');
             }
         }
@@ -92,7 +100,6 @@
         function filterBlacklistRules() {
             const searchTerm = blacklistSearchInput.value.toLowerCase();
             const filteredRules = allBlacklistRules.filter(rule => {
-                // Adjust fields to search based on your requirements
                 return (rule.id.toString().toLowerCase().includes(searchTerm) ||
                         rule.sequence.toString().toLowerCase().includes(searchTerm) ||
                         rule.rule_name.toLowerCase().includes(searchTerm) ||
@@ -101,17 +108,47 @@
                         (rule.protocol && rule.protocol.toLowerCase().includes(searchTerm)) ||
                         (rule.destination_port && rule.destination_port.toString().toLowerCase().includes(searchTerm)) ||
                         (rule.description && rule.description.toLowerCase().includes(searchTerm)) ||
+                        (rule.created_at && formatTimestamp(rule.created_at, false).toLowerCase().includes(searchTerm)) ||
+                        (rule.created_by_username && rule.created_by_username.toLowerCase().includes(searchTerm)) ||
+                        (rule.updated_at && formatTimestamp(rule.updated_at, false).toLowerCase().includes(searchTerm)) ||
+                        (rule.last_updated_by_username && rule.last_updated_by_username.toLowerCase().includes(searchTerm)) ||
                         (rule.enabled ? 'yes' : 'no').includes(searchTerm));
             });
             renderRulesTable(filteredRules);
         }
+
+        // Helper for date formatting
+        const formatTimestamp = (timestamp, formattedHtml = true) => {
+            if (timestamp) {
+                try {
+                    const date = new Date(timestamp);
+                    const options = {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    };
+                    const formattedString = date.toLocaleString('en-GB', options);
+                    if (formattedHtml) {
+                        return `<span data-utc-timestamp="${timestamp}">${formattedString}</span>`;
+                    }
+                    return formattedString; // Return raw string for search
+                } catch (e) {
+                    console.error('Error parsing date:', e);
+                    return 'Invalid Date';
+                }
+            }
+            return 'N/A';
+        };
 
         // Function to render the rules table (now accepts filtered rules)
         function renderRulesTable(rulesToRender) {
             blacklistRulesTableBody.innerHTML = ''; // Clear existing rows
             if (rulesToRender.length === 0) {
                 noRulesMessage.classList.remove('hidden');
-                //blacklistRulesTableBody.innerHTML = `<tr><td colspan="11" class="py-4 px-6 text-center text-gray-500"></td></tr>`;
                 return;
             } else {
                 noRulesMessage.classList.add('hidden');
@@ -120,24 +157,29 @@
             rulesToRender.forEach(rule => {
                 const row = document.createElement('tr');
                 row.classList.add('border-b', 'border-gray-200', 'hover:bg-gray-100');
+
                 row.innerHTML = `
-                    <td class="py-3 px-6 text-left">
+                    <td class="py-2 px-2 text-left"> {# Reduced padding #}
                         <input type="checkbox" class="rule-checkbox form-checkbox h-4 w-4 text-blue-600 rounded" data-rule-id="${rule.id}">
                     </td>
-                    <td class="py-3 px-6 text-left whitespace-nowrap">
+                    <td class="py-2 px-2 text-left whitespace-nowrap"> {# Reduced padding #}
                         <a href="/admin/blacklist-rules/detail/${rule.id}" class="text-blue-600 hover:text-blue-800 hover:underline font-medium" data-rule-id="${rule.id}">
                             ${rule.id}
                         </a>
                     </td>
-                    <td class="py-3 px-6 text-left">${rule.sequence}</td>
-                    <td class="py-3 px-6 text-left">${rule.rule_name}</td>
-                    <td class="py-3 px-6 text-left">${rule.enabled ? 'Yes' : 'No'}</td>
-                    <td class="py-3 px-6 text-left">${rule.source_ip || 'Any'}</td>
-                    <td class="py-3 px-6 text-left">${rule.destination_ip || 'Any'}</td>
-                    <td class="py-3 px-6 text-left">${rule.protocol || 'Any'}</td>
-                    <td class="py-3 px-6 text-left">${rule.destination_port || 'Any'}</td>
-                    <td class="py-3 px-6 text-left">${rule.description || 'N/A'}</td>
-                    <td class="py-3 px-6 text-center">
+                    <td class="py-2 px-2 text-left whitespace-nowrap">${rule.sequence}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left whitespace-nowrap">${rule.rule_name}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left whitespace-nowrap">${rule.enabled ? 'Yes' : 'No'}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left whitespace-nowrap">${rule.source_ip || 'Any'}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left whitespace-nowrap">${rule.destination_ip || 'Any'}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left whitespace-nowrap">${rule.protocol || 'Any'}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left whitespace-nowrap">${rule.destination_port || 'Any'}</td> {# Reduced padding #}
+                    <td class="py-2 px-2 text-left">${rule.description || 'N/A'}</td> {# Reduced padding, REMOVED whitespace-nowrap #}
+                    <td class="py-2 px-2 text-left">${formatTimestamp(rule.created_at)}</td> {# Reduced padding, REMOVED whitespace-nowrap #}
+                    <td class="py-2 px-2 text-left">${rule.created_by_username || 'N/A'}</td> {# Reduced padding, REMOVED whitespace-nowrap #}
+                    <td class="py-2 px-2 text-left">${formatTimestamp(rule.updated_at)}</td> {# Reduced padding, REMOVED whitespace-nowrap #}
+                    <td class="py-2 px-2 text-left">${rule.last_updated_by_username || 'N/A'}</td> {# Reduced padding, REMOVED whitespace-nowrap #}
+                    <td class="py-2 px-2 text-center whitespace-nowrap"> {# Reduced padding, ENSURED whitespace-nowrap #}
                         <button class="edit-rule-btn bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded-md text-xs transition duration-300 ease-in-out transform hover:scale-105 mr-2" data-rule-id="${rule.id}">Edit</button>
                         <form data-delete-form action="/admin/blacklist-rules/delete/${rule.id}" method="POST" onsubmit="return confirm('Are you sure you want to delete rule ID ${rule.id}? This action cannot be undone.');" style="display:inline;">
                             <button type="submit" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-xs transition duration-300 ease-in-out transform hover:scale-105">
@@ -189,7 +231,7 @@
         // Handle Delete Selected Button (This remains an AJAX call)
         deleteSelectedButton.addEventListener('click', async function() {
             const selectedRuleIds = Array.from(document.querySelectorAll('.rule-checkbox:checked'))
-                                             .map(cb => cb.dataset.ruleId);
+                                     .map(cb => cb.dataset.ruleId);
             if (selectedRuleIds.length === 0) {
                 showResponseMessage('Please select at least one rule to delete.', 'error');
                 return;
@@ -200,7 +242,6 @@
             }
 
             try {
-                // Assuming /api/blacklist_rules handles bulk DELETE and returns JSON
                 const response = await fetch('/api/blacklist_rules', {
                     method: 'DELETE',
                     headers: {
@@ -249,4 +290,20 @@
         loadBlacklistRules();
     });
 </script>
+
+{# --- EMBEDDED STYLE BLOCK FOR HIDING SCROLLBAR (This is no longer needed as overflow-x-auto is removed from HTML) --- #}
+{# If you want no horizontal scroll, you *must* make content fit. #}
+<style>
+    /* These rules are included for completeness but will only apply if .no-scrollbar class is used */
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+</style>
+{# --- END: EMBEDDED STYLE BLOCK FOR SCROLLBAR --- #}
+
 {% endblock %}

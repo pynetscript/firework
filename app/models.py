@@ -1,7 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 import json
 from sqlalchemy.types import TypeDecorator, Text
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -141,8 +141,10 @@ class BlacklistRule(db.Model):
             'protocol': self.protocol,
             'destination_port': self.destination_port,
             'description': self.description,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None,
+            'created_by_username': self.creator.username if self.creator else None,
+            'last_updated_by_username': self.editor.username if self.editor else None
         }
 
 class Device(db.Model):
