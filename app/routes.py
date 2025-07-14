@@ -1289,77 +1289,98 @@ def edit_blacklist_rule(rule_id):
     """
     rule = BlacklistRule.query.get_or_404(rule_id)
 
+    # These variables will hold the data that populates the form fields.
+    # On a GET request, they get their initial values from the 'rule' object.
+    # On a POST request with errors, they get their values from the submitted form data.
+    sequence_data = rule.sequence
+    rule_name_data = rule.rule_name
+    enabled_data = rule.enabled
+    source_ip_data = rule.source_ip
+    destination_ip_data = rule.destination_ip
+    protocol_data = rule.protocol
+    destination_port_data = rule.destination_port
+    description_data = rule.description
+
     if request.method == 'POST':
-        sequence = request.form.get('sequence', type=int)
-        rule_name = request.form.get('rule_name')
-        enabled = request.form.get('enabled') == 'True'
-        source_ip = request.form.get('source_ip') or None
-        destination_ip = request.form.get('destination_ip') or None
-        protocol = request.form.get('protocol') or None
-        destination_port = request.form.get('destination_port') or None
-        description = request.form.get('description') or None
+        # Retrieve submitted form data
+        sequence_data = request.form.get('sequence', type=int)
+        rule_name_data = request.form.get('rule_name')
+        # Checkboxes send 'on' if checked, nothing if unchecked
+        enabled_data = request.form.get('enabled') == 'on'
+        source_ip_data = request.form.get('source_ip') or None
+        destination_ip_data = request.form.get('destination_ip') or None
+        protocol_data = request.form.get('protocol') or None
+        destination_port_data = request.form.get('destination_port') or None
+        description_data = request.form.get('description') or None
 
         errors = []
-        if not rule_name:
+        if not rule_name_data:
             errors.append("Rule Name is required.")
-        if sequence is None:
+        if sequence_data is None:
             errors.append("Sequence is required and must be an integer.")
-        # Check for sequence uniqueness only if it's being changed and conflicts with another rule
-        elif sequence != rule.sequence and BlacklistRule.query.filter_by(sequence=sequence).first():
-            errors.append(f"A rule with sequence {sequence} already exists. Please choose a unique sequence number.")
+        elif sequence_data != rule.sequence and BlacklistRule.query.filter_by(sequence=sequence_data).first():
+            errors.append(f"A rule with sequence {sequence_data} already exists. Please choose a unique sequence number.")
 
-        if source_ip:
+        # --- IP Address Validation ---
+        if source_ip_data:
             try:
-                ipaddress.ip_network(source_ip, strict=False)
+                ipaddress.ip_network(source_ip_data, strict=False)
             except ValueError:
                 errors.append("Invalid Source IP format.")
 
-        if destination_ip:
+        if destination_ip_data:
             try:
-                ipaddress.ip_network(destination_ip, strict=False)
+                ipaddress.ip_network(destination_ip_data, strict=False)
             except ValueError:
                 errors.append("Invalid Destination IP format.")
 
-        if protocol and protocol.lower() not in ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']:
+        # --- Protocol Validation ---
+        if protocol_data and protocol_data.lower() not in ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']:
             errors.append("Invalid Protocol. Must be tcp, udp, icmp, any, or protocol number.")
 
-        if destination_port:
-            if destination_port.lower() == 'any':
+        # --- Destination Port Validation ---
+        if destination_port_data:
+            if destination_port_data.lower() == 'any':
                 pass
             else:
                 try:
-                    port_num = int(destination_port)
+                    port_num = int(destination_port_data)
                     if not (0 <= port_num <= 65535):
                         errors.append("Invalid port number. Must be between 0-65535 or 'any'.")
                 except ValueError:
                     errors.append("Invalid port format. Must be a single port number (0-65535) or 'any'.")
 
-            if protocol and protocol.lower() in ['icmp', '1'] and destination_port and destination_port.lower() not in ['any', '']:
-                errors.append("For ICMP protocol, destination port should be 'any' or left blank.")
-            if protocol and protocol.lower() == 'any' and destination_port and destination_port.lower() not in ['any', '']:
-                errors.append("For 'any' protocol, destination port should be 'any' or left blank.")
+        if protocol_data and protocol_data.lower() in ['icmp', '1'] and destination_port_data and destination_port_data.lower() not in ['any', '']:
+            errors.append("For ICMP protocol, destination port should be 'any' or left blank.")
+        if protocol_data and protocol_data.lower() == 'any' and destination_port_data and destination_port_data.lower() not in ['any', '']:
+            errors.append("For 'any' protocol, destination port should be 'any' or left blank.")
 
         if errors:
+            # Flash all accumulated errors
             for error in errors:
                 flash(error, 'error')
             app_logger.warning(f"Validation errors for editing blacklist rule {rule.id} from {current_user.username}: {errors}")
+
+            # Re-render the form with the submitted data to preserve user input
             return render_template('blacklist_rule_add.html',
-                                   rule=rule,
-                                   sequence=sequence, rule_name=rule_name, enabled=enabled,
-                                   source_ip=source_ip, destination_ip=destination_ip,
-                                   protocol=protocol, destination_port=destination_port, description=description,
+                                   rule=rule, # Still pass the 'rule' object for rule.id in title
+                                   sequence=sequence_data, rule_name=rule_name_data, enabled=enabled_data,
+                                   source_ip=source_ip_data, destination_ip=destination_ip_data,
+                                   protocol=protocol_data, destination_port=destination_port_data,
+                                   description=description_data,
                                    title=f'Edit Blacklist Rule ID: {rule_id}',
                                    is_edit_mode=True
                                    )
 
-        rule.sequence = sequence
-        rule.rule_name = rule_name
-        rule.enabled = enabled
-        rule.source_ip = source_ip
-        rule.destination_ip = destination_ip
-        rule.protocol = protocol
-        rule.destination_port = destination_port
-        rule.description = description
+        # If no errors, update the rule object and commit to DB
+        rule.sequence = sequence_data
+        rule.rule_name = rule_name_data
+        rule.enabled = enabled_data
+        rule.source_ip = source_ip_data
+        rule.destination_ip = destination_ip_data
+        rule.protocol = protocol_data
+        rule.destination_port = destination_port_data
+        rule.description = description_data
 
         try:
             db.session.commit()
@@ -1372,6 +1393,7 @@ def edit_blacklist_rule(rule_id):
                 related_resource_id=rule.id,
                 related_resource_type='BlacklistRule'
             )
+            # Redirect to the list page after successful update
             return redirect(url_for('routes.blacklist_rules_list'))
         except Exception as e:
             db.session.rollback()
@@ -1384,17 +1406,29 @@ def edit_blacklist_rule(rule_id):
                 related_resource_id=rule.id,
                 related_resource_type='BlacklistRule'
             )
+            # Re-render form with submitted data in case of DB error
             return render_template('blacklist_rule_add.html',
-                                   rule=rule,
-                                   sequence=sequence, rule_name=rule_name, enabled=enabled,
-                                   source_ip=source_ip, destination_ip=destination_ip,
-                                   protocol=protocol, destination_port=destination_port, description=description,
+                                   rule=rule, # Still pass 'rule' for title
+                                   sequence=sequence_data, rule_name=rule_name_data, enabled=enabled_data,
+                                   source_ip=source_ip_data, destination_ip=destination_ip_data,
+                                   protocol=protocol_data, destination_port=destination_port_data,
+                                   description=description_data,
                                    title=f'Edit Blacklist Rule ID: {rule_id}',
                                    is_edit_mode=True
                                    )
 
+    # This block is for the initial GET request (when you first click 'Edit')
+    # All 'data' variables are already pre-populated from the 'rule' object at the top
     return render_template('blacklist_rule_add.html',
-                           rule=rule,
+                           rule=rule, # Pass the rule object itself for {{ rule.id }} in the title
+                           sequence=sequence_data,
+                           rule_name=rule_name_data,
+                           enabled=enabled_data,
+                           source_ip=source_ip_data,
+                           destination_ip=destination_ip_data,
+                           protocol=protocol_data,
+                           destination_port=destination_port_data,
+                           description=description_data,
                            title=f'Edit Blacklist Rule ID: {rule_id}',
                            is_edit_mode=True
                            )

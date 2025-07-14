@@ -3,6 +3,7 @@
 <div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 max-w-md">
     <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">
         {% if is_edit_mode %}
+            {# Use rule.id directly, since 'rule' object is now always passed #}
             Edit Blacklist Rule ID: {{ rule.id }}
         {% else %}
             Add New Blacklist Rule
@@ -36,7 +37,7 @@
 
         {# Enabled Checkbox #}
         <div class="flex items-center">
-            <input type="checkbox" id="enabled" name="enabled" value="True"
+            <input type="checkbox" id="enabled" name="enabled" value="on" {# Checkboxes send 'on' when checked #}
                    {% if enabled is defined %}{% if enabled %}checked{% endif %}
                    {% elif rule and rule.enabled %}checked{% endif %}
                    class="mr-2 leading-tight form-checkbox h-4 w-4 text-blue-600 rounded">
