@@ -150,7 +150,7 @@ def get_system_status():
         disk = psutil.disk_usage('/')
         disk_percent = disk.percent
         system_status['disk_space'] = {
-            'text': f"{disk_percent}% used ({disk.free / (1024**3):.2f} GB free)",
+            'text': f"{disk_percent:.1f}% ({disk.used / (1024**3):.2f} GB / {disk.total / (1024**3):.2f} GB)",
             'color': get_usage_color(disk_percent, 70, 90) # Amber at 70%, Red at 90%
         }
     except Exception:
@@ -984,7 +984,7 @@ def implement_rule(rule_id):
                         flash(f"Request ID {rule.id} successfully provisioned and verified on all target firewalls.", 'success')
                         app_logger.info(f"Request ID {rule.id} by '{current_user.username} successfully provisioned and verified on all target firewalls: {', '.join(successfully_provisioned)}.")
                         log_activity(
-                             event_type='IMPLEMENTATION_SUCCESS',
+                             event_type='IMPLEMENTATION_SUCCESSFUL',
                              description=f"Request ID {rule.id} successfully provisioned and verified on all target firewalls: {', '.join(successfully_provisioned)}.",
                              user=current_user,
                              related_resource_id=rule.id,
@@ -1086,6 +1086,10 @@ def implement_rule(rule_id):
 
     return render_template('implementation_detail.html', rule=rule)
 
+#######################################################################
+#                       BLACKLIST ROUTES                              #
+#######################################################################
+
 @routes.route('/admin/blacklist-rules')
 @login_required
 @roles_required('superadmin', 'admin')
@@ -1166,7 +1170,9 @@ def add_blacklist_rule():
             return render_template('blacklist_rule_add.html',
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
-                                   protocol=protocol, destination_port=destination_port, description=description)
+                                   protocol=protocol, destination_port=destination_port, description=description,
+                                   is_edit_mode=False,
+                                   title='Add Blacklist Rule')
 
         new_rule = BlacklistRule(
             sequence=sequence,
@@ -1207,7 +1213,9 @@ def add_blacklist_rule():
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description)
 
-    return render_template('blacklist_rule_add.html')
+    return render_template('blacklist_rule_add.html',
+                           is_edit_mode=False,
+                           title='Add New Blacklist Rule')
 
 
 @routes.route('/admin/blacklist-rules/detail/<int:rule_id>')
@@ -1226,26 +1234,51 @@ def blacklist_rule_detail(rule_id):
 @roles_required('superadmin', 'admin')
 def delete_blacklist_rule(rule_id):
     """
-    Deletes a blacklist rule.
+    Deletes a single blacklist rule by ID and redirects to the list page.
+    This route is hit by the standard HTML form submission.
     """
-    rule = BlacklistRule.query.get_or_404(rule_id)
+    rule = BlacklistRule.query.get(rule_id)
+    if not rule:
+        flash(f"Blacklist rule with ID {rule_id} not found.", 'error')
+        app_logger.warning(f"Attempted to delete non-existent blacklist rule ID {rule_id} by {current_user.username}.")
+        log_activity(
+            event_type='BLACKLIST_RULE_DELETE_FAILED',
+            description=f"Attempted to delete non-existent blacklist rule ID {rule_id}.",
+            user=current_user,
+            status='failed',
+            related_resource_id=rule_id,
+            related_resource_type='BlacklistRule'
+        )
+        return redirect(url_for('routes.blacklist_rules_list'))
+
+    rule_name_for_log = rule.rule_name
+
     try:
         db.session.delete(rule)
         db.session.commit()
-        flash(f"Blacklist rule '{rule.rule_name}' deleted successfully.", 'success')
-        app_logger.info(f"Blacklist rule ID {rule_id} ('{rule.rule_name}') deleted by {current_user.username}.")
+        flash(f"Blacklist rule '{rule_name_for_log}' (ID: {rule_id}) deleted successfully.", 'success')
+        app_logger.info(f"Blacklist rule ID {rule_id} ('{rule_name_for_log}') deleted by {current_user.username}.")
         log_activity(
-            event_type='BLACKLIST_RULE_DELETE',
-            description=f"Blacklist rule '{rule_name}' (ID: {rule_id}) was deleted.",
+            event_type='BLACKLIST_RULE_DELETED',
+            description=f"Blacklist rule '{rule_name_for_log}' (ID: {rule_id}) was deleted.",
             user=current_user,
             related_resource_id=rule_id,
             related_resource_type='BlacklistRule'
         )
-        return jsonify({"status": "success", "message": "Rule deleted."}), 200
+        return redirect(url_for('routes.blacklist_rules_list'))
     except Exception as e:
         db.session.rollback()
         app_logger.error(f"Error deleting blacklist rule {rule_id} by {current_user.username}: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": f"Error deleting rule: {e}"}), 500
+        flash(f"Error deleting rule '{rule_name_for_log}': {e}", 'error')
+        log_activity(
+            event_type='BLACKLIST_RULE_DELETE_FAILED',
+            description=f"Failed to delete blacklist rule '{rule_name_for_log}' (ID: {rule_id}). Error: {str(e)}",
+            user=current_user,
+            status='failed',
+            related_resource_id=rule_id,
+            related_resource_type='BlacklistRule'
+        )
+        return redirect(url_for('routes.blacklist_rules_list'))
 
 @routes.route('/admin/blacklist-rules/edit/<int:rule_id>', methods=['GET', 'POST'])
 @login_required
@@ -1311,10 +1344,13 @@ def edit_blacklist_rule(rule_id):
                 flash(error, 'error')
             app_logger.warning(f"Validation errors for editing blacklist rule {rule.id} from {current_user.username}: {errors}")
             return render_template('blacklist_rule_add.html',
+                                   rule=rule,
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description,
-                                   title=f'Edit Blacklist Rule ID: {rule_id}')
+                                   title=f'Edit Blacklist Rule ID: {rule_id}',
+                                   is_edit_mode=True
+                                   )
 
         rule.sequence = sequence
         rule.rule_name = rule_name
@@ -1329,29 +1365,39 @@ def edit_blacklist_rule(rule_id):
             db.session.commit()
             flash(f'Blacklist rule {rule.id} updated successfully!', 'success')
             app_logger.info(f"Blacklist rule {rule.id} updated by {current_user.username}.")
+            log_activity(
+                event_type='BLACKLIST_RULE_UPDATED',
+                description=f"Blacklist rule '{rule.rule_name}' (ID: {rule.id}, Sequence: {rule.sequence}) was updated.",
+                user=current_user,
+                related_resource_id=rule.id,
+                related_resource_type='BlacklistRule'
+            )
             return redirect(url_for('routes.blacklist_rules_list'))
         except Exception as e:
             db.session.rollback()
             flash(f'Error updating blacklist rule: {e}', 'error')
             app_logger.error(f"Error updating blacklist rule {rule.id} by {current_user.username}: {e}", exc_info=True)
+            log_activity(
+                event_type='BLACKLIST_RULE_ERROR',
+                description=f"Error updating blacklist rule {rule.id}.",
+                user=current_user,
+                related_resource_id=rule.id,
+                related_resource_type='BlacklistRule'
+            )
             return render_template('blacklist_rule_add.html',
+                                   rule=rule,
                                    sequence=sequence, rule_name=rule_name, enabled=enabled,
                                    source_ip=source_ip, destination_ip=destination_ip,
                                    protocol=protocol, destination_port=destination_port, description=description,
-                                   title=f'Edit Blacklist Rule ID: {rule_id}')
+                                   title=f'Edit Blacklist Rule ID: {rule_id}',
+                                   is_edit_mode=True
+                                   )
 
-    # For GET requests (initial load of the edit page)
-    # Populate the form with the existing rule's data
     return render_template('blacklist_rule_add.html',
-                           sequence=rule.sequence,
-                           rule_name=rule.rule_name,
-                           enabled=rule.enabled,
-                           source_ip=rule.source_ip,
-                           destination_ip=rule.destination_ip,
-                           protocol=rule.protocol,
-                           destination_port=rule.destination_port,
-                           description=rule.description,
-                           title=f'Edit Blacklist Rule ID: {rule_id}')
+                           rule=rule,
+                           title=f'Edit Blacklist Rule ID: {rule_id}',
+                           is_edit_mode=True
+                           )
 
 @routes.route('/api/blacklist_rules', methods=['GET'])
 @login_required
@@ -1367,53 +1413,6 @@ def api_get_blacklist_rules():
     except Exception as e:
         app_logger.error(f"API: Error retrieving blacklist rules: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Failed to retrieve blacklist rules."}), 500
-
-@routes.route('/api/blacklist_rules/<int:rule_id>', methods=['DELETE'])
-@login_required
-@roles_required('superadmin', 'admin')
-def api_delete_single_blacklist_rule(rule_id):
-    """
-    API endpoint to delete a single blacklist rule by ID.
-    """
-    rule = BlacklistRule.query.get(rule_id)
-    if not rule:
-        app_logger.warning(f"API: Attempted to delete non-existent blacklist rule ID {rule_id} by {current_user.username}.")
-        log_activity(
-            event_type='BLACKLIST_RULE_DELETE_FAILED',
-            description=f"Attempted to delete non-existent blacklist rule ID {rule_id}.",
-            user=current_user,
-            status='failed',
-            related_resource_id=rule_id,
-            related_resource_type='BlacklistRule'
-        )
-        return jsonify({"status": "error", "message": f"Rule with ID {rule_id} not found."}), 404
-
-    rule_name = rule.rule_name
-
-    try:
-        db.session.delete(rule)
-        db.session.commit()
-        app_logger.info(f"API: Blacklist rule ID {rule_id} deleted by {current_user.username}.")
-        log_activity(
-            event_type='BLACKLIST_RULE_DELETE',
-            description=f"Blacklist rule '{rule_name}' (ID: {rule_id},) was deleted.",
-            user=current_user,
-            related_resource_id=rule_id,
-            related_resource_type='BlacklistRule'
-        )
-        return jsonify({"status": "success", "message": f"Rule ID {rule_id} deleted successfully."}), 200
-    except Exception as e:
-        db.session.rollback()
-        app_logger.error(f"API: Error deleting single blacklist rule {rule_id} by {current_user.username}: {e}", exc_info=True)
-        log_activity(
-            event_type='BLACKLIST_RULE_DELETE_FAILED',
-            description=f"Failed to delete blacklist rule '{rule_name}' (ID: {rule_id}).: {str(e)}",
-            user=current_user,
-            related_resource_id=rule_id,
-            related_resource_type='BlacklistRule',
-            status='failed'
-        )
-        return jsonify({"status": "error", "message": f"An error occurred during deletion: {e}"}), 500
 
 @routes.route('/api/blacklist_rules', methods=['DELETE'])
 @login_required
@@ -1459,16 +1458,15 @@ def api_delete_blacklist_rules():
             db.session.delete(rule_obj)
 
         db.session.commit()
-
         deleted_count = len(deleted_rule_ids)
+        #flash(f"{deleted_count} blacklist rules deleted:  {deleted_rule_ids}.", 'success')
         app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {deleted_rule_ids}.")
-
         log_activity(
             event_type='BLACKLIST_RULES_BULK_DELETE',
             description=f"{deleted_count} blacklist rule(s) deleted via API. IDs: {deleted_rule_ids}. Names: {deleted_rule_names}.",
             user=current_user
         )
-        return jsonify({"status": "success", "message": f"{deleted_count} rule(s) deleted successfully."}), 200
+        return jsonify({"status": "success", "message": f"{deleted_count} rule(s) deleted successfully."}), 200 
 
     except Exception as e:
         db.session.rollback()
@@ -1479,6 +1477,10 @@ def api_delete_blacklist_rules():
         )
         app_logger.error(f"API: Error deleting multiple blacklist rules by {current_user.username}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": f"An error occurred during bulk deletion: {e}"}), 500
+
+#######################################################################
+#                        PROFILE ROUTES                               #
+#######################################################################
 
 @routes.route('/profile', methods=['GET', 'POST'])
 @login_required

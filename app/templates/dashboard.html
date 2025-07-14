@@ -49,7 +49,7 @@
             <table class="min-w-full divide-y divide-gray-200">
                 <tbody class="bg-white divide-y divide-gray-200">
                     <tr>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Open Tickets:</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Open:</td>
                         <td id="open_tickets" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
@@ -61,7 +61,7 @@
                         <td id="pending_implementation" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                     <tr>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Closed/Implemented Tickets:</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">Closed/Implemented:</td>
                         <td id="closed_implemented" class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">Loading...</td>
                     </tr>
                 </tbody>
@@ -341,7 +341,7 @@
                     second: '2-digit',
                     hour12: false // Use 24-hour format
                 };
-                cell.textContent = date.toLocaleString(undefined, options);
+                cell.textContent = date.toLocaleString('en-GB', options);
             }
         });
     });

@@ -1,64 +1,123 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mx-auto p-6 bg-white rounded-lg shadow-lg my-8 max-w-md">
-    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">Add Blacklist Rule</h2>
+    <h2 class="text-3xl font-bold text-gray-800 mb-6 text-center">
+        {% if is_edit_mode %}
+            Edit Blacklist Rule ID: {{ rule.id }}
+        {% else %}
+            Add New Blacklist Rule
+        {% endif %}
+    </h2>
 
-    <form method="POST" action="{{ url_for('routes.add_blacklist_rule') }}" class="space-y-4">
-        <div>
-            <label for="sequence" class="block text-gray-700 text-sm font-bold mb-2">Sequence (Order of evaluation):</label>
-            <input type="number" id="sequence" name="sequence" required
-                   class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+    <form method="POST" id="blacklistRuleForm" class="space-y-4">
+        {# Sequence #}
+        <div class="relative group">
+            <label for="sequence" class="block text-gray-700 text-sm font-bold mb-2">Sequence:</label>
+            <input type="number" id="sequence" name="sequence"
+                   value="{{ sequence if sequence is not none else (rule.sequence if rule else '') }}"
+                   required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            {# Tooltip for Sequence #}
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap z-10">
+                Enter a unique integer for the rule's processing order.
+            </div>
         </div>
-        
-        <div>
+
+        {# Rule Name #}
+        <div class="relative group">
             <label for="rule_name" class="block text-gray-700 text-sm font-bold mb-2">Rule Name:</label>
-            <input type="text" id="rule_name" name="rule_name" required
-                   class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            <input type="text" id="rule_name" name="rule_name"
+                   value="{{ rule_name if rule_name is not none else (rule.rule_name if rule else '') }}"
+                   required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            {# Tooltip for Rule Name #}
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap z-10">
+                A descriptive name for the blacklist rule.
+            </div>
         </div>
-        
+
+        {# Enabled Checkbox #}
         <div class="flex items-center">
-            <input type="checkbox" id="enabled" name="enabled" value="True" checked
-                   class="form-checkbox h-5 w-5 text-blue-600 rounded">
-            <label for="enabled" class="ml-2 text-gray-700 text-sm font-bold">Enabled</label>
+            <input type="checkbox" id="enabled" name="enabled" value="True"
+                   {% if enabled is defined %}{% if enabled %}checked{% endif %}
+                   {% elif rule and rule.enabled %}checked{% endif %}
+                   class="mr-2 leading-tight form-checkbox h-4 w-4 text-blue-600 rounded">
+            <label for="enabled" class="text-gray-700 text-sm font-bold">Enabled</label>
         </div>
-        
-        <div>
-            <label for="source_ip" class="block text-gray-700 text-sm font-bold mb-2">Source IP (e.g., 10.0.0.0/8, 192.168.1.10, any):</label>
+
+        {# Source IP #}
+        <div class="relative group">
+            <label for="source_ip" class="block text-gray-700 text-sm font-bold mb-2">Source IP:</label>
             <input type="text" id="source_ip" name="source_ip"
+                   value="{{ source_ip if source_ip is not none else (rule.source_ip if rule else '') }}"
                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            {# Tooltip for Source IP #}
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap z-10">
+                Enter the source IP address or CIDR block (e.g., 192.168.1.1 or 10.0.0.0/24). Leave blank for 'Any'.
+            </div>
         </div>
-        
-        <div>
-            <label for="destination_ip" class="block text-gray-700 text-sm font-bold mb-2">Destination IP (e.g., 10.0.0.0/8, 192.168.1.10, any):</label>
+
+        {# Destination IP #}
+        <div class="relative group">
+            <label for="destination_ip" class="block text-gray-700 text-sm font-bold mb-2">Destination IP:</label>
             <input type="text" id="destination_ip" name="destination_ip"
+                   value="{{ destination_ip if destination_ip is not none else (rule.destination_ip if rule else '') }}"
                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            {# Tooltip for Destination IP #}
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap z-10">
+                Enter the destination IP address or CIDR block (e.g., 192.168.1.100 or 172.16.0.0/16). Leave blank for 'Any'.
+            </div>
         </div>
-        
-        <div>
-            <label for="protocol" class="block text-gray-700 text-sm font-bold mb-2">Protocol (e.g., tcp, udp, icmp, 6, any):</label>
+
+        {# Protocol #}
+        <div class="relative group">
+            <label for="protocol" class="block text-gray-700 text-sm font-bold mb-2">Protocol:</label>
             <input type="text" id="protocol" name="protocol"
+                   value="{{ protocol if protocol is not none else (rule.protocol if rule else '') }}"
                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            {# Tooltip for Protocol #}
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap z-10">
+                Enter the protocol (tcp, udp, icmp, or any). Leave blank for 'Any'.
+            </div>
         </div>
-        
-        <div>
-            <label for="destination_port" class="block text-gray-700 text-sm font-bold mb-2">Port (e.g., 80, 443, any):</label>
+
+        {# Destination Port #}
+        <div class="relative group">
+            <label for="destination_port" class="block text-gray-700 text-sm font-bold mb-2">Destination Port:</label>
             <input type="text" id="destination_port" name="destination_port"
+                   value="{{ destination_port if destination_port is not none else (rule.destination_port if rule else '') }}"
                    class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            {# Tooltip for Destination Port #}
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap z-10">
+                Enter a single port number (0-65535) or 'any'. Leave blank for 'Any'.
+            </div>
         </div>
-        
-        <div>
-            <label for="description" class="block text-gray-700 text-sm font-bold mb-2">Description:</label>
+
+        {# Description #}
+        <div class="relative group">
+            <label for="description" class="block text-gray-700 text-sm font-bold mb-2">Description (Optional):</label>
             <textarea id="description" name="description" rows="3"
-                      class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                      class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">{{ description if description is not none else (rule.description if rule else '') }}</textarea>
+            {# Tooltip for Description #}
+            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-700 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none whitespace-nowrap z-10">
+                Optional. Provide additional details about this blacklist rule.
+            </div>
         </div>
-        
-        <div class="flex justify-center">
-            <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">Add Rule</button>
+
+        <div class="flex items-center justify-center">
+            <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 mr-4">
+                {% if is_edit_mode %}
+                    Update Rule
+                {% else %}
+                    Add Rule
+                {% endif %}
+            </button>
+            <a href="{{ url_for('routes.blacklist_rules_list') }}" class="inline-block align-baseline font-bold text-sm text-gray-600 hover:text-gray-800">
+                Cancel
+            </a>
         </div>
     </form>
 
     <div class="text-center mt-8">
-        <a href="{{ url_for('routes.blacklist_rules_list') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Blacklist Rules</a>
+        <a href="{{ url_for('routes.home') }}" class="text-blue-500 hover:text-blue-700 text-sm font-semibold">← Back to Home</a>
     </div>
 </div>
 {% endblock %}
