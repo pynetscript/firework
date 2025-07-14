@@ -16,7 +16,27 @@
         </div>
         <div class="bg-gray-50 p-4 rounded-md">
             <p class="text-gray-600"><strong>Created At:</strong> <span id="created_at_display" class="font-semibold text-gray-800" data-utc-timestamp="{{ created_at_utc }}">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if rule.created_at else 'N/A' }}</span></p>
+            <p class="text-gray-600">
+                <strong>Created By:</strong>
+                <span class="font-semibold text-gray-800">
+                    {% if rule.creator %}
+                        {{ rule.creator.username }}
+                    {% else %}
+                        N/A (User Deleted or Unknown)
+                    {% endif %}
+                </span>
+            </p>
             <p class="text-gray-600"><strong>Last Updated:</strong> <span id="updated_at_display" class="font-semibold text-gray-800" data-utc-timestamp="{{ updated_at_utc }}">{{ rule.updated_at.strftime('%Y-%m-%d %H:%M:%S UTC') if rule.updated_at else 'N/A' }}</span></p>
+            <p class="text-gray-600">
+                <strong>Last Updated By:</strong>
+                <span class="font-semibold text-gray-800">
+                    {% if rule.editor %}
+                        {{ rule.editor.username }}
+                    {% else %}
+                        N/A (User Deleted or Unknown)
+                    {% endif %}
+                </span>
+            </p>
         </div>
     </div>
 

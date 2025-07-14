@@ -120,6 +120,11 @@ class BlacklistRule(db.Model):
     description = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    last_updated_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    creator = db.relationship('User', foreign_keys=[created_by_user_id], backref='created_rules_rel', lazy=True)
+    editor = db.relationship('User', foreign_keys=[last_updated_by_user_id], backref='edited_rules_rel', lazy=True)
 
     def __repr__(self):
         return f'<BlacklistRule {self.rule_name} (ID: {self.id})>'

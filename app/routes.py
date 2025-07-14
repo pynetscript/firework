@@ -1182,7 +1182,9 @@ def add_blacklist_rule():
             destination_ip=destination_ip,
             protocol=protocol,
             destination_port=destination_port,
-            description=description
+            description=description,
+            created_by_user_id=current_user.id,
+            last_updated_by_user_id=current_user.id
         )
         db.session.add(new_rule)
         try:
@@ -1296,9 +1298,6 @@ def edit_blacklist_rule(rule_id):
     """
     rule = BlacklistRule.query.get_or_404(rule_id)
 
-    # These variables will hold the data that populates the form fields.
-    # On a GET request, they get their initial values from the 'rule' object.
-    # On a POST request with errors, they get their values from the submitted form data.
     sequence_data = rule.sequence
     rule_name_data = rule.rule_name
     enabled_data = rule.enabled
@@ -1309,10 +1308,8 @@ def edit_blacklist_rule(rule_id):
     description_data = rule.description
 
     if request.method == 'POST':
-        # Retrieve submitted form data
         sequence_data = request.form.get('sequence', type=int)
         rule_name_data = request.form.get('rule_name')
-        # Checkboxes send 'on' if checked, nothing if unchecked
         enabled_data = request.form.get('enabled') == 'on'
         source_ip_data = request.form.get('source_ip') or None
         destination_ip_data = request.form.get('destination_ip') or None
@@ -1388,6 +1385,8 @@ def edit_blacklist_rule(rule_id):
         rule.protocol = protocol_data
         rule.destination_port = destination_port_data
         rule.description = description_data
+        rule.updated_at = datetime.utcnow()
+        rule.last_updated_by_user_id = current_user.id
 
         try:
             db.session.commit()
