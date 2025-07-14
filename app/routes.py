@@ -1138,7 +1138,7 @@ def add_blacklist_rule():
                 errors.append("Invalid Destination IP format.")
 
         if protocol and protocol.lower() not in ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']:
-            errors.append("Invalid Protocol. Must be tcp, udp, icmp, any, or protocol number.")
+            errors.append("Invalid Protocol. Must be tcp, udp, icmp, or should be left blank for 'any'.")
 
         if destination_port:
             if destination_port.lower() == 'any':
