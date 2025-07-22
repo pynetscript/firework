@@ -7,7 +7,6 @@ import logging
 
 auth = Blueprint('auth', __name__)
 
-# Get the Flask app logger
 app_logger = logging.getLogger(__name__)
 
 @auth.route('/login', methods=['GET', 'POST'])

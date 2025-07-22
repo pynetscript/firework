@@ -17,11 +17,11 @@ def roles_required(*roles):
                 app_logger.warning(f"Unauthorized access attempt by unauthenticated user to {request.path}")
                 flash('Please log in to access this page.', 'warning')
                 return redirect(url_for('auth.login', next=request.url))
-            
+
             if not current_user.has_role(*roles):
                 app_logger.warning(f"Unauthorized access attempt by user {current_user.username} (Role: {current_user.role}) to {request.path}. Required roles: {roles}")
-                flash('You do not have the necessary permissions to access this page.', 'danger') # Using 'danger' for error styling
-                abort(403) # Forbidden
+                flash('You do not have the necessary permissions to access this page.', 'danger')
+                abort(403)
             return fn(*args, **kwargs)
         return decorated_view
     return wrapper
@@ -33,22 +33,21 @@ def no_self_approval(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        from app.models import FirewallRule # Import locally to avoid circular dependency
+        from app.models import FirewallRule
         rule_id = kwargs.get('rule_id')
         if not rule_id:
             app_logger.error("no_self_approval decorator used on a route without rule_id argument.")
-            abort(500) # Internal Server Error
-        
+            abort(500)
+
         rule = FirewallRule.query.get(rule_id)
         if not rule:
             app_logger.warning(f"Attempted self-approval check for non-existent rule ID: {rule_id}")
-            abort(404) # Not Found
+            abort(404)
 
         if current_user.is_authenticated and current_user.id == rule.requester_id:
             app_logger.warning(f"Self-approval attempt detected for rule ID {rule_id} by user {current_user.username} (ID: {current_user.id}).")
             flash('You cannot approve your own requests.', 'danger')
-            abort(403) # Forbidden
-        
+            abort(403)
+
         return f(*args, **kwargs)
     return decorated_function
-

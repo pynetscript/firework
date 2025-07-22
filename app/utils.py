@@ -1,5 +1,5 @@
 from datetime import datetime
-from app.models import db, ActivityLogEntry # Crucial imports
+from app.models import db, ActivityLogEntry
 import logging
 
 app_logger = logging.getLogger(__name__)

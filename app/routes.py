@@ -506,9 +506,8 @@ def submit_request():
             # Determine final status after pre-check, considering user roles for approval
             # Check for no firewalls in path first, regardless of user role
             if not db_rule.firewalls_involved or len(db_rule.firewalls_involved) == 0:
-                # Scenario: No firewalls found in the path for ANY role
                 db_rule.status = 'Completed - No Provisioning Needed'
-                db_rule.approval_status = 'Approved' # Implied approval if no action is needed
+                db_rule.approval_status = 'Approved'
                 flash_message = f"Request ID {db_rule.id} submitted as no firewalls were involved."
                 app_logger.info(f"Request ID {db_rule.id} submitted by '{current_user.username}' completed as no firewalls were involved.")
                 log_activity(
@@ -586,11 +585,11 @@ def submit_request():
                 "status": "success",
                 "message": flash_message,
                 "redirect_url": url_for('routes.request_list'),
-                "rule_id": db_rule.id,  # Include the rule ID
-                "status_detail": db_rule.status,  # Include the detailed status
-                "approval_status": db_rule.approval_status, # Include approval status
-                "firewalls_involved": discovered_firewalls, # Include discovered firewalls
-                "can_access_approvals": can_access_approvals # Include flag for approvals link
+                "rule_id": db_rule.id,
+                "status_detail": db_rule.status,
+                "approval_status": db_rule.approval_status,
+                "firewalls_involved": discovered_firewalls,
+                "can_access_approvals": can_access_approvals
             }), 200
 
     except DestinationUnreachableError as e:
@@ -845,7 +844,6 @@ def implementation_list():
         FirewallRule.status.in_(['Pending Implementation', 'Provisioning In Progress', 'Partially Implemented - Requires Attention', 'Declined by Implementer', 'Completed'])
     ).order_by(FirewallRule.created_at.asc()).all()
 
-    # Enrich rules with usernames
     for rule in rules:
         if rule.requester_id:
             requester = User.query.get(rule.requester_id)
@@ -934,8 +932,8 @@ def implement_rule(rule_id):
                 return redirect(url_for('routes.implementation_list'))
 
             try:
-                rule.status = 'Provisioning In Progress' # Set status before starting
-                db.session.commit() # Commit status change immediately
+                rule.status = 'Provisioning In Progress'
+                db.session.commit()
 
                 # Perform provisioning
                 provision_stdout, provision_stderr, successfully_provisioned, failed_provisioning = \
@@ -1002,7 +1000,7 @@ def implement_rule(rule_id):
                             related_resource_type='FirewallRule'
                         )
 
-                else: # Some provisioning failed
+                else:
                     if len(successfully_provisioned) > 0:
                         rule.status = 'Partially Implemented - Requires Attention'
                         flash(f"Request ID {rule.id} partially implemented. Failed on: {', '.join(failed_provisioning)}. Successful on: {', '.join(successfully_provisioned)}.", 'warning')

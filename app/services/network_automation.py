@@ -250,15 +250,15 @@ class NetworkAutomationService:
                                 app_logger.debug(f"Raw content of {files_info['interfaces']}:\n{content[:500]}...") # Log first 500 chars
 
                                 if hostname == 'pafw':
-                                    # CORRECTED: Palo Alto interfaces are YAML, not JSON
                                     interface_data = yaml.safe_load(content)
                                 elif hostname == 'fgt':
                                     interface_data = yaml.safe_load(content)
-                                else: # Cisco IOS/IOS-XE facts are also YAML
+                                else:
                                     interface_data = yaml.safe_load(content)
                                 app_logger.debug(f"Parsed interface data for {hostname}: {json.dumps(interface_data, indent=2)}")
 
-                                if hostname.startswith('R') or hostname.startswith('SW'): # Cisco IOS facts format
+                                # --- Process Cisco Interfaces
+                                if hostname.startswith('R') or hostname.startswith('SW'):
                                     interfaces_found = 0
                                     for intf_name, intf_details in interface_data.get('ansible_net_interfaces', {}).items():
                                         app_logger.debug(f"Parsing interface '{intf_name}' details for {hostname}. Details: {json.dumps(intf_details)}")
@@ -289,7 +289,8 @@ class NetworkAutomationService:
                                             app_logger.info(f"Added interface '{intf_name}' ({address}) for {hostname} to session.")
                                     app_logger.info(f"Finished adding {interfaces_found} interfaces for {hostname}.")
 
-                                elif hostname == 'pafw': # Palo Alto interfaces from panos_facts (YAML structure)
+                                # --- Process Palo Alto Interfaces
+                                elif hostname == 'pafw':
                                     interfaces_found = 0
                                     for intf_details in interface_data.get('ansible_facts', {}).get('ansible_net_interfaces', []):
                                         app_logger.debug(f"Parsing Palo Alto interface '{intf_details.get('name')}' details: {json.dumps(intf_details)}")
@@ -530,7 +531,7 @@ class NetworkAutomationService:
                                             app_logger.info(f"Added PA route {destination} via {next_hop} on {hostname} to session.")
                                     app_logger.info(f"Finished adding {routes_found} route entries for {hostname}.")
 
-                                # --- Process FGT ARP
+                                # --- Process FGT Routes
                                 elif hostname == 'fgt':
                                     route_data = yaml.safe_load(route_content)
                                     routes_found = 0
