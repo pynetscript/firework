@@ -57,6 +57,100 @@ def get_usage_color(percentage, amber_threshold, red_threshold):
     else:
         return 'green'
 
+def is_ip_in_network(ip_str, network_str):
+    """
+    Checks if an IP address is contained within an IP network (CIDR).
+    Handles both IPv4 and IPv6.
+    """
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        # strict=False allows host bits to be set in the network definition
+        network = ipaddress.ip_network(network_str, strict=False)
+        return ip in network
+    except ValueError as e:
+        # Log invalid IP/network strings instead of failing silently
+        app_logger.warning(f"Invalid IP or network string encountered during blacklist check: IP='{ip_str}', Network='{network_str}' Error: {e}")
+        return False
+
+def check_blacklist_for_request(request_data):
+    """
+    Checks a given firewall rule request against all active blacklist rules.
+    `request_data` should be a dictionary with keys:
+    'source_ip', 'destination_ip', 'protocol', 'ports'.
+    `ports` in request_data is expected to be a list containing a single string
+    (e.g., ["80"], ["any"]).
+    """
+    source_ip = request_data.get('source_ip')
+    destination_ip = request_data.get('destination_ip')
+    protocol = request_data.get('protocol', '').lower()
+    requested_ports = request_data.get('ports', []) # This will be like ['80'] or ['any']
+
+    # Extract the single requested port value
+    requested_port_value = requested_ports[0] if requested_ports else None
+
+    enabled_rules = BlacklistRule.query.filter_by(enabled=True).order_by(BlacklistRule.sequence.asc()).all()
+
+    for rule in enabled_rules:
+        rule_protocol = rule.protocol.lower() if rule.protocol else 'any'
+        rule_dest_port = rule.destination_port.lower() if rule.destination_port else 'any'
+
+        # --- Source IP Check ---
+        source_match = False
+        if rule.source_ip:
+            if '/' in rule.source_ip: # Rule Source IP is a CIDR
+                source_match = is_ip_in_network(source_ip, rule.source_ip)
+            else: # Rule Source IP is a specific IP
+                source_match = (source_ip == rule.source_ip)
+        else: # If rule.source_ip is None, it matches any source IP
+            source_match = True
+
+        # --- Destination IP Check ---
+        dest_match = False
+        if source_match and rule.destination_ip: # Only check if source IP matched
+            if '/' in rule.destination_ip: # Rule Destination IP is a CIDR
+                dest_match = is_ip_in_network(destination_ip, rule.destination_ip)
+            else: # Rule Destination IP is a specific IP
+                dest_match = (destination_ip == rule.destination_ip)
+        elif source_match: # If no destination_ip in rule, and source matched, dest matches
+            dest_match = True
+
+        if not (source_match and dest_match):
+            continue # If IPs don't match, move to next rule
+
+        # --- Protocol Check ---
+        protocol_match = False
+        if rule_protocol == 'any':
+            protocol_match = True
+        else:
+            protocol_match = (protocol == rule_protocol)
+
+        if not protocol_match:
+            continue # If protocol doesn't match, move to next rule
+
+        # --- Port Check ---
+        port_match = False
+        if requested_port_value == 'any' or rule_dest_port == 'any':
+            port_match = True
+        elif requested_port_value and rule_dest_port: # Both are specific (not 'any')
+            try:
+                requested_port_int = int(requested_port_value)
+                if '-' in rule_dest_port: # Rule has a port range
+                    rule_start_port, rule_end_port = map(int, rule_dest_port.split('-'))
+                    port_match = (rule_start_port <= requested_port_int <= rule_end_port)
+                else: # Rule has a single specific port
+                    port_match = (requested_port_int == int(rule_dest_port))
+            except ValueError:
+                app_logger.warning(f"Error parsing port during blacklist check. Requested: '{requested_port_value}', Rule: '{rule_dest_port}'. Skipping port check for this rule.")
+                port_match = False # Treat as non-match if parsing fails
+
+        # If all criteria match, the request is blacklisted
+        if source_match and dest_match and protocol_match and port_match:
+            app_logger.warning(f"BLACKLIST MATCH: Rule ID {rule.id} ('{rule.rule_name}') matched request: "
+                               f"Src:{source_ip}, Dst:{destination_ip}, Proto:{protocol}, Ports:{requested_ports}")
+            return True, rule.rule_name # Request is blacklisted, return rule name
+
+    return False, None # No blacklist rule matched
+
 #######################################################################
 #                           HOME ROUTES                               #
 #######################################################################
@@ -307,12 +401,12 @@ def submit_request():
     except ValueError:
         errors.append('Invalid Destination IP address format.')
 
-    # Validate protocol (simple check)
+    # Validate protocol
     allowed_protocols = ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']
     if protocol.lower() not in allowed_protocols and not protocol.isdigit():
         errors.append('Invalid Protocol. Must be tcp, udp, icmp, any, or a protocol number.')
 
-    # Process ports: Allow only a single port (0-65535) or the string "any"
+    # Validate port: Allow only a single port (0-65535) or the string "any"
     ports = []
     if protocol.lower() in ['icmp', 'any', '1']:
         ports = ['any'] # For ICMP or ANY protocol, ports are 'any'
@@ -344,113 +438,32 @@ def submit_request():
         )
         return jsonify({"status": "error", "message": "Validation failed", "errors": errors}), 400
 
-    blacklisted = False
-    matching_blacklist_rule_name = None
+    # Prepare request data for blacklist check using the 'ports' list
+    request_data = {
+        'source_ip': source_ip,
+        'destination_ip': destination_ip,
+        'protocol': protocol,
+        'ports': ports # This is the list ['80'] or ['any']
+    }
 
-    # Blacklist check
-    try:
-        blacklisted = False
-        blacklist_rules = BlacklistRule.query.filter_by(enabled=True).order_by(BlacklistRule.sequence.asc()).all()
+    blacklisted, matching_blacklist_rule_name = check_blacklist_for_request(request_data)
 
-        for rule in blacklist_rules:
-            ip_match = True
-            protocol_match = True
-            port_match = True
-
-            # Source IP check
-            if rule.source_ip:
-                try:
-                    if '/' in rule.source_ip: # CIDR notation
-                        if not ipaddress.ip_address(source_ip) in ipaddress.ip_network(rule.source_ip):
-                            ip_match = False
-                    else: # Single IP
-                        if source_ip != rule.source_ip:
-                            ip_match = False
-                except ValueError:
-                    app_logger.warning(f"Invalid source_ip in blacklist rule {rule.id}: {rule.source_ip}")
-                    ip_match = False # Treat as non-match if rule is malformed
-
-            # Destination IP check
-            if ip_match and rule.destination_ip: # Only check if source IP matched
-                try:
-                    if '/' in rule.destination_ip: # CIDR notation
-                        if not ipaddress.ip_address(destination_ip) in ipaddress.ip_network(rule.destination_ip):
-                            ip_match = False
-                    else: # Single IP
-                        if destination_ip != rule.destination_ip:
-                            ip_match = False
-                except ValueError:
-                    app_logger.warning(f"Invalid destination_ip in blacklist rule {rule.id}: {rule.destination_ip}")
-                    ip_match = False # Treat as non-match if rule is malformed
-
-            # Protocol check
-            if ip_match and rule.protocol and rule.protocol.lower() != 'any':
-                if protocol.lower() != rule.protocol.lower():
-                    protocol_match = False
-
-            # Port check (only if protocol matches)
-            # This logic must handle rule.destination_port being 'any', a single port, or a range
-            # And requested ports being ['any'] or ['single_port_number_string']
-            if ip_match and protocol_match and rule.destination_port: # If rule has a destination port specified
-                rule_dest_port_lower = rule.destination_port.lower()
-                requested_port_value = ports[0] if ports else None # Get the single requested port (or 'any')
-
-                if requested_port_value == 'any':
-                    # If requested is 'any', it matches any rule that specifies a port (whether 'any' or specific)
-                    # We assume if a rule.destination_port exists, 'any' request matches it.
-                    pass # port_match remains True
-                elif rule_dest_port_lower == 'any':
-                    # If rule's destination port is 'any', it matches the specific requested port
-                    pass # port_match remains True
-                else:
-                    # Both requested and rule ports are specific (not 'any').
-                    # Convert requested port to int. Rule port can be single or range.
-                    try:
-                        requested_port_int = int(requested_port_value)
-
-                        if '-' in rule_dest_port_lower:
-                            start, end = map(int, rule_dest_port_lower.split('-'))
-                            if not (start <= requested_port_int <= end):
-                                port_match = False
-                        else:
-                            if requested_port_int != int(rule_dest_port_lower):
-                                port_match = False
-                    except ValueError:
-                        # Should not happen with prior validation, but for robustness
-                        app_logger.warning(f"Error parsing port in blacklist check for rule {rule.id}. Requested: {requested_port_value}, Rule: {rule_dest_port_lower}")
-                        port_match = False # Treat as non-match if parsing fails
-
-            if ip_match and protocol_match and port_match:
-                blacklisted = True
-                app_logger.warning(f"Request from {source_ip} to {destination_ip}:{ports_raw}/{protocol} denied by blacklist rule ID {rule.id} ('{rule.rule_name}') for user {current_user.username}.")
-                break # Exit loop if a blacklist rule matches
-
-        if blacklisted:
-            flash(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.", 'error')
-            app_logger.info(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.")
-            log_activity(
-                event_type='BLACKLIST_DENIED',
-                description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.",
-                user=current_user
-            )
-            return jsonify({"status": "error", "message": "Request blocked by blacklist rule."}), 403
-        else:
-            app_logger.info(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] by user {current_user.username} passed blacklist check.")
-            log_activity(
-                event_type='BLACKLIST_PASSED',
-                description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] passed blacklist check.",
-                user=current_user
-            )
-
-    except Exception as e:
-        app_logger.error(f"Error during blacklist check: {e}", exc_info=True)
-        flash("Error occurred during blacklist check.", 'error')
+    if blacklisted:
+        flash(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.", 'error')
+        app_logger.info(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.")
         log_activity(
-            event_type='BLACKLIST_ERROR',
-            description=f"Error occured during blacklist check: {str(e)}. Matching rule was '{matching_blacklist_rule_name or 'None'}'.",
+            event_type='BLACKLIST_DENIED',
+            description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] denied by blacklist rule '{matching_blacklist_rule_name or ''}'.",
             user=current_user
         )
-        return jsonify({"status": "error", "message": "Internal error during blacklist check."}), 500
+        return jsonify({"status": "error", "message": "Request blocked by blacklist rule."}), 403
+    else:
+        app_logger.info(f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] by user {current_user.username} passed blacklist check.")
+        log_activity(
+            event_type='BLACKLIST_PASSED',
+            description=f"Request [{source_ip},{destination_ip},{protocol},{ports_raw}] passed blacklist check.",
+            user=current_user
+        )
 
     # Create the new rule with a temporary status before pre-check
     new_rule = FirewallRule(
@@ -615,7 +628,7 @@ def submit_request():
             "rule_id": new_rule.id
         }), 400
     except RuntimeError as e:
-        db.session.rollback() 
+        db.session.rollback()
         db_rule = FirewallRule.query.get(new_rule.id)
         if db_rule:
             db_rule.status = 'Pre-Check Failed'
@@ -625,7 +638,7 @@ def submit_request():
         flash(f"Pre-check failed: {e}", 'error')
         log_activity(
             event_type='REQUEST_FAILED',
-            description=f"Netowkr automation pre-check failed for request ID {new_rule.id}. Runtime error: {str(e)}.",
+            description=f"Network automation pre-check failed for request ID {new_rule.id}. Runtime error: {str(e)}.",
             user=current_user,
             related_resource_id=new_rule.id,
             related_resource_type='FirewallRule'
