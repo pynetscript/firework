@@ -38,7 +38,6 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
 
-    # Relationship to FirewallRule: A user can request many firewall rules.
     requested_rules = db.relationship('FirewallRule', backref='requester', lazy='dynamic', foreign_keys='FirewallRule.requester_id')
 
     def set_password(self, password):
@@ -55,46 +54,45 @@ class User(UserMixin, db.Model):
         return f'<User {self.username} (Role: {self.role})>'
 
 class ActivityLogEntry(db.Model):
-    __tablename__ = 'activity_log_entry' # Explicitly name the table
+    """
+    Model for activity logs.
+    """
+    __tablename__ = 'activity_log_entry'
 
     id = db.Column(db.Integer, primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # Link to User, nullable for system actions
-    username = db.Column(db.String(80), nullable=False) # Denormalized for simpler queries/display
-    event_type = db.Column(db.String(100), nullable=False) # e.g., 'USER_LOGIN', 'REQUEST_CREATED', 'REQUEST_STATUS_CHANGE'
-    description = db.Column(db.Text, nullable=False) # The detailed log message
-    related_resource_id = db.Column(db.Integer, nullable=True) # e.g., network_request_id
-    related_resource_type = db.Column(db.String(50), nullable=True) # e.g., 'NetworkRequest', 'User' (for login/logout)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    username = db.Column(db.String(80), nullable=False)
+    event_type = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    related_resource_id = db.Column(db.Integer, nullable=True)
+    related_resource_type = db.Column(db.String(50), nullable=True)
 
     def __repr__(self):
         return f"<ActivityLogEntry {self.timestamp} - {self.username} - {self.event_type}>"
 
 class FirewallRule(db.Model):
     """
-    Model for network firewall rule requests.
+    Model for Firewall Rules.
     """
     id = db.Column(db.Integer, primary_key=True)
     source_ip = db.Column(db.String(50), nullable=False)
     destination_ip = db.Column(db.String(50), nullable=False)
     protocol = db.Column(db.String(10), nullable=False)
-    # Using JSONEncodedList for 'ports' to allow multiple ports or ranges
     ports = db.Column(JSONEncodedList, nullable=False)
 
-    status = db.Column(db.String(50), default='Pending') # e.g., Pending, Approved, Implemented, Denied, Cancelled
+    status = db.Column(db.String(50), default='Pending')
     rule_description = db.Column(db.Text, nullable=True)
 
-    # Fields for approval workflow
-    approval_status = db.Column(db.String(20), default='Pending') # Pending, Approved, Denied, Cancelled
+    approval_status = db.Column(db.String(20), default='Pending')
     approver_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    approver = db.relationship('User', foreign_keys=[approver_id]) # Relationship to the approver User
+    approver = db.relationship('User', foreign_keys=[approver_id])
     approver_comment = db.Column(db.Text, nullable=True)
 
-    # Fields for implementation workflow
     implementer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    implementer = db.relationship('User', foreign_keys=[implementer_id]) # Relationship to the implementer User
+    implementer = db.relationship('User', foreign_keys=[implementer_id])
     implementer_comment = db.Column(db.Text, nullable=True)
 
-    # Store lists of firewalls relevant to the request as JSON
     firewalls_involved = db.Column(JSONEncodedList, nullable=True)
     firewalls_to_provision = db.Column(JSONEncodedList, nullable=True)
     firewalls_already_configured = db.Column(JSONEncodedList, nullable=True)
@@ -109,6 +107,9 @@ class FirewallRule(db.Model):
         return f'<FirewallRule {self.id} {self.source_ip} to {self.destination_ip}:{self.ports}/{self.protocol} Status: {self.status}>'
 
 class BlacklistRule(db.Model):
+    """
+    Model for Blacklsit Rules.
+    """
     id = db.Column(db.Integer, primary_key=True)
     sequence = db.Column(db.Integer, unique=True, nullable=False)
     rule_name = db.Column(db.String(100), nullable=False)
@@ -116,7 +117,7 @@ class BlacklistRule(db.Model):
     source_ip = db.Column(db.String(50), nullable=True)
     destination_ip = db.Column(db.String(50), nullable=True)
     protocol = db.Column(db.String(10), nullable=True)
-    destination_port = db.Column(db.String(50), nullable=True) # Storing as string to handle ranges/any
+    destination_port = db.Column(db.String(50), nullable=True)
     description = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -150,14 +151,12 @@ class BlacklistRule(db.Model):
 class Device(db.Model):
     """
     Represents a network device (router, switch, firewall).
-    Corresponds to the 'devices' table in the old SQLite schema.
     """
     __tablename__ = 'devices'
     device_id = db.Column(db.Integer, primary_key=True)
     hostname = db.Column(db.String(255), unique=True, nullable=False)
-    device_type = db.Column(db.String(50)) # e.g., Router, Switch, Firewall
+    device_type = db.Column(db.String(50))
 
-    # Relationships to other network data tables
     interfaces = db.relationship('Interface', backref='device', lazy='dynamic')
     arp_entries = db.relationship('ArpEntry', backref='device', lazy='dynamic')
     route_entries = db.relationship('RouteEntry', backref='device', lazy='dynamic')
@@ -168,18 +167,17 @@ class Device(db.Model):
 class Interface(db.Model):
     """
     Represents an interface on a network device.
-    Corresponds to the 'interfaces' table in the old SQLite schema.
     """
     __tablename__ = 'interfaces'
     interface_id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.Integer, db.ForeignKey('devices.device_id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     ipv4_address = db.Column(db.String(50))
-    ipv4_subnet = db.Column(db.String(50)) # Store as string, e.g., "24" for /24
+    ipv4_subnet = db.Column(db.String(50))
     mac_address = db.Column(db.String(50))
     description = db.Column(db.Text)
-    status = db.Column(db.String(50)) # e.g., "up/up"
-    type = db.Column(db.String(50)) # e.g., Ethernet, Loopback
+    status = db.Column(db.String(50))
+    type = db.Column(db.String(50))
 
     def __repr__(self):
         return f"<Interface {self.name} on Device ID {self.device_id}>"
@@ -187,14 +185,13 @@ class Interface(db.Model):
 class ArpEntry(db.Model):
     """
     Represents an ARP table entry for a device.
-    Corresponds to the 'arp_entries' table in the old SQLite schema.
     """
     __tablename__ = 'arp_entries'
     arp_id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.Integer, db.ForeignKey('devices.device_id'), nullable=False)
     ip_address = db.Column(db.String(50), nullable=False)
     mac_address = db.Column(db.String(50), nullable=False)
-    interface_name = db.Column(db.String(100)) # The interface associated with this ARP entry
+    interface_name = db.Column(db.String(100))
 
     def __repr__(self):
         return f"<ArpEntry {self.ip_address} -> {self.mac_address} on Device ID {self.device_id}>"
@@ -202,18 +199,17 @@ class ArpEntry(db.Model):
 class RouteEntry(db.Model):
     """
     Represents a routing table entry for a device.
-    Corresponds to the 'route_entries' table in the old SQLite schema.
     """
     __tablename__ = 'route_entries'
     route_id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.Integer, db.ForeignKey('devices.device_id'), nullable=False)
-    destination_network = db.Column(db.String(50), nullable=False) # e.g., "192.168.1.0/24" or "0.0.0.0/0"
+    destination_network = db.Column(db.String(50), nullable=False)
     next_hop = db.Column(db.String(50))
     metric = db.Column(db.Integer)
     admin_distance = db.Column(db.Integer)
-    interface_name = db.Column(db.String(100)) # Outgoing interface for the route
-    route_type = db.Column(db.String(50)) # e.g., "connected", "static", "ospf"
-    flags = db.Column(db.String(50)) # e.g., "C", "S*", "O" from Cisco
+    interface_name = db.Column(db.String(100))
+    route_type = db.Column(db.String(50))
+    flags = db.Column(db.String(50))
 
     def __repr__(self):
         return f"<RouteEntry {self.destination_network} via {self.next_hop} on Device ID {self.device_id}>"

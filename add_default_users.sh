@@ -43,7 +43,7 @@ with app.app_context():
         role = user_data['role']
 
         if not User.query.filter_by(username=username).first():
-            new_user = User(username=username, email=email, role=role, created_at=datetime.now(timezone.utc))
+            new_user = User(username=username, email=email, role=role, created_at=datetime.utcnow())
             new_user.set_password(password)
             db.session.add(new_user)
             db.session.commit()
