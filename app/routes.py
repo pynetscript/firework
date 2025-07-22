@@ -390,16 +390,27 @@ def submit_request():
 
     errors = []
 
-    # Validate IP addresses
+    # Validate source IP
     try:
+        # Attempt to parse as an IP address (for /32 equivalent or single IPs)
         ipaddress.ip_address(source_ip)
     except ValueError:
-        errors.append('Invalid Source IP address format.')
+        try:
+            # If it's not a single IP, attempt to parse as a network (CIDR)
+            ipaddress.ip_network(source_ip)
+        except ValueError:
+            errors.append('Invalid Source IP address or CIDR format.')
 
+    # Validate destination IP
     try:
+        # Attempt to parse as an IP address (for /32 equivalent or single IPs)
         ipaddress.ip_address(destination_ip)
     except ValueError:
-        errors.append('Invalid Destination IP address format.')
+        try:
+            # If it's not a single IP, attempt to parse as a network (CIDR)
+            ipaddress.ip_network(destination_ip)
+        except ValueError:
+            errors.append('Invalid Destination IP address or CIDR format.')
 
     # Validate protocol
     allowed_protocols = ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']
@@ -521,11 +532,11 @@ def submit_request():
             if not db_rule.firewalls_involved or len(db_rule.firewalls_involved) == 0:
                 db_rule.status = 'Completed - No Provisioning Needed'
                 db_rule.approval_status = 'Approved'
-                flash_message = f"Request ID {db_rule.id} submitted as no firewalls were involved."
+                flash_message = f"Request ID {db_rule.id} completed as no firewalls were involved."
                 app_logger.info(f"Request ID {db_rule.id} submitted by '{current_user.username}' completed as no firewalls were involved.")
                 log_activity(
                     event_type='REQUEST_COMPLETED',
-                    description=f"Request ID {db_rule.id} submitted by '{current_user.username}' completed as no firewalls were involved.",
+                    description=f"Request ID {db_rule.id} completed as no firewalls were involved.",
                     user=current_user,
                     related_resource_id=db_rule.id,
                     related_resource_type='FirewallRule'

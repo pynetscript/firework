@@ -95,7 +95,7 @@
                         <p>Status: ${result.status_detail}</p>
                         <p>Approval Status: ${result.approval_status}</p>
                         <p>Firewalls Involved: ${result.firewalls_involved.length > 0 ? result.firewalls_involved.join(', ') : 'None'}</p>
-                        <p class="mt-2"><a href="{{ url_for('routes.task_results') }}" class="text-green-700 underline hover:no-underline">Tasks</a></p>
+                        <p class="mt-2"><a href="{{ url_for('routes.request_list') }}" class="text-green-700 underline hover:no-underline">Request</a></p>
                         ${result.can_access_approvals ?
                             `<p><a href="{{ url_for('routes.approvals_list') }}" class="text-green-700 underline hover:no-underline">Approvals</a></p>` : ''
                         }

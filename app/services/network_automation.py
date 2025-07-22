@@ -7,6 +7,7 @@ import ipaddress
 import re
 from sqlalchemy import func
 import time
+import heapq
 
 from app.models import db, Device, Interface, ArpEntry, RouteEntry
 
@@ -585,167 +586,404 @@ class NetworkAutomationService:
 
     def _find_network_path_in_db(self, source_ip, destination_ip):
         """
-        Finds a network path between source and destination IPs using the data
+        Finds a network path between source and destination IPs/networks using the data
         stored in the PostgreSQL database.
-        This replaces the functionality of pathfinder.py.
+        This replaces the functionality of pathfinder.py and properly handles CIDR destinations.
         """
         app_logger.info(f"Starting pathfinding from {source_ip} to {destination_ip} using DB data.")
+
+        # 1. Parse Source and Destination IPs
+        source_ip_obj = None
+        destination_obj = None
+        is_destination_network = False
+        is_source_network = False # Add a flag for source being a network
+
+        try:
+            # Try to parse source as a single IP address first
+            source_ip_obj = ipaddress.ip_address(source_ip)
+            is_source_network = False
+            app_logger.debug(f"Parsed source as IP: {source_ip_obj}")
+        except ValueError:
+            try:
+                # If not a single IP, try to parse as a network (CIDR)
+                source_ip_obj = ipaddress.ip_network(source_ip, strict=False)
+                is_source_network = True
+                app_logger.debug(f"Parsed source as network: {source_ip_obj}")
+            except ValueError:
+                app_logger.error(f"Invalid source IP address or network format: {source_ip}")
+                raise PathfindingError(f"Invalid source IP address or network: {source_ip}")
+
+        try:
+            # Try to parse destination as a single IP address first
+            destination_obj = ipaddress.ip_address(destination_ip)
+            is_destination_network = False
+            app_logger.debug(f"Parsed destination as IP: {destination_obj}")
+        except ValueError:
+            try:
+                # If not a single IP, try to parse as a network (CIDR)
+                destination_obj = ipaddress.ip_network(destination_ip, strict=False)
+                is_destination_network = True
+                app_logger.debug(f"Parsed destination as network: {destination_obj}")
+            except ValueError:
+                app_logger.error(f"Invalid destination IP address or network format: {destination_ip}")
+                raise PathfindingError(f"Invalid destination IP address or network: {destination_ip}")
 
         path = []
         firewalls_in_path = []
 
-        try:
-            source_ip_obj = ipaddress.ip_address(source_ip)
-            destination_ip_obj = ipaddress.ip_address(destination_ip)
-        except ipaddress.AddressValueError:
-            app_logger.error(f"Invalid IP address format during pathfinding: Source={source_ip}, Destination={destination_ip}")
-            return "Error: Invalid IP address format. Please enter valid IPv4 addresses.", []
+        # 2. Build the Graph
+        # Nodes in the graph are IP addresses of *managed device interfaces*.
+        # Edges represent direct connectivity or next-hop routes.
+        graph = {}  # {interface_ip_obj: [(neighbor_ip_obj, cost), ...]}
+        device_by_ip = {}  # {interface_ip_obj: device_name}
+        interface_by_ip = {} # {interface_ip_obj: interface_name}
+        interface_network_map = {} # {interface_ip_obj: ipaddress.ip_network_obj}
 
-        src_device = None
-        src_interface = None
-        src_network = None
+        all_device_interfaces = Interface.query.join(Device).all()
+        app_logger.debug(f"Found {len(all_device_interfaces)} interfaces in DB.")
+        for interface in all_device_interfaces:
+            try:
+                ip_obj = ipaddress.ip_address(interface.ipv4_address)
 
-        app_logger.debug(f"Attempting to find source device for IP: {source_ip_obj}")
+                # Create ip_network object for the interface
+                if interface.ipv4_subnet:
+                    interface_network = ipaddress.ip_network(interface.ipv4_subnet, strict=False)
+                else: # Assume /32 if no subnet mask (single host network)
+                    interface_network = ipaddress.ip_network(f"{interface.ipv4_address}/32", strict=False)
 
-        intf_direct_match = Interface.query.filter(
-            Interface.ipv4_address == str(source_ip_obj)
-        ).first()
+                device_name = interface.device.hostname
+                interface_name = interface.name
 
-        if intf_direct_match:
-            src_device = Device.query.get(intf_direct_match.device_id)
-            src_interface = intf_direct_match.name
-            src_network = intf_direct_match.ipv4_subnet
-            app_logger.info(f"Source IP {source_ip_obj} found directly on interface {src_interface} of device {src_device.hostname}.")
-        else:
-            app_logger.debug(f"Source IP {source_ip_obj} not found directly on an interface. Checking subnets.")
-            all_interfaces_with_subnets = Interface.query.filter(Interface.ipv4_subnet.isnot(None)).all()
+                if ip_obj not in graph:
+                    graph[ip_obj] = [] # Initialize adjacency list for this node
 
-            app_logger.debug(f"Total interfaces with subnets found in DB: {len(all_interfaces_with_subnets)}")
+                device_by_ip[ip_obj] = device_name
+                interface_by_ip[ip_obj] = interface_name
+                interface_network_map[ip_obj] = interface_network
+                app_logger.debug(f"Added interface {interface_name} ({ip_obj}/{interface_network.prefixlen}) on {device_name} to graph nodes.")
 
-            for intf in all_interfaces_with_subnets:
+            except ValueError:
+                app_logger.warning(f"Skipping interface {interface.name} on {interface.device.hostname} due to invalid IP address or subnet mask: {interface.ipv4_address}/{interface.ipv4_subnet}")
+                continue
+            except Exception as e:
+                app_logger.error(f"Unexpected error processing interface {interface.name} on {interface.device.hostname}: {e}")
+                continue
+
+        # Add edges based on ARP entries (direct connections) and Route entries (next hops)
+        for interface_ip_obj, device_name in device_by_ip.items():
+            device = Device.query.filter_by(hostname=device_name).first()
+            if not device:
+                app_logger.warning(f"Device {device_name} not found in DB for interface IP {interface_ip_obj}. Skipping edge creation for this interface.")
+                continue
+
+            # Add edges from ARP entries (direct neighbors on the same segment)
+            arp_entries = ArpEntry.query.filter_by(device_id=device.device_id).all()
+            app_logger.debug(f"Checking {len(arp_entries)} ARP entries for device {device_name} (interface {interface_ip_obj}).")
+            for arp_entry in arp_entries:
                 try:
-                    interface_network = ipaddress.ip_network(intf.ipv4_subnet, strict=False)
-                    app_logger.debug(f"Checking interface '{intf.name}' (Device ID: {intf.device_id}) on device {Device.query.get(intf.device_id).hostname} with subnet '{intf.ipv4_subnet}'. Is {source_ip_obj} in {interface_network}? {source_ip_obj in interface_network}")
-
-                    if source_ip_obj in interface_network:
-                        src_device = Device.query.get(intf.device_id)
-                        src_interface = intf.name
-                        src_network = intf.ipv4_subnet
-                        app_logger.info(f"Source IP {source_ip_obj} found within subnet {intf.ipv4_subnet} of interface {src_interface} on device {src_device.hostname}.")
-                        break
-                except ValueError as e:
-                    app_logger.warning(f"Error parsing IPv4 subnet '{intf.ipv4_subnet}' for interface {intf.name} (Device ID: {intf.device_id}): {e}")
+                    arp_ip_obj = ipaddress.ip_address(arp_entry.ip_address)
+                    # Check if the ARP entry's IP is within the same network as the current interface
+                    if interface_ip_obj in interface_network_map[interface_ip_obj] and arp_ip_obj in interface_network_map[interface_ip_obj]:
+                        if arp_ip_obj in graph and arp_ip_obj != interface_ip_obj:
+                            if (arp_ip_obj, 1) not in graph[interface_ip_obj]:
+                                graph[interface_ip_obj].append((arp_ip_obj, 1))
+                                app_logger.debug(f"Added ARP edge: {interface_ip_obj} -> {arp_ip_obj} (Device: {device_by_ip.get(arp_ip_obj, 'Unknown')}) via ARP entry on {device_name}.")
+                except ValueError:
+                    app_logger.warning(f"Invalid IP in ARP entry {arp_entry.ip_address} on {device_name}. Skipping.")
                     continue
 
-        if not src_device:
-            app_logger.warning(f"Source IP {source_ip} not found on any device interface or within any known subnet in the database.")
-            return f"Pathfinding failed: Source IP {source_ip} not found on any device interface or within any known subnet.", []
-
-        path.append({
-            'type': 'source_network_entry',
-            'ip': str(source_ip_obj),
-            'device': src_device.hostname,
-            'interface': src_interface,
-            'network': src_network
-        })
-
-        current_ip_on_path = source_ip_obj
-        current_device_on_path = src_device
-
-        max_hops = 10
-        for hop_count in range(max_hops):
-            if current_ip_on_path == destination_ip_obj:
-                app_logger.info(f"Destination IP {destination_ip_obj} reached.")
-                break
-
-            app_logger.debug(f"Hop {hop_count}: Currently on device {current_device_on_path.hostname}, looking for route to {destination_ip_obj}.")
-
-            routes_from_current_device = RouteEntry.query.filter(
-                RouteEntry.device_id == current_device_on_path.device_id
-            ).order_by(db.func.length(RouteEntry.destination_network).desc()).all()
-
-            next_hop_found_in_routes = False
-            for route in routes_from_current_device:
-                try:
-                    dest_net = ipaddress.ip_network(route.destination_network, strict=False)
-                    if destination_ip_obj in dest_net:
-                        app_logger.debug(f"Found matching route on {current_device_on_path.hostname}: {route.destination_network} via {route.next_hop or 'direct'} on {route.interface_name}.")
-
-                        path.append({
-                            'type': 'route_hop',
-                            'device': current_device_on_path.hostname,
-                            'destination_network': route.destination_network,
-                            'next_hop': route.next_hop,
-                            'interface': route.interface_name,
-                            'route_type': route.route_type
-                        })
-
-                        if route.next_hop:
-                            next_hop_ip = ipaddress.ip_address(route.next_hop)
-                            next_intf = Interface.query.filter(Interface.ipv4_address == str(next_hop_ip)).first()
-                            if next_intf:
-                                next_device = Device.query.get(next_intf.device_id)
-                                if next_device:
-                                    current_device_on_path = next_device
-                                    current_ip_on_path = next_hop_ip
-                                    next_hop_found_in_routes = True
-                                    break
-                                else:
-                                    app_logger.warning(f"Next hop IP {next_hop_ip} on {current_device_on_path.hostname} leads to unknown device. Path may terminate.")
-                                    path.append({
-                                        'type': 'path_end',
-                                        'reason': 'Next hop device unknown',
-                                        'ip': str(next_hop_ip)
-                                    })
-                                    next_hop_found_in_routes = True
-                                    current_ip_on_path = destination_ip_obj + 1 # Force exit loop, indicate not reached
-                                    break
-                            else:
-                                app_logger.warning(f"Next hop IP {next_hop_ip} on {current_device_on_path.hostname} not found on any interface. Path may terminate.")
-                                path.append({
-                                    'type': 'path_end',
-                                    'reason': 'Next hop IP not on any interface',
-                                    'ip': str(next_hop_ip)
-                                })
-                                next_hop_found_in_routes = True
-                                current_ip_on_path = destination_ip_obj + 1 # Force exit loop, indicate not reached
-                                break
+            # Add edges from Route entries (to next-hop managed interfaces)
+            route_entries = RouteEntry.query.filter_by(device_id=device.device_id).all()
+            app_logger.debug(f"Checking {len(route_entries)} route entries for device {device_name} (interface {interface_ip_obj}).")
+            for route_entry in route_entries:
+                if route_entry.next_hop:
+                    try:
+                        next_hop_ip_obj = ipaddress.ip_address(route_entry.next_hop)
+                        # If the next hop is an IP of another managed device's interface, add an edge.
+                        # This should represent a logical hop through this device to its next-hop interface.
+                        if next_hop_ip_obj in graph and next_hop_ip_obj != interface_ip_obj:
+                            if (next_hop_ip_obj, 1) not in graph[interface_ip_obj]:
+                                graph[interface_ip_obj].append((next_hop_ip_obj, 1))
+                                app_logger.debug(f"Added Route edge from {interface_ip_obj} (on {device_name}) to {next_hop_ip_obj} (on {device_by_ip.get(next_hop_ip_obj, 'Unknown')}) via route to {route_entry.destination_network}.")
                         else:
-                            app_logger.info(f"Destination IP {destination_ip_obj} is directly connected to {current_device_on_path.hostname}.")
-                            current_ip_on_path = destination_ip_obj
-                            next_hop_found_in_routes = True
+                            app_logger.debug(f"Next hop {next_hop_ip_obj} from route {route_entry.destination_network} on {device_name} is not a managed interface, or is self. Not adding direct edge in graph.")
+
+                    except ValueError:
+                        app_logger.warning(f"Invalid next-hop IP in route entry {route_entry.next_hop} on {device_name}. Skipping.")
+                        continue
+                else:
+                    app_logger.debug(f"Route entry to {route_entry.destination_network} on {device_name} has no next-hop, likely directly connected. Not adding explicit next-hop edge.")
+
+
+        app_logger.info(f"Graph built with {len(graph)} nodes (managed interfaces) and {sum(len(v) for v in graph.values())} edges.")
+        if not graph:
+            app_logger.error("Graph is empty. No managed devices or interfaces found with valid IPs.")
+            raise PathfindingError("No network topology data available. Graph is empty.")
+
+        # 3. Dijkstra's Algorithm
+        distances = {ip: float('inf') for ip in graph}
+        predecessors = {ip: None for ip in graph}
+        priority_queue = [] # (distance, ip_obj)
+
+        # Determine the best starting point (an interface on a managed device)
+        start_node = None
+        app_logger.debug(f"Attempting to find start node for source: {source_ip_obj} (Is network: {is_source_network})")
+        for interface_ip_obj, interface_network in interface_network_map.items():
+            app_logger.debug(f"Checking interface: {interface_ip_obj} (Network: {interface_network}) on device {device_by_ip.get(interface_ip_obj)}")
+            source_matches_interface = False
+            if is_source_network:
+                # If source is a network, check if it overlaps with or is a subnet of the interface's network
+                overlaps = source_ip_obj.overlaps(interface_network)
+                subnet_of_src = source_ip_obj.subnet_of(interface_network) # Is source_ip_obj a subnet of interface_network?
+                subnet_of_if = interface_network.subnet_of(source_ip_obj) # Is interface_network a subnet of source_ip_obj?
+
+                source_matches_interface = overlaps or subnet_of_src or subnet_of_if
+                app_logger.debug(f"  Network comparison: overlaps={overlaps}, subnet_of_src={subnet_of_src}, subnet_of_if={subnet_of_if}. Result: {source_matches_interface}")
+            else:
+                # If source is a single IP, check if it's within the interface's network
+                source_matches_interface = source_ip_obj in interface_network
+                app_logger.debug(f"  IP in network comparison: {source_ip_obj} in {interface_network}. Result: {source_matches_interface}")
+
+            if source_matches_interface:
+                start_node = interface_ip_obj
+                distances[start_node] = 0
+                heapq.heappush(priority_queue, (0, start_node))
+                app_logger.info(f"Initial pathfinding start node: {start_node} on device {device_by_ip.get(start_node)} (Source {source_ip} is in/overlaps with its network {interface_network}).")
+                break # Found a directly connected starting point
+
+        if start_node is None:
+            app_logger.error(f"Source {source_ip} is not directly connected to or does not overlap with any managed device's interface network. Pathfinding cannot begin.")
+            raise DestinationUnreachableError(f"Source {source_ip} is not directly connected to or does not overlap with any managed device's interface network. Pathfinding cannot begin.")
+
+        # Store the final node in the graph that reaches the destination (if not the destination_obj itself)
+        final_reachable_node = None
+        destination_found_via_route = False # This flag indicates if the path *ends* because a device has a route to unmanaged space/final destination
+
+        while priority_queue:
+            current_distance, current_ip_obj = heapq.heappop(priority_queue)
+
+            if current_distance > distances[current_ip_obj]:
+                app_logger.debug(f"Skipping {current_ip_obj}: already found shorter path.")
+                continue
+
+            app_logger.debug(f"Exploring from {current_ip_obj} (Device: {device_by_ip.get(current_ip_obj, 'Unknown')}, Distance: {current_distance})")
+
+            # Check if destination reached (either directly or via a route from current device)
+            destination_reached_in_loop = False
+
+            # Case 1: Current node IS the destination (or within the destination network if it's a subnet)
+            if (not is_destination_network and current_ip_obj == destination_obj) or \
+               (is_destination_network and current_ip_obj in destination_obj):
+                destination_reached_in_loop = True
+                final_reachable_node = current_ip_obj
+                app_logger.info(f"Direct destination match: {destination_ip} reached via interface {current_ip_obj} on {device_by_ip.get(current_ip_obj)}.")
+
+            # Case 2: Current device has a route to the destination
+            if not destination_reached_in_loop: # Only check routes if not already directly at destination
+                current_device_name = device_by_ip.get(current_ip_obj)
+                if current_device_name:
+                    current_device = Device.query.filter_by(hostname=current_device_name).first()
+                    if current_device:
+                        relevant_routes = RouteEntry.query.filter_by(device_id=current_device.device_id).all()
+                        app_logger.debug(f"Checking {len(relevant_routes)} routes on device {current_device_name} for destination {destination_ip}.")
+
+                        for route_entry in relevant_routes:
+                            try:
+                                route_dest_network = ipaddress.ip_network(route_entry.destination_network, strict=False)
+                                target_matched = False
+                                if is_destination_network:
+                                    target_matched = destination_obj.overlaps(route_dest_network) or destination_obj.subnet_of(route_dest_network) or route_dest_network.subnet_of(destination_obj)
+                                else: # Destination is a single IP address
+                                    target_matched = destination_obj in route_dest_network
+
+                                if target_matched:
+                                    # --- START OF CRITICAL LOGIC ADJUSTMENT ---
+                                    # If the route has a next hop, and that next hop is a managed interface,
+                                    # then this is NOT the end of the path. We should try to continue.
+                                    next_hop_ip_obj = None
+                                    if route_entry.next_hop:
+                                        try:
+                                            next_hop_ip_obj = ipaddress.ip_address(route_entry.next_hop)
+                                        except ValueError:
+                                            app_logger.debug(f"Route {route_entry.destination_network} on {current_device_name} has invalid next hop IP {route_entry.next_hop}. Treating as unmanaged.")
+
+                                    if next_hop_ip_obj and next_hop_ip_obj in graph:
+                                        # This means the next hop is a managed device interface.
+                                        # We should NOT mark destination_reached_in_loop as True here.
+                                        # Instead, this route should have created an edge in graph construction,
+                                        # and Dijkstra's will naturally explore it.
+                                        app_logger.debug(f"Route {route_entry.destination_network} on {current_device_name} points to managed next hop {next_hop_ip_obj}. Path will continue.")
+                                        # Do nothing further in this `if target_matched` block
+                                        # The path will continue via the edge added earlier in graph building.
+                                    else:
+                                        # This is the point where the path leaves our managed network,
+                                        # or reaches the destination if it's directly connected via this route.
+                                        destination_reached_in_loop = True
+                                        final_reachable_node = current_ip_obj # The path effectively ends here as this device knows the way
+                                        destination_found_via_route = True
+                                        app_logger.info(f"Destination {destination_ip} reached via route {route_entry.destination_network} on device {current_device_name} (interface {current_ip_obj}). Next hop is unmanaged or direct: {route_entry.next_hop if route_entry.next_hop else 'directly connected'}.")
+                                        break # Found a matching route that exits managed network, no need to check other routes on this device
+                                    # --- END OF CRITICAL LOGIC ADJUSTMENT ---
+                            except ValueError:
+                                app_logger.warning(f"Error parsing route network '{route_entry.destination_network}' for device {current_device_name}. Skipping route.")
+                                continue
+                else:
+                    app_logger.debug(f"Current IP {current_ip_obj} has no associated device name. Cannot check routes.")
+
+
+            if destination_reached_in_loop:
+                app_logger.info(f"Pathfinding completed: Destination {destination_ip} reached.")
+                break # Path found, exit Dijkstra's loop
+
+            # Explore neighbors
+            for neighbor_ip_obj, edge_cost in graph.get(current_ip_obj, []):
+                distance = current_distance + edge_cost
+                if distance < distances[neighbor_ip_obj]:
+                    distances[neighbor_ip_obj] = distance
+                    predecessors[neighbor_ip_obj] = current_ip_obj
+                    heapq.heappush(priority_queue, (distance, neighbor_ip_obj))
+                    app_logger.debug(f"Updating path: {current_ip_obj} -> {neighbor_ip_obj} (on {device_by_ip.get(neighbor_ip_obj, 'Unknown')}) with new distance {distance}.")
+                else:
+                    app_logger.debug(f"Not updating path to {neighbor_ip_obj} from {current_ip_obj}: current distance {distance} is not shorter than existing {distances[neighbor_ip_obj]}.")
+
+        # 4. Path Reconstruction
+        if final_reachable_node is None:
+            app_logger.error(f"Pathfinding stopped, but no path was found to destination {destination_ip}. Final reachable node is None.")
+            raise DestinationUnreachableError(f"Pathfinding failed: Could not reach {destination_ip}. Destination unreachable from managed network.")
+
+        app_logger.info(f"Path found to {destination_ip}. Reconstructing path from {final_reachable_node}...")
+        current = final_reachable_node
+        path_segments = []
+
+        # Add the final destination details if it was an explicit IP/network reached by a route
+        if not destination_found_via_route: # If the final_reachable_node itself was the destination
+             path_segments.append({
+                'type': 'destination_reached_directly',
+                'ip': str(current),
+                'device': device_by_ip.get(current),
+                'interface': interface_by_ip.get(current),
+                'note': f"Directly reached destination IP/network {destination_ip}"
+            })
+        else: # Reached via a route, ending at 'current' managed device
+            current_device_name = device_by_ip.get(current)
+            current_device = Device.query.filter_by(hostname=current_device_name).first()
+            if current_device:
+                # Find the specific route that led to the destination
+                final_route_found_details = None
+                relevant_routes_at_end = RouteEntry.query.filter_by(device_id=current_device.device_id).all()
+                for route_entry in relevant_routes_at_end:
+                    try:
+                        route_dest_network = ipaddress.ip_network(route_entry.destination_network, strict=False)
+                        target_matched = False
+                        if is_destination_network:
+                            target_matched = destination_obj.overlaps(route_dest_network) or destination_obj.subnet_of(route_dest_network) or route_dest_network.subnet_of(destination_obj)
+                        else:
+                            target_matched = destination_obj in route_dest_network
+
+                        # Re-evaluate the next_hop in reconstruction, similar to Dijkstra's loop
+                        next_hop_ip_obj = None
+                        if route_entry.next_hop:
+                            try:
+                                next_hop_ip_obj = ipaddress.ip_address(route_entry.next_hop)
+                            except ValueError:
+                                pass # Invalid IP, treat as unmanaged
+
+                        # This route is relevant only if it covers the destination AND
+                        # its next-hop is NOT another managed interface (because if it were,
+                        # Dijkstra would have continued).
+                        if target_matched and (not next_hop_ip_obj or next_hop_ip_obj not in graph):
+                            final_route_found_details = {
+                                'type': 'route_hop',
+                                'device': current_device.hostname,
+                                'source_interface_on_device': interface_by_ip.get(current),
+                                'destination_network': route_entry.destination_network,
+                                'next_hop': route_entry.next_hop if route_entry.next_hop else "directly connected",
+                                'interface_out': route_entry.interface_name,
+                                'route_type': route_entry.route_type,
+                                'reached_final_destination': True
+                            }
+                            app_logger.debug(f"Identified final route leading to destination: {route_entry.destination_network} via {route_entry.next_hop} on {current_device.hostname}.")
                             break
-                except ipaddress.AddressValueError:
-                    app_logger.warning(f"Invalid network format in route entry: {route.destination_network} on device {current_device_on_path.hostname}.")
-                    continue
+                    except ValueError:
+                        app_logger.warning(f"Error parsing route {route_entry.destination_network} during final path reconstruction on {current_device.hostname}.")
+                        continue
+                if final_route_found_details:
+                    path_segments.append(final_route_found_details)
+                else:
+                    app_logger.warning(f"Final reachable node {current} on device {current_device.hostname} knew about the destination {destination_ip} but couldn't pinpoint the exact route during reconstruction, or it was an intermediate hop that should have led to another managed device.")
+                    path_segments.append({
+                        'type': 'final_managed_device_route_known',
+                        'device': current_device.hostname,
+                        'interface': interface_by_ip.get(current),
+                        'ip': str(current),
+                        'note': f"Path ended here, device {current_device.hostname} knows route to {destination_ip}, but specific route details not captured for final hop or it was an intermediate hop."
+                    })
+            else:
+                app_logger.warning(f"Final reachable node {current} has no associated device during path reconstruction. Path might be incomplete.")
 
-            if not next_hop_found_in_routes:
-                app_logger.warning(f"No valid route found from {current_device_on_path.hostname} for destination {destination_ip}.")
-                path.append({
-                    'type': 'path_end',
-                    'reason': 'No route found',
-                    'device': current_device_on_path.hostname
+
+        # Traverse back from the final_reachable_node to the start_node
+        while current and predecessors.get(current) is not None:
+            prev = predecessors[current]
+            app_logger.debug(f"Reconstructing path: current={current} (device={device_by_ip.get(current)}), prev={prev} (device={device_by_ip.get(prev)})")
+
+            if device_by_ip.get(current) != device_by_ip.get(prev):
+                path_segments.append({
+                    'type': 'device_hop',
+                    'from_device': device_by_ip.get(prev),
+                    'from_interface_ip': str(prev),
+                    'to_device': device_by_ip.get(current),
+                    'to_interface_ip': str(current),
+                    'next_hop_type': 'inter-device'
                 })
-                break
+            else:
+                path_segments.append({
+                    'type': 'internal_hop_between_interfaces', # Renamed for clarity
+                    'device': device_by_ip.get(current),
+                    'from_interface_ip': str(prev),
+                    'to_interface_ip': str(current),
+                    'note': 'This hop indicates traffic moved between two interfaces on the same device to reach a managed interface closer to the destination.'
+                })
+            current = prev
 
-            if current_ip_on_path == destination_ip_obj:
-                app_logger.info(f"Pathfinding successfully reached destination {destination_ip_obj}.")
-                break
+        # Add the initial source network entry
+        if start_node:
+            path_segments.append({
+                'type': 'source_network_entry',
+                'ip': str(source_ip_obj),
+                'device': device_by_ip.get(start_node),
+                'interface': interface_by_ip.get(start_node),
+                'network': str(interface_network_map.get(start_node)),
+                'note': 'Origin of traffic within the managed network.'
+            })
+        else:
+            app_logger.warning("Start node was None during path reconstruction, cannot add source network entry details fully.")
+            path_segments.append({
+                'type': 'source_network_entry_unresolved',
+                'ip': str(source_ip_obj),
+                'note': 'Starting point within the managed network could not be fully resolved to a specific interface/device.'
+            })
 
-        if current_ip_on_path != destination_ip_obj:
-            app_logger.warning(f"Pathfinding stopped before reaching destination {destination_ip_obj}. Final IP on path: {current_ip_on_path}")
-            return f"Pathfinding failed: Could not reach {destination_ip}.", []
+        path.extend(reversed(path_segments)) # Reverse to get path from source to destination
 
+        # 5. Identify Firewalls in Path
         unique_firewall_hostnames = set()
         for hop in path:
+            device_name_in_hop = None
             if 'device' in hop:
-                device_obj = Device.query.filter_by(hostname=hop['device']).first()
+                device_name_in_hop = hop['device']
+            elif 'from_device' in hop: # For device_hop types
+                device_name_in_hop = hop['from_device']
+
+            if device_name_in_hop and device_name_in_hop != "Unknown (initial check)":
+                device_obj = Device.query.filter_by(hostname=device_name_in_hop).first()
                 if device_obj and device_obj.device_type == "Firewall":
                     unique_firewall_hostnames.add(device_obj.hostname)
 
         firewalls_in_path = list(unique_firewall_hostnames)
-        app_logger.info(f"Path found. Firewalls in path: {firewalls_in_path}")
+        app_logger.info(f"Path found. Firewalls identified in path: {firewalls_in_path}")
         app_logger.debug(f"Full path trace: {json.dumps(path, indent=2)}")
+
         return path, firewalls_in_path
 
     def perform_pre_check(self, rule_data, firewalls_involved):
