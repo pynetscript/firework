@@ -16,6 +16,8 @@ outputs/
 
 # Ansible
 .ansible/
+ansible_collections
+ansible_tmp
 *.retry
 *.vault
 .vault_pass.txt
