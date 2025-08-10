@@ -72,8 +72,13 @@ def create_app():
     app.register_blueprint(admin_bp)
     app.register_blueprint(auth)
 
-    app.logger.info(f"Database URI configured.")
-    app.logger.info(f"Current working directory: {app.root_path}")
-    app.logger.info(f"Application started. Secrets loaded from environment variables.")
+    #app.logger.info(f"Database URI configured.")
+    #app.logger.info(f"Current working directory: {app.root_path}")
+    #app.logger.info(f"Application started. Secrets loaded from environment variables.")
+
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or os.environ.get('FLASK_RUN_FROM_CLI') == 'true':
+        app.logger.info("Database URI configured.")
+        app.logger.info(f"Current working directory: {app.root_path}")
+        app.logger.info("Application started. Secrets loaded from environment variables.")
 
     return app
