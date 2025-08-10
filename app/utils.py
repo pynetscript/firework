@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models import db, ActivityLogEntry
 import logging
 
@@ -20,7 +20,7 @@ def log_activity(event_type, description, user=None, username=None, user_id=None
 
     try:
         new_log = ActivityLogEntry(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             user_id=logged_user_id,
             username=logged_username,
             event_type=event_type,

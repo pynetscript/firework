@@ -4,7 +4,7 @@ from app.utils import log_activity
 import ipaddress
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_login import login_required, current_user
 from app.services.network_automation import NetworkAutomationService
 from app.services.network_automation import DestinationUnreachableError, PathfindingError
@@ -803,7 +803,7 @@ def approve_deny_request(rule_id):
         if action == 'approve':
             rule.status = 'Pending Implementation'
             rule.approval_status = 'Approved'
-            rule.approved_at = datetime.utcnow()
+            rule.approved_at = datetime.now(timezone.utc)
             flash(f"Request ID {rule.id} sucessfully approved.", 'success')
             app_logger.info(f"Request ID {rule.id} sucessfully approved by {current_user.username}. Status: {rule.status}.")
             log_activity(
@@ -937,7 +937,7 @@ def implement_rule(rule_id):
 
         rule.implementer_id = current_user.id
         rule.implementer_comment = implementer_comment
-        rule.implemented_at = datetime.utcnow()
+        rule.implemented_at = datetime.now(timezone.utc)
 
         if action == 'provision':
             firewalls_to_provision = rule.firewalls_to_provision if rule.firewalls_to_provision else []
@@ -1407,7 +1407,7 @@ def edit_blacklist_rule(rule_id):
         rule.protocol = protocol_data
         rule.destination_port = destination_port_data
         rule.description = description_data
-        rule.updated_at = datetime.utcnow()
+        rule.updated_at = datetime.now(timezone.utc)
         rule.last_updated_by_user_id = current_user.id
 
         try:

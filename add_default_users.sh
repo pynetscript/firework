@@ -14,7 +14,14 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 2. Run the embedded Python script to populate the database
+# 2. Export environment variables from the .env file to the shell
+# This makes the variables available to the Python script
+echo "Loading environment variables from .env file..."
+set -a
+source .env
+set +a
+
+# 3. Run the embedded Python script to populate the database
 echo "Executing embedded Python script for user creation..."
 python - <<EOF
 import sys
@@ -43,7 +50,7 @@ with app.app_context():
         role = user_data['role']
 
         if not User.query.filter_by(username=username).first():
-            new_user = User(username=username, email=email, role=role, created_at=datetime.utcnow())
+            new_user = User(username=username, email=email, role=role, created_at=datetime.now(timezone.utc))
             new_user.set_password(password)
             db.session.add(new_user)
             db.session.commit()

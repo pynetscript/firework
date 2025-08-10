@@ -8,3 +8,4 @@ Werkzeug
 psycopg2-binary
 gunicorn
 psutil
+python-dotenv
