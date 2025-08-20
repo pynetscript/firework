@@ -20,15 +20,10 @@
     dst_addr_name: "h-{{ destination_ip }}"
     fortigate_service_name: "{{ (protocol | upper) ~ '-' ~ (dest_port | replace('-', '_')) if protocol | lower not in ['any', 'icmp'] else ('ALL_ICMP' if protocol | lower == 'icmp' else 'ALL') | trim }}"
 
-
   tasks:
     - name: Debug FortiGate Provisioning variables
       debug:
         msg: "Provisioning Rule ID: {{ rule_id }} on {{ inventory_hostname }} (FortiGate) for Source: {{ source_ip }}, Destination: {{ destination_ip }}, Protocol: {{ protocol }}, Port: {{ dest_port }}"
-
-#    - name: Debug Generated variables
-#      debug:
-#        msg: "src_addr_name: {{ src_addr_name }}, dst_addr_name: {{ dst_addr_name }}, fortigate_service_name: {{ fortigate_service_name }}"
 
     - name: Create FortiGate Source Address Object
       fortinet.fortios.fortios_firewall_address:

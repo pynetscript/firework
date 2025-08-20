@@ -11,12 +11,6 @@
     check_destination_ip: "{{ destination_ip }}"
     check_protocol: "{{ protocol }}"
     check_port: "{{ port }}" # [WARNING]: Consider renaming 'port' to avoid conflicts with Ansible reserved names (e.g., 'service_port')
-
-    # IMPORTANT: FortiGate API access token should be managed securely, e.g., via Ansible Vault
-    # For demonstration purposes, it's a variable here, but DO NOT hardcode sensitive tokens in production.
-    #fortigate_api_access_token: "h4GHn5Qy9Ghyr03cHcN5jk0gG05GGz"
-
-    # Flag to indicate if a policy is found
     policy_found_flag: false
 
   tasks:
@@ -29,7 +23,7 @@
         # Construct the URL with dynamic variables, hardcoded srcintf, and using ansible_host for the IP
         url: "https://{{ ansible_host }}/api/v2/monitor/firewall/policy-lookup/?access_token={{ fortinet_api_access_token }}&srcintf=port3&sourceip={{ check_source_ip }}&protocol={{ check_protocol }}&dest={{ check_destination_ip }}&destport={{ check_port }}"
         method: GET
-        validate_certs: no # Set to 'yes' and provide 'ca_path' or 'src' for production environments
+        validate_certs: no
         return_content: yes
       register: fgt_policy_lookup_result
       ignore_errors: yes # Allow the playbook to continue even if the API call encounters an error

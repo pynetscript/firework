@@ -393,26 +393,20 @@ def submit_request():
     errors = []
 
     # Validate source IP
-    try:
-        # Attempt to parse as an IP address (for /32 equivalent or single IPs)
-        ipaddress.ip_address(source_ip)
-    except ValueError:
-        try:
-            # If it's not a single IP, attempt to parse as a network (CIDR)
-            ipaddress.ip_network(source_ip)
-        except ValueError:
-            errors.append('Invalid Source IP address or CIDR format.')
+    if source_ip and source_ip != '0.0.0.0':
+       try:
+           # Only parse as a single IP address
+           ipaddress.ip_address(source_ip)
+       except ValueError:
+           errors.append('Invalid Source IP address. Only single IPs or 0.0.0.0 are allowed.')
 
     # Validate destination IP
-    try:
-        # Attempt to parse as an IP address (for /32 equivalent or single IPs)
-        ipaddress.ip_address(destination_ip)
-    except ValueError:
+    if destination_ip and destination_ip != '0.0.0.0':
         try:
-            # If it's not a single IP, attempt to parse as a network (CIDR)
-            ipaddress.ip_network(destination_ip)
+            # Only parse as a single IP address
+            ipaddress.ip_address(destination_ip)
         except ValueError:
-            errors.append('Invalid Destination IP address or CIDR format.')
+            errors.append('Invalid Destination IP address. Only single IPs or 0.0.0.0 are allowed.')
 
     # Validate protocol
     allowed_protocols = ['tcp', 'udp', 'icmp', 'any', '6', '17', '1']

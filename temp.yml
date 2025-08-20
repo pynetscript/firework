@@ -23,33 +23,28 @@
       debug:
         msg: "Post-checking Rule ID: {{ rule_id }} on {{ inventory_hostname }} (FortiGate) for Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}"
 
-    - name: Verify that the policy exists and has correct parameters (check mode)
-      fortinet.fortios.fortios_firewall_policy:
+    - name: Get FortiGate Firewall Policy info by ID
+      fortinet.fortios.fortios_firewall_policy_info:
         vdom: "root"
-        state: present
-        firewall_policy:
-          policyid: "{{ rule_id }}"
-          name: "firework-{{ rule_id }}"
-          srcintf:
-            - name: "any"
-          dstintf:
-            - name: "any"
-          srcaddr:
-            - name: "{{ src_addr_name }}"
-          dstaddr:
-            - name: "{{ dst_addr_name }}"
-          service:
-            - name: "{{ fortigate_service_name }}"
-          action: "accept"
-          schedule: "always"
-      check_mode: yes
-      register: policy_check
+        policyid: "{{ rule_id }}"
+      register: policy_info
 
-    - name: Fail if policy does not exist or differs
+    - name: Verify that the policy exists
       ansible.builtin.fail:
-        msg: "FortiGate policy with ID {{ rule_id }} was not found or parameters do not match!"
-      when: policy_check.changed == true
+        msg: "FortiGate policy with ID {{ rule_id }} not found on {{ inventory_hostname }}!"
+      when: not policy_info.meta.results or policy_info.meta.results | length == 0
+
+    - name: Check if policy parameters match expected values
+      ansible.builtin.fail:
+        msg: "FortiGate policy parameters mismatch for ID {{ rule_id }}!"
+      when: not (
+        (policy_info.meta.results[0].name == 'firework-{{ rule_id }}') and
+        (policy_info.meta.results[0].srcaddr | map(attribute='name') | list | contains(src_addr_name)) and
+        (policy_info.meta.results[0].dstaddr | map(attribute='name') | list | contains(dst_addr_name)) and
+        (policy_info.meta.results[0].service | map(attribute='name') | list | contains(fortigate_service_name))
+      )
 
     - name: Indicate that the policy was successfully verified
-      debug:
+      ansible.builtin.debug:
         msg: "POLICY_VERIFIED"
+      when: not ansible_failed_result is defined
