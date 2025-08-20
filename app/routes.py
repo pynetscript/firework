@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, abort
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, abort, Response
 from app.models import FirewallRule, BlacklistRule, db, User, ActivityLogEntry
 from app.utils import log_activity
 import ipaddress
@@ -9,7 +9,9 @@ from flask_login import login_required, current_user
 from app.services.network_automation import NetworkAutomationService
 from app.services.network_automation import DestinationUnreachableError, PathfindingError
 from app.decorators import roles_required, no_self_approval
+from io import StringIO
 import os
+import csv
 import psutil
 import socket
 
@@ -1539,6 +1541,69 @@ def api_delete_blacklist_rules():
         )
         app_logger.error(f"API: Error deleting multiple blacklist rules by {current_user.username}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": f"An error occurred during bulk deletion: {e}"}), 500
+
+@routes.route('/admin/blacklist-rules/export')
+@login_required
+@roles_required('admin', 'superadmin')
+def export_blacklist_csv():
+    """
+    Exports all blacklist rules as a CSV file.
+    Accessible only by superadmin and admin roles.
+    """
+    # Fetch all blacklist rules from the database
+    rules = BlacklistRule.query.all()
+
+    # Create an in-memory text buffer
+    si = StringIO()
+    cw = csv.writer(si)
+
+    # Write the header row
+    header = [
+        'ID',
+        'Sequence',
+        'Rule Name',
+        'Enabled',
+        'Source IP',
+        'Destination IP',
+        'Protocol',
+        'Port',
+        'Description',
+        'Created At',
+        'Created By',
+        'Last Updated',
+        'Last Updated By'
+    ]
+    cw.writerow(header)
+
+    # Write each rule's data row
+    for rule in rules:
+        cw.writerow([
+            rule.id,
+            rule.sequence,
+            rule.rule_name,
+            'Yes' if rule.enabled else 'No',  # Convert boolean to 'Yes' or 'No'
+            rule.source_ip,
+            rule.destination_ip,
+            rule.protocol,
+            rule.destination_port,
+            rule.description,
+            rule.created_at,
+            rule.created_by_user_id,
+            rule.updated_at,
+            rule.last_updated_by_user_id
+        ])
+
+    # Create and return the Flask Response
+    output = si.getvalue()
+    si.close()
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={
+            "Content-disposition": "attachment; filename=blacklist_rules.csv"
+        }
+    )
 
 #######################################################################
 #                        PROFILE ROUTES                               #
