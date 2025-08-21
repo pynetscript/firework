@@ -100,8 +100,7 @@
                 <tbody class="bg-white divide-y divide-gray-200">
                     {% for activity in recent_activities %}
                     <tr>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-utc-timestamp="{{ activity.timestamp.isoformat() }}Z">
-                            {{ activity.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-utc-timestamp="{{ activity.timestamp.isoformat() }}">
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ activity.username }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ activity.event_type | replace('_', ' ') | title }}</td>
@@ -323,25 +322,32 @@
         setInterval(fetchSystemStatus, 3000);
         setInterval(fetchApplicationStatus, 15000);
 
-        const timestampCells = document.querySelectorAll('#activityLogTable tbody td[data-utc-timestamp]');
+        const timestampCells = document.querySelectorAll('td[data-utc-timestamp]');
+        
+        const dateFormatter = new Intl.DateTimeFormat('en-GB', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+
         timestampCells.forEach(cell => {
             const utcTimestampString = cell.getAttribute('data-utc-timestamp');
             if (utcTimestampString) {
-                // Create a JavaScript Date object. It automatically handles the client's local timezone
-                const date = new Date(utcTimestampString);
-
-                // Format the date for display in a user-friendly way
-                // 'undefined' uses the user's default locale
-                const options = {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false // Use 24-hour format
-                };
-                cell.textContent = date.toLocaleString('en-GB', options);
+                try {
+                    const date = new Date(utcTimestampString);
+                    if (!isNaN(date.getTime())) { // Check if the date is valid
+                        cell.textContent = dateFormatter.format(date);
+                    } else {
+                        cell.textContent = 'Invalid Date';
+                    }
+                } catch (e) {
+                    console.error('Error parsing date:', e);
+                    cell.textContent = 'Invalid Date';
+                }
             }
         });
     });

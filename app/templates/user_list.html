@@ -38,12 +38,10 @@
                     <td class="py-3 px-6 text-left">{{ user.last_name if user.last_name else '' }}</td>
                     <td class="py-3 px-6 text-left">{{ user.role | capitalize }}</td>
                     <td class="py-3 px-6 text-left whitespace-nowrap"
-                        data-utc-timestamp="{{ user.created_at.isoformat() + 'Z' if user.created_at else '' }}">
-                        {{ user.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if user.created_at else '' }}
+                        data-utc-timestamp="{{ user.created_at.isoformat() if user.created_at else '' }}">
                     </td>
                     <td class="py-3 px-6 text-left whitespace-nowrap"
-                        data-utc-timestamp="{{ user.last_login.isoformat() + 'Z' if user.last_login else '' }}">
-                        {{ user.last_login.strftime('%Y-%m-%d %H:%M:%S UTC') if user.last_login else '' }}
+                        data-utc-timestamp="{{ user.last_login.isoformat() if user.last_login else '' }}">
                     </td>
                     <td class="py-3 px-6 text-center whitespace-nowrap">
                         <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105">
@@ -161,8 +159,6 @@
             if (utcTimestampString && utcTimestampString !== 'None' && utcTimestampString !== '') {
                 try {
                     const date = new Date(utcTimestampString);
-
-                    // Use toLocaleString with 'en-GB' for DD/MM/YYYY, HH:MM:SS format
                     const options = {
                         year: 'numeric',
                         month: '2-digit',
@@ -170,7 +166,7 @@
                         hour: '2-digit',
                         minute: '2-digit',
                         second: '2-digit',
-                        hour12: false // Use 24-hour format
+                        hour12: false
                     };
                     cell.textContent = date.toLocaleString('en-GB', options);
                 } catch (e) {
