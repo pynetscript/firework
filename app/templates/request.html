@@ -89,7 +89,6 @@
     </div>
 </div>
 
-{# Cancel Confirmation Modal #}
 <div id="cancelModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden z-50">
     <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm mx-auto">
         <h3 class="text-lg font-bold mb-4">Confirm Cancellation</h3>
@@ -159,19 +158,18 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // --- Modal for Create Request ---
+        // --- Create Request ---
         const openRequestModalBtn = document.getElementById('openRequestModal');
         const requestModal = document.getElementById('requestModal');
         const closeRequestModalBtn = document.getElementById('closeRequestModal');
-        const requestForm = document.getElementById('requestForm'); // Get the form inside the modal
-        const responseMessageDiv = requestModal.querySelector('#responseMessage'); // Target responseMessage within modal
-        const submitButton = requestModal.querySelector('#submitButton'); // Target submitButton within modal
-        const buttonText = requestModal.querySelector('#buttonText'); // Target buttonText within modal
-        const loadingSpinner = requestModal.querySelector('#loadingSpinner'); // Target loadingSpinner within modal
+        const requestForm = document.getElementById('requestForm');
+        const responseMessageDiv = requestModal.querySelector('#responseMessage');
+        const submitButton = requestModal.querySelector('#submitButton');
+        const buttonText = requestModal.querySelector('#buttonText');
+        const loadingSpinner = requestModal.querySelector('#loadingSpinner');
 
         function openRequestModal() {
             requestModal.classList.remove('hidden');
-            // Clear previous messages and reset form on open
             responseMessageDiv.classList.add('hidden');
             responseMessageDiv.textContent = '';
             requestForm.reset();
@@ -187,7 +185,6 @@
         if (closeRequestModalBtn) {
             closeRequestModalBtn.addEventListener('click', closeRequestModal);
         }
-        // Close modal if clicked outside of its content
         if (requestModal) {
             requestModal.addEventListener('click', function(event) {
                 if (event.target === requestModal) {
@@ -196,7 +193,7 @@
             });
         }
 
-        // Handle Request Form Submission (copied and adapted from request_form.html)
+        // Handle Request Form Submission
         if (requestForm) {
             requestForm.addEventListener('submit', async function(event) {
                 event.preventDefault();
@@ -234,8 +231,7 @@
                                 }
                             `;
                             form.reset();
-                            // Reload page to show new task in the table
-                            setTimeout(() => { location.reload(); }, 1500); // Reload after a short delay
+                            setTimeout(() => { location.reload(); }, 1500);
                         } else if (result.status === "info") {
                             responseMessageDiv.classList.add('bg-blue-100', 'text-blue-800');
                             responseMessageDiv.innerHTML = `<p class="font-bold">Information:</p><p>${result.message}</p>`;
@@ -273,8 +269,7 @@
             });
         }
 
-
-        // --- Cancel Confirmation Modal Logic ---
+        // --- Cancel Confirmation ---
         let ruleIdToCancel = null;
         const cancelModal = document.getElementById('cancelModal');
         const closeCancelModalBtn = document.getElementById('closeCancelModal');
@@ -309,7 +304,7 @@
 
                     if (response.ok) {
                         alert(result.message);
-                        location.reload(); // Reload the page to reflect the change
+                        location.reload();
                     } else {
                         alert('Error: ' + (result.message || 'Failed to cancel request.'));
                     }
@@ -317,15 +312,14 @@
                     console.error('Network error during request cancellation:', error);
                     alert('Network error: Could not connect to the server.');
                 } finally {
-                    cancelModal.classList.add('hidden'); // Close modal regardless of success/failure
+                    cancelModal.classList.add('hidden');
                     confirmCancelButton.disabled = false;
                     confirmCancelButton.textContent = 'Yes, Cancel';
                 }
             }
         });
 
-
-        // Global Search Functionality
+        // Global Search
         const taskSearchInput = document.getElementById('taskSearchInput');
         const tasksTableBody = document.querySelector('#tasksTable tbody');
         const tableRows = tasksTableBody ? tasksTableBody.querySelectorAll('tr') : [];
@@ -346,7 +340,6 @@
             });
         }
 
-        // --- START Timezone Conversion ---
         const timestampCells = document.querySelectorAll('#tasksTable tbody td[data-utc-timestamp]');
         timestampCells.forEach(cell => {
             const utcTimestampString = cell.getAttribute('data-utc-timestamp');
@@ -360,19 +353,14 @@
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
-                    hour12: false // Use 24-hour format
+                    hour12: false
                 };
                 
-                // Format the date and time using 'en-GB' locale for DD/MM/YYYY and then remove the comma
                 let formattedDateTime = date.toLocaleString('en-GB', options);
-                
-                // Remove the comma and replace it with a space
                 formattedDateTime = formattedDateTime.replace(', ', ' '); 
-
                 cell.textContent = formattedDateTime;
             }
         });
-        // --- END Timezone Conversion ---
     });
 </script>
 {% endblock %}

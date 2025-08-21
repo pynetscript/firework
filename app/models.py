@@ -150,7 +150,7 @@ class BlacklistRule(db.Model):
 
 class Device(db.Model):
     """
-    Represents a network device (router, switch, firewall).
+    Model for devices (router, switch, firewall).
     """
     __tablename__ = 'devices'
     device_id = db.Column(db.Integer, primary_key=True)
@@ -166,7 +166,7 @@ class Device(db.Model):
 
 class Interface(db.Model):
     """
-    Represents an interface on a network device.
+    Interfaces for a device.
     """
     __tablename__ = 'interfaces'
     interface_id = db.Column(db.Integer, primary_key=True)
@@ -184,7 +184,7 @@ class Interface(db.Model):
 
 class ArpEntry(db.Model):
     """
-    Represents an ARP table entry for a device.
+    ARP table entry for a device.
     """
     __tablename__ = 'arp_entries'
     arp_id = db.Column(db.Integer, primary_key=True)
@@ -198,7 +198,7 @@ class ArpEntry(db.Model):
 
 class RouteEntry(db.Model):
     """
-    Represents a routing table entry for a device.
+    Routing table entry for a device.
     """
     __tablename__ = 'route_entries'
     route_id = db.Column(db.Integer, primary_key=True)

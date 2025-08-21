@@ -12,7 +12,6 @@ app_logger = logging.getLogger(__name__)
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        # If user is already logged in, redirect to home or dashboard
         flash('You are already logged in.', 'info')
         app_logger.info(f"Attempted to access login page while already authenticated: User ID {current_user.id}")
         return redirect(url_for('routes.home'))
@@ -43,13 +42,12 @@ def login():
         else:
             flash('Invalid username or password.', 'error')
             app_logger.warning(f"Failed login attempt for username: {username}.")
-            # Return to login form if login fails
-            return render_template('login.html', username=username) # Pass username back to pre-fill
+            return render_template('login.html', username=username)
 
     return render_template('login.html')
 
 @auth.route('/logout')
-@login_required # Ensure only logged-in users can logout
+@login_required
 def logout():
     username = current_user.username
     user_id = current_user.id

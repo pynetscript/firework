@@ -76,7 +76,7 @@
         <form class="form-inline mb-4" method="GET" action="{{ url_for('routes.home') }}">
             <div class="input-group">
                 <input type="text" name="search" class="form-control p-2 border border-gray-300 rounded-md w-full md:w-1/3 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search activities..." value="{{ search_query }}">
-                <div class="input-group-append flex"> {# Use flex for button alignment #}
+                <div class="input-group-append flex">
                     <button class="btn btn-outline-secondary px-4 py-2 bg-blue-500 text-white rounded-md ml-2 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500" type="submit">Search</button>
                     {% if search_query %}
                     <a href="{{ url_for('routes.home') }}" class="btn btn-outline-danger px-4 py-2 bg-red-500 text-white rounded-md ml-2 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500">Clear Search</a>

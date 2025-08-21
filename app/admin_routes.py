@@ -199,7 +199,6 @@ def delete_user(user_id):
         )
         return jsonify({"status": "error", "message": "You cannot delete your own account."}), 400
 
-    # Ensure FirewallRule is imported and handled if necessary
     FirewallRule.query.filter_by(requester_id=user.id).update({'requester_id': None})
 
     try:

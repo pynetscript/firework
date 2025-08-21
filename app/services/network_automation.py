@@ -49,6 +49,21 @@ class NetworkAutomationService:
         else:
             app_logger.info("FIREWORK_VAULT_PASS_FILE environment variable not set. Ansible commands requiring vault might fail.")
 
+    @staticmethod
+    def _is_default_route(cidr: str) -> bool:
+        """
+        Check if a given network string is the IPv4 default route 0.0.0.0/0.
+        """
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            return (
+                net.version == 4 and
+                net.prefixlen == 0 and
+                int(net.network_address) == 0
+            )
+        except Exception:
+            return False
+
     def _execute_ansible_playbook(self, playbook_name, extra_vars=None):
         """
         Internal helper to execute an Ansible playbook.
@@ -120,7 +135,6 @@ class NetworkAutomationService:
             app_logger.critical(f"An unexpected error occurred during Ansible execution: {e}", exc_info=True)
             raise RuntimeError(f"Unexpected error during Ansible execution: {e}")
 
-
     def run_data_collection(self):
         """
         Runs the Ansible collector playbook and then processes its output
@@ -144,7 +158,6 @@ class NetworkAutomationService:
         Processes collected network data from YAML/text files and stores it in the PostgreSQL database.
         """
         app_logger.info("Starting network topology database build process in PostgreSQL.")
-
         app_logger.info(f"Attempting to list directory: {output_dir}")
         try:
             files_in_output_dir = os.listdir(output_dir)
@@ -325,12 +338,11 @@ class NetworkAutomationService:
                                 # --- Process FGT Interfaces
                                 elif hostname == 'fgt':
                                     interfaces_found = 0
-                                    # The interface data for FGT is directly under 'meta.results' and then by interface name
                                     for intf_name, intf_details in interface_data.get('meta', {}).get('results', {}).items():
                                         app_logger.debug(f"Parsing FortiGate interface '{intf_name}' details: {json.dumps(intf_details)}")
 
                                         ip_address = intf_details.get('ip')
-                                        mask_prefix = intf_details.get('mask') # This is the mask length, e.g., 24
+                                        mask_prefix = intf_details.get('mask')
 
                                         ipv4_subnet_cidr = None
                                         if ip_address and mask_prefix is not None:
@@ -347,9 +359,9 @@ class NetworkAutomationService:
                                             name=intf_name, # Use intf_name (e.g., 'port1')
                                             ipv4_address=ip_address,
                                             ipv4_subnet=ipv4_subnet_cidr,
-                                            mac_address=intf_details.get('mac', '').replace(':', ''), # Remove colons for consistency
-                                            status='up' if intf_details.get('link') else 'down', # Use 'link' status
-                                            type='Ethernet' # Or intf_details.get('type') if available and more specific
+                                            mac_address=intf_details.get('mac', '').replace(':', ''),
+                                            status='up' if intf_details.get('link') else 'down',
+                                            type='Ethernet'
                                         )
                                         db.session.add(interface)
                                         interfaces_found += 1
@@ -385,7 +397,7 @@ class NetworkAutomationService:
                                 arp_entries_found = 0
 
                                 # --- Proccess Cisco ARP
-                                if hostname.startswith('R') or hostname.startswith('SW'): # Cisco IOS 'show ip arp' output
+                                if hostname.startswith('R') or hostname.startswith('SW'):
                                     for line in arp_content.splitlines():
                                         match = re.match(r'Internet\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+\S+\s+([0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4})(?:\s+\S+\s+\S+\s+(\S+))?', line)
                                         if match:
@@ -403,7 +415,7 @@ class NetworkAutomationService:
                                     app_logger.info(f"Finished adding {arp_entries_found} ARP entries for {hostname}.")
 
                                 # --- Proccess Palo Alto ARP
-                                elif hostname == 'pafw': # Palo Alto ARP (JSON output)
+                                elif hostname == 'pafw':
                                     arp_data = json.loads(arp_content)
                                     for entry in arp_data.get('response', {}).get('result', {}).get('entries', {}).get('entry', []):
                                         ip = entry.get('ip')
@@ -425,7 +437,6 @@ class NetworkAutomationService:
                                 elif hostname == 'fgt':
                                     arp_data = yaml.safe_load(arp_content)
                                     arp_entries_found = 0
-                                    # FGT ARP entries are under meta.results
                                     for entry in arp_data.get('meta', {}).get('results', []):
                                         ip = entry.get('ip')
                                         mac = entry.get('mac')
@@ -725,7 +736,7 @@ class NetworkAutomationService:
         predecessors = {ip: None for ip in graph}
         priority_queue = [] # (distance, ip_obj)
 
-        # Determine the best starting point (an interface on a managed device)
+        # Determine the best starting point
         start_node = None
         app_logger.debug(f"Attempting to find start node for source: {source_ip_obj} (Is network: {is_source_network})")
         for interface_ip_obj, interface_network in interface_network_map.items():
@@ -818,6 +829,10 @@ class NetworkAutomationService:
                                     else:
                                         # This is the point where the path leaves our managed network,
                                         # or reaches the destination if it's directly connected via this route.
+                                        if self._is_default_route(route_entry.destination_network):
+                                            msg = (f"Destination {destination_ip} is only reachable via default route ({route_entry.destination_network}.")
+                                            app_logger.warning(msg)
+                                            raise DestinationUnreachableError(msg)
                                         destination_reached_in_loop = True
                                         final_reachable_node = current_ip_obj # The path effectively ends here as this device knows the way
                                         destination_found_via_route = True
@@ -829,7 +844,6 @@ class NetworkAutomationService:
                                 continue
                 else:
                     app_logger.debug(f"Current IP {current_ip_obj} has no associated device name. Cannot check routes.")
-
 
             if destination_reached_in_loop:
                 app_logger.info(f"Pathfinding completed: Destination {destination_ip} reached.")
@@ -921,7 +935,6 @@ class NetworkAutomationService:
             else:
                 app_logger.warning(f"Final reachable node {current} has no associated device during path reconstruction. Path might be incomplete.")
 
-
         # Traverse back from the final_reachable_node to the start_node
         while current and predecessors.get(current) is not None:
             prev = predecessors[current]
@@ -989,10 +1002,8 @@ class NetworkAutomationService:
     def perform_pre_check(self, rule_data, firewalls_involved):
         """
         Performs pre-checks on relevant firewalls.
-        Now also includes internal pathfinding using the DB.
-        `firewalls_involved` is the initial list provided by the user/form.
         """
-        app_logger.info(f"Performing pre-check for rule {rule_data['rule_id']} on firewalls initially specified: {firewalls_involved}")
+        app_logger.info(f"Performing pre-check for rule {rule_data['rule_id']} on involved firewalls: {firewalls_involved}")
 
         pre_check_stdout = ""
         pre_check_stderr = ""
@@ -1015,7 +1026,7 @@ class NetworkAutomationService:
                 app_logger.error(f"Pathfinding failed: {path}")
                 if "Could not reach" in path:
                     raise DestinationUnreachableError(f"Destination route was not found for {rule_data['destination_ip']}.")
-                else: # For any other pathfinding failure messages
+                else:
                     raise PathfindingError(f"Pathfinding failed: {path}")
 
             app_logger.info(f"Pathfinding completed. Discovered firewalls in path: {discovered_firewalls}")
@@ -1023,7 +1034,7 @@ class NetworkAutomationService:
 
         except (DestinationUnreachableError, PathfindingError) as e:
             app_logger.error(f"Pathfinding pre-check failed for rule {rule_data['rule_id']}: {e}")
-            raise e # This ensures the custom exception is propagated
+            raise e
         except Exception as e:
             app_logger.critical(f"An unexpected error occurred during pathfinding for rule {rule_data['rule_id']}: {e}", exc_info=True)
             raise RuntimeError(f"An unexpected error occurred during network pre-check (pathfinding): {e}")

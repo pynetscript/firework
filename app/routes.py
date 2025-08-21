@@ -323,8 +323,8 @@ def request_list():
     query = FirewallRule.query
 
     if current_user.has_role('superadmin') or current_user.has_role('admin'):
-        rules = query.order_by(FirewallRule.created_at.desc()).all() # Admins see all
-    else: # For requester, approver, implementer
+        rules = query.order_by(FirewallRule.created_at.desc()).all()
+    else:
         rules = query.filter(FirewallRule.status.in_([
             'Pending',
             'Pending Pre-Check',
@@ -484,7 +484,7 @@ def submit_request():
         requester_id=current_user.id
     )
     db.session.add(new_rule)
-    db.session.commit() # Commit to get an ID for the rule, important for pre-check
+    db.session.commit() # Commit to get an ID for the rule for pre-check function
     app_logger.info(f"Request ID {new_rule.id} created by {current_user.username} with temporary status 'Pending Pre-Check'.")
 
     # --- Perform Pre-Check for ALL requests ---
@@ -498,7 +498,7 @@ def submit_request():
             'rule_description': rule_description
         }
 
-        # The perform_pre_check method returns 4 values.
+        # perform_pre_check method returns 4 values.
         stdout, stderr, discovered_firewalls, firewalls_already_configured = \
             get_network_automation_service().perform_pre_check(
                 rule_data=rule_data_for_precheck,
@@ -539,7 +539,6 @@ def submit_request():
                 )
 
             elif current_user.has_role('superadmin', 'admin'):
-                # Admin/Superadmin specific logic when firewalls ARE involved
                 db_rule.approval_status = 'Approved' # Auto-approve for admins
 
                 if db_rule.firewalls_to_provision and len(db_rule.firewalls_to_provision) > 0:
@@ -1441,7 +1440,7 @@ def edit_blacklist_rule(rule_id):
                                    is_edit_mode=True
                                    )
 
-    # This block is for the initial GET request (when you first click 'Edit')
+    # This block is for the initial GET request (when you click 'Edit')
     # All 'data' variables are already pre-populated from the 'rule' object at the top
     return render_template('blacklist_rule_add.html',
                            rule=rule, # Pass the rule object itself for {{ rule.id }} in the title
@@ -1517,7 +1516,6 @@ def api_delete_blacklist_rules():
 
         db.session.commit()
         deleted_count = len(deleted_rule_ids)
-        #flash(f"{deleted_count} blacklist rules deleted:  {deleted_rule_ids}.", 'success')
         app_logger.info(f"API: {deleted_count} blacklist rules deleted by {current_user.username}: {deleted_rule_ids}.")
         log_activity(
             event_type='BLACKLIST_RULES_BULK_DELETE',

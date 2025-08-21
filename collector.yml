@@ -2,29 +2,24 @@
 - name: Gather network data from Cisco devices
   hosts: cisco_ios
   gather_facts: no
-  # Temporarily remove ignore_unreachable and ignore_errors to fail loudly
   # ignore_unreachable: yes
-  # Changed to no_log to avoid sensitive data in logs, but for debugging we want it
   # no_log: yes
   tasks:
     - name: Gather interfaces
       cisco.ios.ios_facts:
         gather_subset: interfaces
       register: ios_interfaces
-      # Temporarily remove ignore_errors to fail loudly
       # ignore_errors: yes
 
     - name: Debug ios_interfaces content
       debug:
         var: ios_interfaces
-      # You can add a `no_log: no` here if you had it on the play level
 
     - name: Save interface data
       copy:
         content: "{{ ios_interfaces.ansible_facts | to_nice_yaml }}"
         dest: "outputs/{{ inventory_hostname }}_interfaces.yml"
       when: ios_interfaces is success
-      # Temporarily remove ignore_errors to fail loudly
       # ignore_errors: yes
 
     - name: Get ARP table
@@ -32,7 +27,7 @@
         commands:
           - show ip arp
       register: ios_arp
-      # ignore_errors: yes # Temporarily remove
+      # ignore_errors: yes
 
     - name: Debug ios_arp content
       debug:
@@ -43,14 +38,14 @@
         content: "{{ ios_arp.stdout[0] }}"
         dest: "outputs/{{ inventory_hostname }}_arp.txt"
       when: ios_arp is success
-      # ignore_errors: yes # Temporarily remove
+      # ignore_errors: yes
 
     - name: Get routing table
       cisco.ios.ios_command:
         commands:
           - show ip route
       register: ios_routes
-      # ignore_errors: yes # Temporarily remove
+      # ignore_errors: yes
 
     - name: Debug ios_routes content
       debug:
@@ -61,7 +56,7 @@
         content: "{{ ios_routes.stdout[0] }}"
         dest: "outputs/{{ inventory_hostname }}_routes.txt"
       when: ios_routes is success
-      # ignore_errors: yes # Temporarily remove
+      # ignore_errors: yes
 
 - name: Gather from FortiGate
   hosts: fortinet
@@ -71,7 +66,7 @@
     - fortinet.fortios
   tasks:
     - name: Get system interface
-      fortinet.fortios.fortios_monitor_fact: # Fully qualified collection name
+      fortinet.fortios.fortios_monitor_fact:
         selector: 'system_interface'
         vdom: 'root'
       register: fgt_interfaces
@@ -85,7 +80,7 @@
       ignore_errors: yes
 
     - name: Get ARP table
-      fortinet.fortios.fortios_monitor_fact: # Fully qualified collection name
+      fortinet.fortios.fortios_monitor_fact:
         selector: 'network_arp'
         vdom: 'root'
       register: fgt_arp
@@ -99,7 +94,7 @@
       ignore_errors: yes
 
     - name: Get routing table
-      fortinet.fortios.fortios_monitor_fact: # Fully qualified collection name
+      fortinet.fortios.fortios_monitor_fact:
         selector: 'router_ipv4'
         vdom: 'root'
       register: fgt_routes
@@ -115,7 +110,7 @@
 - name: Gather from Palo Alto
   hosts: paloalto
   gather_facts: no
-  ignore_unreachable: yes # Continue if a Palo Alto device is unreachable
+  ignore_unreachable: yes
   collections:
     - paloaltonetworks.panos
   tasks:

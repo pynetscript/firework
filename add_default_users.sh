@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- IMPORTANT: Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
+# Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
 # This script activates the virtual environment and then runs an embedded Python script
 # to populate the database with default users.
 

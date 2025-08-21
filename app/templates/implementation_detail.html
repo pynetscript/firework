@@ -62,7 +62,7 @@
         <p class="text-center text-lg text-green-700">Request has been approved, and no firewalls require implementation. It's already completed or awaiting final status update.</p>
     {% endif %}
     {% else %}
-        <p class="text-center text-lg text-gray-600">Rqueste is currently {{ rule.status }}. No implementation action is available here.</p>
+        <p class="text-center text-lg text-gray-600">Request is currently {{ rule.status }}. No implementation action is available here.</p>
     {% endif %}
 
     <div class="text-center mt-8">
@@ -71,7 +71,6 @@
 </div>
 
 <script>
-    // Re-declare showLoading function if it's not in base.html
     function showLoading(buttonId, loadingText) {
         const button = document.getElementById(buttonId);
         if (button) {
@@ -80,27 +79,24 @@
         }
     }
 
-    // New script to handle the button click and form submission explicitly
+    // Button click and form submission
     document.addEventListener('DOMContentLoaded', function() {
         const provisionBtn = document.getElementById('provisionRuleBtn');
         const form = document.getElementById('implementationForm');
 
         if (provisionBtn && form) {
             provisionBtn.addEventListener('click', function() {
-                // Manually add a hidden input for the 'action' parameter.
-                // This is needed because the button's type is now 'button' (not 'submit').
                 const actionInput = document.createElement('input');
                 actionInput.type = 'hidden';
                 actionInput.name = 'action';
-                actionInput.value = 'provision'; // The value expected by your Flask route
+                actionInput.value = 'provision';
                 form.appendChild(actionInput);
 
                 showLoading('provisionRuleBtn', 'Provisioning...');
                 
-                // Allow a brief moment for the UI to update, then submit the form
                 setTimeout(() => {
                     form.submit();
-                }, 50); // A small delay (e.g., 50ms) to ensure the UI updates before navigation
+                }, 50);
             });
         }
     });

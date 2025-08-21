@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- IMPORTANT: Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
+# Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
 # This script sets up the application's Python environment and migrates the database schema to PostgreSQL.
 # It does NOT populate users or start the application services.
 

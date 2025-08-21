@@ -106,7 +106,6 @@
             });
         }
 
-        // --- START Timezone Conversion ---
         const timestampCells = document.querySelectorAll('#implementationTable tbody td[data-utc-timestamp]');
         timestampCells.forEach(cell => {
             const utcTimestampString = cell.getAttribute('data-utc-timestamp');
@@ -123,16 +122,11 @@
                     hour12: false // Use 24-hour format
                 };
 
-                // Format the date and time using 'en-GB' locale for DD/MM/YYYY and then remove the comma
                 let formattedDateTime = date.toLocaleString('en-GB', options);
-
-                // Remove the comma and replace it with a space
                 formattedDateTime = formattedDateTime.replace(', ', ' ');
-
                 cell.textContent = formattedDateTime;
             }
         });
-        // --- END Timezone Conversion ---
     });
 </script>
 {% endblock %}

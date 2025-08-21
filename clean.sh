@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- IMPORTANT: Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
+# Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
 # This script removes the virtual environment, Flask-Migrate migrations,
 # and performs a full reset of the PostgreSQL database,
 # effectively resetting the application's environment and schema setup for a clean start.

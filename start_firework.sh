@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- IMPORTANT: Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
+# Ensure you are in your project's root directory (e.g., ~/firework) before running this script ---
 # This script starts the Firework application services (Gunicorn via systemd, and Nginx).
 # It assumes the virtual environment and database schema have already been set up by 'setup.sh'.
 
