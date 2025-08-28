@@ -54,7 +54,7 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 
 ### 2. Install  
 ```bash
-git clone <repo>
+git clone https://github.com/pynetscript/firework.git
 cd firework
 ./install.sh && ./setup.sh
 ```
