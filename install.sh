@@ -9,6 +9,7 @@ set -e
 readonly APP_USER="firework_app_user"
 readonly APP_GROUP="www-data"
 readonly PROJECT_DIR="/home/firework/firework"
+readonly ANSIBLE_TMP_DIR="${PROJECT_DIR}/ansible_tmp"
 
 echo "Beginning idempotent setup for the Firework app..."
 
@@ -33,6 +34,7 @@ echo "Configuring required directories..."
 # Use mkdir -p which is idempotent (does not fail if directory exists).
 sudo mkdir -p "${PROJECT_DIR}/ansible_collections"
 sudo mkdir -p "${PROJECT_DIR}/outputs"
+sudo mkdir -p "${ANSIBLE_TMP_DIR}"
 
 # Set permissions and ownership for directories
 sudo chown "${APP_USER}":"${APP_GROUP}" "${PROJECT_DIR}/ansible_collections"
@@ -41,19 +43,23 @@ sudo chmod 775 "${PROJECT_DIR}/ansible_collections"
 sudo chown "${APP_USER}":"${APP_GROUP}" "${PROJECT_DIR}/outputs"
 sudo chmod 2775 "${PROJECT_DIR}/outputs" # The `2` sets the `setgid` bit.
 
+# Set ownership and permissions for the temporary Ansible directory
+sudo chown "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_TMP_DIR}"
+sudo chmod 775 "${ANSIBLE_TMP_DIR}"
+
 # --- 3. Install Ansible Collections ---
 echo "Installing Ansible collections..."
 # Check for existing collections before attempting to install
 if [ ! -d "${PROJECT_DIR}/ansible_collections/fortinet/fortios" ]; then
     echo "Installing fortinet.fortios..."
-    sudo -u "${APP_USER}" ansible-galaxy collection install fortinet.fortios -p "${PROJECT_DIR}/ansible_collections"
+    sudo -u "${APP_USER}" env ANSIBLE_TMPDIR="${ANSIBLE_TMP_DIR}" ansible-galaxy collection install fortinet.fortios -p "${PROJECT_DIR}/ansible_collections"
 else
     echo "fortinet.fortios collection already installed. Skipping."
 fi
 
 if [ ! -d "${PROJECT_DIR}/ansible_collections/paloaltonetworks/panos" ]; then
     echo "Installing paloaltonetworks.panos..."
-    sudo -u "${APP_USER}" ansible-galaxy collection install paloaltonetworks.panos -p "${PROJECT_DIR}/ansible_collections"
+    sudo -u "${APP_USER}" env ANSIBLE_TMPDIR="${ANSIBLE_TMP_DIR}" ansible-galaxy collection install paloaltonetworks.panos -p "${PROJECT_DIR}/ansible_collections"
 else
     echo "paloaltonetworks.panos collection already installed. Skipping."
 fi
