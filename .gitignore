@@ -16,8 +16,8 @@ outputs/
 
 # Ansible
 .ansible/
-ansible_collections
-ansible_tmp
+ansible_collections/
+ansible_tmp/
 *.retry
 *.vault
 group_vars/all/vault.yml
