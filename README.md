@@ -59,7 +59,7 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 ```bash
 git clone https://github.com/pynetscript/firework.git
 cd firework
-sudo chmox +x install.sh && ./install.sh && ./setup.sh
+sudo chmod +x install.sh && ./install.sh && ./setup.sh
 ```
 
 ### 3. Initialize Database & Default Users  
