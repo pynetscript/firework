@@ -1,4 +1,4 @@
-# <img width="50" height="50" alt="favicon" src="https://github.com/user-attachments/assets/7c2c2f10-88b4-481d-8f05-fa4dd45754eb" /> Firework – Policy Rule Authentication and Certification for Secure Firewall Management  
+# <img width="30" height="30" alt="favicon" src="https://github.com/user-attachments/assets/7c2c2f10-88b4-481d-8f05-fa4dd45754eb" /> Firework – Policy Rule Authentication and Certification for Secure Firewall Management  
 
 ## Overview  
 **Firework** is a prototype web application developed as part of an MSc Cybersecurity thesis.  
