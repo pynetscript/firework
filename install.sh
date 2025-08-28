@@ -248,9 +248,6 @@ fi
 cat <<EOF
 ========================================================
 Setup complete! Project files and app/ tree normalized.
-Paths match the working VM (home 755; project dir group=www-data, mode 755).
-Ansible collections owned by firework:www-data with safe permissions.
-
 Remember to edit:
   - ${INVENTORY_FILE}
   - ${VAULT_PASS_FILE}
