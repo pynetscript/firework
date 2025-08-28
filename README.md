@@ -1,8 +1,7 @@
 # <img width="30" height="30" alt="favicon" src="https://github.com/user-attachments/assets/7c2c2f10-88b4-481d-8f05-fa4dd45754eb" /> Firework – Policy Rule Authentication and Certification for Secure Firewall Management  
 
 ## Overview  
-**Firework** is a prototype web application developed as part of an MSc Cybersecurity thesis.  
-It was created to address the **security, compliance, and auditability gaps** in traditional firewall policy management.  
+**Firework** is a prototype web application developed as part of an MSc Cybersecurity thesis. It was created to address the **security, compliance, and auditability gaps** in traditional firewall policy management.  
 
 Enterprise firewall changes are often done manually, which can lead to:  
 - Misconfigurations that introduce vulnerabilities.  
@@ -60,7 +59,7 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 ```bash
 git clone https://github.com/pynetscript/firework.git
 cd firework
-./install.sh && ./setup.sh
+sudo chmox +x install.sh && ./install.sh && ./setup.sh
 ```
 
 ### 3. Initialize Database & Default Users  
@@ -68,18 +67,16 @@ cd firework
 ./add_default_users.sh
 ```
 
-Login credentials:
-- `super_admin / super_admin`
-
 ### 4. Start  
 ```bash
 ./start_firework.sh
 ```
 Access at [http://<ipv4_address]
 
+Login credentials:
+- `super_admin / super_admin`
+
 <img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/c125992b-4d47-44e0-b0f9-917059a173e1" />
-
-
 
 ---
 
