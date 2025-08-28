@@ -1,6 +1,6 @@
-# 🔥 Firework – Policy Rule Authentication and Certification for Secure Firewall Management  
+# <img width="160" height="160" alt="favicon" src="https://github.com/user-attachments/assets/7c2c2f10-88b4-481d-8f05-fa4dd45754eb" /> Firework – Policy Rule Authentication and Certification for Secure Firewall Management  
 
-## 📖 Overview  
+## Overview  
 **Firework** is a prototype web application developed as part of an MSc Cybersecurity thesis.  
 It was created to address the **security, compliance, and auditability gaps** in traditional firewall policy management.  
 
@@ -20,19 +20,19 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 ---
 
 ## ⚙️ Features  
-- 🔑 **RBAC User Management** (SuperAdmin, Admin, Approver, Requester).  
-- 📝 **Workflow**: Request → Pre-check → Approval → Provision → Post-check.  
-- 🚦 **Pre-checks**:
+- **RBAC User Management** (SuperAdmin, Admin, Approver, Requester).  
+- **Workflow**: Request → Pre-check → Approval → Provision → Post-check.  
+- **Pre-checks**:
   - Blacklist validation.  
   - Network path analysis (reachability check).  
   - Conflicting rule detection.  
-- ⚡ **Automated rule provisioning** via Ansible (FortiGate & Palo Alto).  
-- 🔍 **Post-deployment certification** to confirm success.  
-- 📊 **Dashboard + Audit Logs** for monitoring and compliance.  
+- **Automated rule provisioning** via Ansible (FortiGate & Palo Alto).  
+- **Post-deployment certification** to confirm success.  
+- **Dashboard + Audit Logs** for monitoring and compliance.  
 
 ---
 
-## 🛠️ Simplifications & Assumptions  
+## Simplifications & Assumptions  
 - IPv4 only.  
 - Only **permit** rules supported (no deny rules).  
 - Source/destination limited to **0.0.0.0 or /32 host addresses**.  
@@ -43,7 +43,7 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 
 ---
 
-## 🚀 Quickstart  
+## Quickstart  
 
 ### 1. Requirements  
 - Ubuntu 24.04+
@@ -56,7 +56,7 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 ```bash
 git clone <repo>
 cd firework
-./setup.sh
+./install.sh && ./setup.sh
 ```
 
 ### 3. Initialize Database & Default Users  
@@ -73,9 +73,12 @@ Login credentials:
 ```
 Access at [http://<ipv4_address]
 
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/0982306f-71f1-4f1a-abdc-06a268ff54d5" />
+
+
 ---
 
-## 🔄 Reset the Environment  
+## Reset the Environment  
 If you need to reset the app and database completely:
 
 ```bash
