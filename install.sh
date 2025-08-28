@@ -52,14 +52,14 @@ echo "Installing Ansible collections..."
 # Check for existing collections before attempting to install
 if [ ! -d "${PROJECT_DIR}/ansible_collections/fortinet/fortios" ]; then
     echo "Installing fortinet.fortios..."
-    sudo -u "${APP_USER}" env ANSIBLE_TMPDIR="${ANSIBLE_TMP_DIR}" ansible-galaxy collection install fortinet.fortios -p "${PROJECT_DIR}/ansible_collections"
+    sudo -u "${APP_USER}" -H bash -c "cd /home/${APP_USER} && ansible-galaxy collection install fortinet.fortios -p '${PROJECT_DIR}/ansible_collections'"
 else
     echo "fortinet.fortios collection already installed. Skipping."
 fi
 
 if [ ! -d "${PROJECT_DIR}/ansible_collections/paloaltonetworks/panos" ]; then
     echo "Installing paloaltonetworks.panos..."
-    sudo -u "${APP_USER}" env ANSIBLE_TMPDIR="${ANSIBLE_TMP_DIR}" ansible-galaxy collection install paloaltonetworks.panos -p "${PROJECT_DIR}/ansible_collections"
+    sudo -u "${APP_USER}" -H bash -c "cd /home/${APP_USER} && ansible-galaxy collection install paloaltonetworks.panos -p '${PROJECT_DIR}/ansible_collections'"
 else
     echo "paloaltonetworks.panos collection already installed. Skipping."
 fi
