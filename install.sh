@@ -1,6 +1,5 @@
-firework@ct7030cem:~/firework$ cat install.sh
 #!/bin/bash
-# A bulletproof script to set up the environment for the Firework app.
+# A script to prepare the environment for the Firework app.
 # It is designed to be idempotent and can be run multiple times safely.
 
 set -Eeuo pipefail
@@ -17,7 +16,8 @@ readonly ENV_FILE="${PROJECT_DIR}/.env"
 readonly STATIC_DIR="${PROJECT_DIR}/static"
 readonly APP_DIR="${PROJECT_DIR}/app"
 
-echo "Beginning idempotent setup for the Firework app..."
+echo "========================================================"
+echo "Starting script..."
 
 # --- 1) Create users, folders, files -----------------------------------------
 echo "Creating users, folders, and files if they do not exist..."
@@ -44,15 +44,15 @@ sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 # --- 2) Ownership & permissions (project root) --------------------------------
 echo "Setting permissions and ownership (project root)..."
 
-# Collections dir
-sudo chown "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+# Collections dir (owned by firework for ansible-galaxy)
+sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
 sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}"
 
 # Outputs dir (setgid)
 sudo chown "${APP_USER}":"${APP_GROUP}" "${PROJECT_DIR}/outputs"
 sudo chmod 2775 "${PROJECT_DIR}/outputs"
 
-# Ansible temp dir (match VM pattern)
+# Ansible temp dir
 sudo chown firework:"${APP_GROUP}" "${ANSIBLE_TMP_DIR}"
 sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 
@@ -60,11 +60,9 @@ sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
 sudo chmod 664 "${INVENTORY_FILE}"
 
-# .vault_pass.txt -> firework:www-data 0640
 sudo chown firework:"${APP_GROUP}" "${VAULT_PASS_FILE}"
 sudo chmod 640 "${VAULT_PASS_FILE}"
 
-# .env -> firework:firework 0600
 sudo chown firework:firework "${ENV_FILE}"
 sudo chmod 600 "${ENV_FILE}"
 
@@ -143,23 +141,18 @@ done
 # --- 2f) app/ tree normalization ---------------------------------------------
 echo "Normalizing app/ directory tree..."
 
-# app/ and key subdirs (except __pycache__)
 sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
 sudo find "${APP_DIR}" -type d -not -path "*/__pycache__" -exec chmod 755 {} \;
-
-# __pycache__ dirs: firework:firework 0775
 sudo find "${APP_DIR}" -type d -name "__pycache__" -exec chown firework:firework {} \; -exec chmod 775 {} \;
 
-# Default: app/*.py -> firework:www-data 0644
+# Default: top-level app/*.py
 sudo find "${APP_DIR}" -maxdepth 1 -type f -name "*.py" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
 
-# Exceptions in app/:
-# routes.py -> firework:firework 0644
+# Exceptions
 if [ -f "${APP_DIR}/routes.py" ]; then
   sudo chown firework:firework "${APP_DIR}/routes.py"
   sudo chmod 644 "${APP_DIR}/routes.py"
 fi
-# models.py, utils.py -> firework:www-data 0664
 for f in models.py utils.py; do
   if [ -f "${APP_DIR}/$f" ]; then
     sudo chown firework:"${APP_GROUP}" "${APP_DIR}/$f"
@@ -167,19 +160,15 @@ for f in models.py utils.py; do
   fi
 done
 
-# services/
 if [ -d "${APP_DIR}/services" ]; then
   sudo chown firework:"${APP_GROUP}" "${APP_DIR}/services"
   sudo chmod 755 "${APP_DIR}/services"
-
   if [ -f "${APP_DIR}/services/network_automation.py" ]; then
     sudo chown firework:firework "${APP_DIR}/services/network_automation.py"
     sudo chmod 664 "${APP_DIR}/services/network_automation.py"
   fi
-  # services/__pycache__ handled by the __pycache__ rule above
 fi
 
-# app/static/
 if [ -d "${APP_DIR}/static" ]; then
   sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static"
   sudo chmod 775 "${APP_DIR}/static"
@@ -189,14 +178,12 @@ if [ -d "${APP_DIR}/static" ]; then
   fi
 fi
 
-# app/templates/
 if [ -d "${APP_DIR}/templates" ]; then
   sudo chown firework:"${APP_GROUP}" "${APP_DIR}/templates"
   sudo chmod 755 "${APP_DIR}/templates"
   sudo find "${APP_DIR}/templates" -maxdepth 1 -type f -name "*.html" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
 fi
 
-# app/outputs/
 if [ -d "${APP_DIR}/outputs" ]; then
   sudo chown firework:"${APP_GROUP}" "${APP_DIR}/outputs"
   sudo chmod 755 "${APP_DIR}/outputs"
@@ -204,29 +191,47 @@ fi
 
 # --- 3) Install Ansible Collections (last) ------------------------------------
 echo "Installing Ansible collections..."
-readonly ANSIBLE_ENV_VARS="ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}"
-
-if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/fortinet/fortios" ]; then
-  echo "Installing fortinet.fortios..."
-  sudo -u "${APP_USER}" bash -c "cd ~ && ${ANSIBLE_ENV_VARS} ansible-galaxy collection install fortinet.fortios -p '${ANSIBLE_COLLECTIONS_PATH}'"
+if ! command -v ansible-galaxy >/dev/null 2>&1; then
+  echo "WARNING: 'ansible-galaxy' not found in PATH. Skipping collection installs."
 else
-  echo "fortinet.fortios collection already installed. Skipping."
-fi
+  readonly ANSIBLE_ENV_VARS="ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}"
 
-if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks/panos" ]; then
-  echo "Installing paloaltonetworks.panos..."
-  sudo -u "${APP_USER}" bash -c "cd ~ && ${ANSIBLE_ENV_VARS} ansible-galaxy collection install paloaltonetworks.panos -p '${ANSIBLE_COLLECTIONS_PATH}'"
-else
-  echo "paloaltonetworks.panos collection already installed. Skipping."
+  # Pre-create namespace dirs
+  sudo -u firework mkdir -p "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+  sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+  sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+
+  # fortinet.fortios
+  if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/fortinet/fortios" ]; then
+    echo "Installing fortinet.fortios..."
+    sudo -u firework env ${ANSIBLE_ENV_VARS} \
+      ansible-galaxy collection install fortinet.fortios -p "${ANSIBLE_COLLECTIONS_PATH}"
+  else
+    echo "fortinet.fortios collection already installed. Skipping."
+  fi
+
+  # paloaltonetworks.panos
+  if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks/panos" ]; then
+    echo "Installing paloaltonetworks.panos..."
+    sudo -u firework env ${ANSIBLE_ENV_VARS} \
+      ansible-galaxy collection install paloaltonetworks.panos -p "${ANSIBLE_COLLECTIONS_PATH}"
+  else
+    echo "paloaltonetworks.panos collection already installed. Skipping."
+  fi
+
+  # --- 3b) Post-install: normalize ansible_collections ownership & perms -----
+  echo "Normalizing ansible_collections ownership & permissions..."
+  sudo chown -R "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+  # Preserve execute only where it already exists; ensure dirs are executable
+  sudo chmod -R u+rwX,g+rwX,o+rX "${ANSIBLE_COLLECTIONS_PATH}"
+  # Ensure all directories end up 775 explicitly
+  sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
 fi
 
 # --- 4) Final confirmation ----------------------------------------------------
 cat <<EOF
-
 ========================================================
-Setup complete! Users, directories, files, playbooks, scripts, requirements.txt,
-static assets, and the entire app/ tree are normalized. Collections were installed last.
-
+Setup complete! Project files and app/ tree normalized.
 Remember to edit:
   - ${INVENTORY_FILE}
   - ${VAULT_PASS_FILE}
