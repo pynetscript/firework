@@ -1,3 +1,4 @@
+firework@ct7030cem:~/firework$ cat install.sh
 #!/bin/bash
 # A bulletproof script to set up the environment for the Firework app.
 # It is designed to be idempotent and can be run multiple times safely.
@@ -14,6 +15,7 @@ readonly INVENTORY_FILE="${PROJECT_DIR}/inventory.yml"
 readonly VAULT_PASS_FILE="${PROJECT_DIR}/.vault_pass.txt"
 readonly ENV_FILE="${PROJECT_DIR}/.env"
 readonly STATIC_DIR="${PROJECT_DIR}/static"
+readonly APP_DIR="${PROJECT_DIR}/app"
 
 echo "Beginning idempotent setup for the Firework app..."
 
@@ -34,13 +36,13 @@ else
 fi
 
 # 1b) Create directories
-sudo mkdir -p "${ANSIBLE_COLLECTIONS_PATH}" "${PROJECT_DIR}/outputs" "${ANSIBLE_TMP_DIR}" "${STATIC_DIR}"
+sudo mkdir -p "${ANSIBLE_COLLECTIONS_PATH}" "${PROJECT_DIR}/outputs" "${ANSIBLE_TMP_DIR}" "${STATIC_DIR}" "${APP_DIR}"
 
 # 1c) Create files
 sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 
-# --- 2) Ownership & permissions ----------------------------------------------
-echo "Setting permissions and ownership..."
+# --- 2) Ownership & permissions (project root) --------------------------------
+echo "Setting permissions and ownership (project root)..."
 
 # Collections dir
 sudo chown "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
@@ -58,13 +60,15 @@ sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
 sudo chmod 664 "${INVENTORY_FILE}"
 
-sudo chown firework:firework "${VAULT_PASS_FILE}"
+# .vault_pass.txt -> firework:www-data 0640
+sudo chown firework:"${APP_GROUP}" "${VAULT_PASS_FILE}"
 sudo chmod 640 "${VAULT_PASS_FILE}"
 
+# .env -> firework:firework 0600
 sudo chown firework:firework "${ENV_FILE}"
 sudo chmod 600 "${ENV_FILE}"
 
-# 2b) Enforce owner/perms for Ansible playbooks
+# --- 2b) Playbooks in project root -------------------------------------------
 echo "Applying owner/perms to Ansible playbooks..."
 declare -a PLAYBOOKS=(
   "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
@@ -84,7 +88,7 @@ for pb in "${PLAYBOOKS[@]}"; do
   fi
 done
 
-# 2c) Enforce owner/perms for scripts
+# --- 2c) Scripts in project root ---------------------------------------------
 echo "Applying owner/perms to project scripts..."
 declare -A SCRIPTS=(
   ["${PROJECT_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
@@ -106,7 +110,7 @@ for script in "${!SCRIPTS[@]}"; do
   fi
 done
 
-# 2d) requirements.txt
+# --- 2d) requirements.txt -----------------------------------------------------
 echo "Applying owner/perms to requirements.txt..."
 REQ_FILE="${PROJECT_DIR}/requirements.txt"
 if [ -f "$REQ_FILE" ]; then
@@ -117,12 +121,11 @@ else
   echo "Missing requirements.txt — skipping."
 fi
 
-# 2e) static/ directory & assets
+# --- 2e) static/ (root) -------------------------------------------------------
 echo "Normalizing static/ directory and assets..."
 sudo chown firework:"${APP_GROUP}" "${STATIC_DIR}"
-sudo chmod 755 "${STATIC_DIR}"
+sudo chmod 775 "${STATIC_DIR}"
 
-# Apply for known static files (skip if missing)
 declare -a STATIC_FILES=(
   "${STATIC_DIR}/scripts.js"
   "${STATIC_DIR}/styles.css"
@@ -136,6 +139,68 @@ for sf in "${STATIC_FILES[@]}"; do
     echo "Missing $(basename "$sf") — skipping."
   fi
 done
+
+# --- 2f) app/ tree normalization ---------------------------------------------
+echo "Normalizing app/ directory tree..."
+
+# app/ and key subdirs (except __pycache__)
+sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
+sudo find "${APP_DIR}" -type d -not -path "*/__pycache__" -exec chmod 755 {} \;
+
+# __pycache__ dirs: firework:firework 0775
+sudo find "${APP_DIR}" -type d -name "__pycache__" -exec chown firework:firework {} \; -exec chmod 775 {} \;
+
+# Default: app/*.py -> firework:www-data 0644
+sudo find "${APP_DIR}" -maxdepth 1 -type f -name "*.py" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
+
+# Exceptions in app/:
+# routes.py -> firework:firework 0644
+if [ -f "${APP_DIR}/routes.py" ]; then
+  sudo chown firework:firework "${APP_DIR}/routes.py"
+  sudo chmod 644 "${APP_DIR}/routes.py"
+fi
+# models.py, utils.py -> firework:www-data 0664
+for f in models.py utils.py; do
+  if [ -f "${APP_DIR}/$f" ]; then
+    sudo chown firework:"${APP_GROUP}" "${APP_DIR}/$f"
+    sudo chmod 664 "${APP_DIR}/$f"
+  fi
+done
+
+# services/
+if [ -d "${APP_DIR}/services" ]; then
+  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/services"
+  sudo chmod 755 "${APP_DIR}/services"
+
+  if [ -f "${APP_DIR}/services/network_automation.py" ]; then
+    sudo chown firework:firework "${APP_DIR}/services/network_automation.py"
+    sudo chmod 664 "${APP_DIR}/services/network_automation.py"
+  fi
+  # services/__pycache__ handled by the __pycache__ rule above
+fi
+
+# app/static/
+if [ -d "${APP_DIR}/static" ]; then
+  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static"
+  sudo chmod 775 "${APP_DIR}/static"
+  if [ -f "${APP_DIR}/static/favicon.png" ]; then
+    sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static/favicon.png"
+    sudo chmod 644 "${APP_DIR}/static/favicon.png"
+  fi
+fi
+
+# app/templates/
+if [ -d "${APP_DIR}/templates" ]; then
+  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/templates"
+  sudo chmod 755 "${APP_DIR}/templates"
+  sudo find "${APP_DIR}/templates" -maxdepth 1 -type f -name "*.html" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
+fi
+
+# app/outputs/
+if [ -d "${APP_DIR}/outputs" ]; then
+  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/outputs"
+  sudo chmod 755 "${APP_DIR}/outputs"
+fi
 
 # --- 3) Install Ansible Collections (last) ------------------------------------
 echo "Installing Ansible collections..."
@@ -160,7 +225,7 @@ cat <<EOF
 
 ========================================================
 Setup complete! Users, directories, files, playbooks, scripts, requirements.txt,
-and static assets are normalized. Collections were installed at the end.
+static assets, and the entire app/ tree are normalized. Collections were installed last.
 
 Remember to edit:
   - ${INVENTORY_FILE}
