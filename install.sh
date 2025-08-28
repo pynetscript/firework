@@ -12,8 +12,13 @@ PROJECT_DIR="/home/firework/firework"
 echo "Beginning user and folder setup for the Firework app..."
 
 # --- 1. Create the dedicated application user ---
-echo "Creating system user '${APP_USER}'..."
-sudo useradd -r -s /usr/sbin/nologin -g "${APP_GROUP}" "${APP_USER}"
+# Check if the user already exists before creating it
+if id "${APP_USER}" &>/dev/null; then
+    echo "User '${APP_USER}' already exists. Skipping user creation."
+else
+    echo "Creating system user '${APP_USER}'..."
+    sudo useradd -r -s /usr/sbin/nologin -g "${APP_GROUP}" "${APP_USER}"
+fi
 
 # --- 2. Create and configure application directories ---
 echo "Creating required directories..."
