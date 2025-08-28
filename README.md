@@ -1,4 +1,4 @@
-# <img width="160" height="160" alt="favicon" src="https://github.com/user-attachments/assets/7c2c2f10-88b4-481d-8f05-fa4dd45754eb" /> Firework – Policy Rule Authentication and Certification for Secure Firewall Management  
+# <img width="100" height="100" alt="favicon" src="https://github.com/user-attachments/assets/7c2c2f10-88b4-481d-8f05-fa4dd45754eb" /> Firework – Policy Rule Authentication and Certification for Secure Firewall Management  
 
 ## Overview  
 **Firework** is a prototype web application developed as part of an MSc Cybersecurity thesis.  
@@ -19,7 +19,7 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 
 ---
 
-## ⚙️ Features  
+## Features  
 - **RBAC User Management** (SuperAdmin, Admin, Approver, Requester).  
 - **Workflow**: Request → Pre-check → Approval → Provision → Post-check.  
 - **Pre-checks**:
@@ -90,6 +90,3 @@ If you need to reset the app and database completely:
 ```
 
 ---
-
-## 📜 License  
-MIT License – free for use, modification, and distribution.
