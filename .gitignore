@@ -21,6 +21,7 @@ ansible_tmp
 *.retry
 *.vault
 .vault_pass.txt
+inventory.yml
 
 # Flask
 instance/
