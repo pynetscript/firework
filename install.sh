@@ -20,6 +20,43 @@ readonly PGPASS_FILE="/home/firework/.pgpass"
 echo "========================================================"
 echo "Starting script..."
 
+# --- 0) System packages: pip, venv, Ansible ----------------------------------
+echo "Installing system packages (pip, venv, Ansible) if needed..."
+export DEBIAN_FRONTEND=noninteractive
+if command -v apt-get >/dev/null 2>&1; then
+  sudo apt-get update -y
+
+  # for add-apt-repository
+  sudo apt-get install -y software-properties-common
+
+  # python3-pip
+  if ! command -v pip3 >/dev/null 2>&1; then
+    echo "Installing python3-pip..."
+    sudo apt-get install -y python3-pip
+  else
+    echo "python3-pip already installed. Skipping."
+  fi
+
+  # python3-venv
+  if ! python3 -m venv -h >/dev/null 2>&1; then
+    echo "Installing python3-venv..."
+    sudo apt-get install -y python3-venv
+  else
+    echo "python3-venv already installed. Skipping."
+  fi
+
+  # Ansible (from official PPA)
+  if ! command -v ansible >/dev/null 2>&1; then
+    echo "Adding Ansible PPA and installing Ansible..."
+    sudo add-apt-repository --yes --update ppa:ansible/ansible
+    sudo apt-get install -y ansible
+  else
+    echo "Ansible already installed. Skipping."
+  fi
+else
+  echo "apt-get not found; skipping system package installation."
+fi
+
 # --- 1) Create users, folders, files -----------------------------------------
 echo "Creating users, folders, and files if they do not exist..."
 
@@ -222,7 +259,7 @@ else
   # fortinet.fortios
   if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/fortinet/fortios" ]; then
     echo "Installing fortinet.fortios..."
-    sudo -u firework env ${ANSIBLE_ENV_VARS} \
+    sudo -u firework env ${ANYSIBLE_ENV_VARS} \
       ansible-galaxy collection install fortinet.fortios -p "${ANSIBLE_COLLECTIONS_PATH}"
   else
     echo "fortinet.fortios collection already installed. Skipping."
@@ -231,7 +268,7 @@ else
   # paloaltonetworks.panos
   if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks/panos" ]; then
     echo "Installing paloaltonetworks.panos..."
-    sudo -u firework env ${ANSIBLE_ENV_VARS} \
+    sudo -u firework env ${ANYSIBLE_ENV_VARS} \
       ansible-galaxy collection install paloaltonetworks.panos -p "${ANSIBLE_COLLECTIONS_PATH}"
   else
     echo "paloaltonetworks.panos collection already installed. Skipping."
