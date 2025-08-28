@@ -35,6 +35,9 @@ else
   fi
 fi
 
+# Add application user to firework group
+sudo usermod -aG firework firework_app_user
+
 # 1b) Create directories
 sudo mkdir -p "${ANSIBLE_COLLECTIONS_PATH}" "${PROJECT_DIR}/outputs" "${ANSIBLE_TMP_DIR}" "${STATIC_DIR}" "${APP_DIR}"
 
