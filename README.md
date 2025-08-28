@@ -38,7 +38,11 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 - Source/destination limited to **0.0.0.0 or /32 host addresses**.  
 - Single destination port (1–65535).  
 - Destination must exist in device routing tables (no reliance on default routes).  
-- Device type inferred by **hostname convention**, not Ansible facts.  
+- Device type inferred by **hostname convention**, not Ansible facts.
+  - R = Router
+  - SW = Switch
+  - pafw = Firewal
+  - fgt = Firewall
 - Devices assumed preconfigured with admin users, interfaces, VLANs, OSPF, etc.  
 
 ---
