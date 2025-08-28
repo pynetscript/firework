@@ -15,6 +15,7 @@ readonly VAULT_PASS_FILE="${PROJECT_DIR}/.vault_pass.txt"
 readonly ENV_FILE="${PROJECT_DIR}/.env"
 readonly STATIC_DIR="${PROJECT_DIR}/static"
 readonly APP_DIR="${PROJECT_DIR}/app"
+readonly PGPASS_FILE="/home/firework/.pgpass"
 
 echo "========================================================"
 echo "Starting script..."
@@ -35,8 +36,8 @@ else
   fi
 fi
 
-# Add application user to firework group
-sudo usermod -aG firework firework_app_user
+# Add application user to firework group (so it can traverse /home/firework when 750/755)
+sudo usermod -aG firework "${APP_USER}"
 
 # 1b) Create directories
 sudo mkdir -p "${ANSIBLE_COLLECTIONS_PATH}" "${PROJECT_DIR}/outputs" "${ANSIBLE_TMP_DIR}" "${STATIC_DIR}" "${APP_DIR}"
@@ -44,7 +45,18 @@ sudo mkdir -p "${ANSIBLE_COLLECTIONS_PATH}" "${PROJECT_DIR}/outputs" "${ANSIBLE_
 # 1c) Create files
 sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 
-# --- 2) Ownership & permissions (project root) --------------------------------
+# Ensure .pgpass exists (empty is fine; you can fill later)
+if [ ! -f "${PGPASS_FILE}" ]; then
+  sudo -u firework touch "${PGPASS_FILE}"
+fi
+
+# --- 2) Path posture to match working VM -------------------------------------
+# Make /home/firework traversable and project dir group=www-data, mode=755
+sudo chmod 755 /home/firework
+sudo chgrp "${APP_GROUP}" "${PROJECT_DIR}"
+sudo chmod 755 "${PROJECT_DIR}"
+
+# --- 3) Ownership & permissions (project root) --------------------------------
 echo "Setting permissions and ownership (project root)..."
 
 # Collections dir (owned by firework for ansible-galaxy)
@@ -69,7 +81,10 @@ sudo chmod 640 "${VAULT_PASS_FILE}"
 sudo chown firework:firework "${ENV_FILE}"
 sudo chmod 600 "${ENV_FILE}"
 
-# --- 2b) Playbooks in project root -------------------------------------------
+sudo chown firework:firework "${PGPASS_FILE}"
+sudo chmod 600 "${PGPASS_FILE}"
+
+# --- 3b) Playbooks in project root -------------------------------------------
 echo "Applying owner/perms to Ansible playbooks..."
 declare -a PLAYBOOKS=(
   "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
@@ -89,7 +104,7 @@ for pb in "${PLAYBOOKS[@]}"; do
   fi
 done
 
-# --- 2c) Scripts in project root ---------------------------------------------
+# --- 3c) Scripts in project root ---------------------------------------------
 echo "Applying owner/perms to project scripts..."
 declare -A SCRIPTS=(
   ["${PROJECT_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
@@ -111,7 +126,7 @@ for script in "${!SCRIPTS[@]}"; do
   fi
 done
 
-# --- 2d) requirements.txt -----------------------------------------------------
+# --- 3d) requirements.txt -----------------------------------------------------
 echo "Applying owner/perms to requirements.txt..."
 REQ_FILE="${PROJECT_DIR}/requirements.txt"
 if [ -f "$REQ_FILE" ]; then
@@ -122,7 +137,7 @@ else
   echo "Missing requirements.txt — skipping."
 fi
 
-# --- 2e) static/ (root) -------------------------------------------------------
+# --- 3e) static/ (root) -------------------------------------------------------
 echo "Normalizing static/ directory and assets..."
 sudo chown firework:"${APP_GROUP}" "${STATIC_DIR}"
 sudo chmod 775 "${STATIC_DIR}"
@@ -141,7 +156,7 @@ for sf in "${STATIC_FILES[@]}"; do
   fi
 done
 
-# --- 2f) app/ tree normalization ---------------------------------------------
+# --- 3f) app/ tree normalization ---------------------------------------------
 echo "Normalizing app/ directory tree..."
 
 sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
@@ -192,7 +207,7 @@ if [ -d "${APP_DIR}/outputs" ]; then
   sudo chmod 755 "${APP_DIR}/outputs"
 fi
 
-# --- 3) Install Ansible Collections (last) ------------------------------------
+# --- 4) Install Ansible Collections (last) ------------------------------------
 echo "Installing Ansible collections..."
 if ! command -v ansible-galaxy >/dev/null 2>&1; then
   echo "WARNING: 'ansible-galaxy' not found in PATH. Skipping collection installs."
@@ -222,19 +237,20 @@ else
     echo "paloaltonetworks.panos collection already installed. Skipping."
   fi
 
-  # --- 3b) Post-install: normalize ansible_collections ownership & perms -----
+  # --- 4b) Post-install: normalize ansible_collections ownership & perms -----
   echo "Normalizing ansible_collections ownership & permissions..."
-  sudo chown -R "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
-  # Preserve execute only where it already exists; ensure dirs are executable
+  sudo chown -R firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
   sudo chmod -R u+rwX,g+rwX,o+rX "${ANSIBLE_COLLECTIONS_PATH}"
-  # Ensure all directories end up 775 explicitly
   sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
 fi
 
-# --- 4) Final confirmation ----------------------------------------------------
+# --- 5) Final confirmation ----------------------------------------------------
 cat <<EOF
 ========================================================
 Setup complete! Project files and app/ tree normalized.
+Paths match the working VM (home 755; project dir group=www-data, mode 755).
+Ansible collections owned by firework:www-data with safe permissions.
+
 Remember to edit:
   - ${INVENTORY_FILE}
   - ${VAULT_PASS_FILE}
