@@ -73,7 +73,8 @@ Login credentials:
 ```
 Access at [http://<ipv4_address]
 
-<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/0982306f-71f1-4f1a-abdc-06a268ff54d5" />
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/c125992b-4d47-44e0-b0f9-917059a173e1" />
+
 
 
 ---
