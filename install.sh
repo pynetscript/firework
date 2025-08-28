@@ -294,7 +294,9 @@ fi
 # --- 5) Final confirmation ----------------------------------------------------
 cat <<EOF
 ========================================================
-Setup complete! Remember to edit:
+[5/5] Setup complete!
+
+Remember to edit:
   - ${INVENTORY_FILE}
   - ${VAULT_PASS_FILE}
   - ${ENV_FILE}
