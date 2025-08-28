@@ -1,5 +1,5 @@
 #!/bin/bash
-# A script to create a dedicated user and configure folder permissions for the Firework app.
+# A script to create a dedicated user, configure folder permissions, and install Ansible collections for the Firework app.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -12,8 +12,6 @@ PROJECT_DIR="/home/firework/firework"
 echo "Beginning user and folder setup for the Firework app..."
 
 # --- 1. Create the dedicated application user ---
-# The user is created as a system user (-r) without a password and with a non-interactive shell (-s).
-# This is a security best practice for service accounts.
 echo "Creating system user '${APP_USER}'..."
 sudo useradd -r -s /usr/sbin/nologin -g "${APP_GROUP}" "${APP_USER}"
 
@@ -34,7 +32,20 @@ echo "Installing Ansible collections..."
 ansible-galaxy collection install fortinet.fortios -p "${PROJECT_DIR}/ansible_collections"
 ansible-galaxy collection install paloaltonetworks.panos -p "${PROJECT_DIR}/ansible_collections"
 
-# --- 4. Explanation of permissions ---
+# --- 4. Create key Ansible files and set permissions ---
+echo "Creating Ansible configuration files..."
+# Create inventory.yml with correct permissions
+sudo touch "${PROJECT_DIR}/inventory.yml"
+sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/inventory.yml"
+sudo chmod 644 "${PROJECT_DIR}/inventory.yml"
+
+# Create .vault_pass.txt with correct permissions
+sudo touch "${PROJECT_DIR}/.vault_pass.txt"
+sudo chown firework:firework "${PROJECT_DIR}/.vault_pass.txt"
+sudo chmod 640 "${PROJECT_DIR}/.vault_pass.txt"
+echo "Remember to manually add content to both 'inventory.yml' and '.vault_pass.txt'."
+
+# --- 5. Explanation of permissions ---
 echo ""
 echo "Permissions for ${PROJECT_DIR}/ansible_collections set to 775 (drwxrwxr-x)."
 echo "Permissions for ${PROJECT_DIR}/outputs set to 2775 (drwxrwsr-x)."
