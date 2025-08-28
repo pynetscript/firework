@@ -29,8 +29,9 @@ sudo chmod 2775 "${PROJECT_DIR}/outputs" # The `2` at the start sets the GID (se
 
 # --- 3. Install Ansible Collections ---
 echo "Installing Ansible collections..."
-ansible-galaxy collection install fortinet.fortios -p "${PROJECT_DIR}/ansible_collections"
-ansible-galaxy collection install paloaltonetworks.panos -p "${PROJECT_DIR}/ansible_collections"
+# Use sudo -u to run the command as the correct user
+sudo -u "${APP_USER}" ansible-galaxy collection install fortinet.fortios -p "${PROJECT_DIR}/ansible_collections"
+sudo -u "${APP_USER}" ansible-galaxy collection install paloaltonetworks.panos -p "${PROJECT_DIR}/ansible_collections"
 
 # --- 4. Create key Ansible files and set permissions ---
 echo "Creating Ansible configuration files..."
