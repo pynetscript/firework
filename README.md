@@ -48,29 +48,20 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 
 ## Quickstart  
 
-### 1. Requirements  
+### Requirements  
 - Ubuntu 24.04+
 - Python 3.12+
 - Ngnix 1.24+
 - PostgreSQL 16.9+
 - Ansible 2.18.+
 
-### 2. Install  
+### Install  
 ```bash
 git clone https://github.com/pynetscript/firework.git
-cd firework
-sudo chmod +x install.sh && ./install.sh && ./setup.sh
+cd firework/scripts
+sudo chmod +x install.sh && ./install.sh
 ```
 
-### 3. Initialize Database & Default Users  
-```bash
-./add_default_users.sh
-```
-
-### 4. Start  
-```bash
-./start_firework.sh
-```
 Access at [http://<ipv4_address]
 
 Login credentials:
@@ -83,12 +74,7 @@ Login credentials:
 ## Reset the Environment  
 If you need to reset the app and database completely:
 
-```bash
-./stop_firework.sh
-./clean.sh
-./setup.sh
-./add_default_users.sh
-./start_firework.sh
+```./scripts/reset.sh
 ```
 
 ---
