@@ -74,7 +74,8 @@ Login credentials:
 ## Reset the Environment  
 If you need to reset the app and database completely:
 
-```./scripts/reset.sh
+```bash
+./scripts/reset.sh
 ```
 
 ---
