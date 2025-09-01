@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash, abort, Response
 from app.models import FirewallRule, BlacklistRule, db, User, ActivityLogEntry
-from app.utils import log_activity
+from app.utils import log_activity, get_default_interface
 import ipaddress
 import json
 import logging
@@ -252,22 +252,25 @@ def get_system_status():
     except Exception:
         system_status['disk_space'] = {'text': 'N/A', 'color': 'gray'}
 
-    # --- Bandwidth (ens33) ---
+    # --- Bandwidth  ---
+    default_interface = get_default_interface()
+
     try:
         net_io = psutil.net_io_counters(pernic=True)
-        if 'ens33' in net_io:
-            ens33_stats = net_io['ens33']
-            system_status['bandwidth_bytes_sent'] = ens33_stats.bytes_sent
-            system_status['bandwidth_bytes_recv'] = ens33_stats.bytes_recv
+        if default_interface and default_interface in net_io:
+            interface_stats = net_io[default_interface]
+            system_status['bandwidth_bytes_sent'] = interface_stats.bytes_sent
+            system_status['bandwidth_bytes_recv'] = interface_stats.bytes_recv
             system_status['bandwidth_error'] = None
         else:
             system_status['bandwidth_bytes_sent'] = 0
             system_status['bandwidth_bytes_recv'] = 0
-            system_status['bandwidth_error'] = 'Interface ens33 not found'
+            system_status['bandwidth_error'] = f'Primary interface not found'
     except Exception:
         system_status['bandwidth_bytes_sent'] = 0
         system_status['bandwidth_bytes_recv'] = 0
         system_status['bandwidth_error'] = 'Error fetching network stats'
+
 
     # Placeholder for bandwidth color - this will be calculated on frontend
     system_status['bandwidth'] = {'text': 'Calculating...', 'color': 'gray'}
