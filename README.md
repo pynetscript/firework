@@ -67,7 +67,7 @@ Access at [http://<ipv4_address]
 Login credentials:
 - `super_admin / super_admin`
 
-<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/c125992b-4d47-44e0-b0f9-917059a173e1" />
+<img width="1920" height="1032" alt="image" src="https://github.com/user-attachments/assets/adc9e3ba-7d86-4c75-a2b9-f9aaeded9159" />
 
 ---
 
