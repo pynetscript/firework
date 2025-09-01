@@ -1,7 +1,6 @@
 #!/bin/bash
-# Setup the Firework app's Python environment and migrate the PostgreSQL schema.
-# NOTE: This script is meant to be run from anywhere; it resolves paths itself.
-# It does NOT create users, install system packages, add default users, or start services.
+# Setup the Firework app: venv + deps, DB migrations, default users, start services.
+# Works from anywhere; resolves paths relative to /scripts.
 
 set -Eeuo pipefail
 
@@ -10,10 +9,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_DIR}"
 
+VENV_DIR="${PROJECT_DIR}/venv"
+REQ_FILE="${PROJECT_DIR}/requirements.txt"
+MIGRATIONS_DIR="${PROJECT_DIR}/migrations"
+ENV_FILE="${PROJECT_DIR}/.env"
+
 echo "Starting Firework Application and Database Schema Setup"
 
 # --- 1) Create (if missing) and activate venv --------------------------------
-VENV_DIR="${PROJECT_DIR}/venv"
 if [ ! -d "${VENV_DIR}" ]; then
   echo "Creating new virtual environment at '${VENV_DIR}'..."
   python3 -m venv "${VENV_DIR}"
@@ -26,7 +29,6 @@ echo "Activating virtual environment..."
 source "${VENV_DIR}/bin/activate"
 
 # --- 2) Install Python dependencies ------------------------------------------
-REQ_FILE="${PROJECT_DIR}/requirements.txt"
 echo "Installing dependencies from ${REQ_FILE}..."
 pip install --upgrade pip
 pip install -r "${REQ_FILE}"
@@ -36,7 +38,6 @@ export FLASK_APP="${PROJECT_DIR}/run.py"
 echo "FLASK_APP set to ${FLASK_APP}"
 
 # --- 4) Initialize Flask-Migrate if needed -----------------------------------
-MIGRATIONS_DIR="${PROJECT_DIR}/migrations"
 if [ ! -d "${MIGRATIONS_DIR}" ]; then
   echo "Initializing Flask-Migrate repository..."
   flask db init
@@ -82,9 +83,8 @@ config.set_main_option('\''sqlalchemy.url'\'', app.config.get('\''SQLALCHEMY_DAT
     with app.app_context():' "${ENV_PY_FILE}"
   fi
 
-  # Normalize context.configure block to include url=... if not already present
+  # Normalize context.configure block to include url=...
   if ! grep -q 'url=config.get_main_option("sqlalchemy.url")' "${ENV_PY_FILE}"; then
-    # Replace the default literal_binds block with a simpler connection/metadata/url block
     sed -i '0,/context.configure(/{
 /context.configure(/,/)/s/context.configure([^)]*)/context.configure(\
         connection=connection,\
@@ -105,12 +105,10 @@ if ! flask db migrate -m "Initial Firework app schema"; then
   echo "No changes in schema detected or migrate failed; continuing."
 fi
 
-# Try to detect the newest migration file (may be empty if no changes)
+# Patch latest migration if needed for JSONEncodedList
 MIGRATION_FILE_GENERATED="$(ls -t "${MIGRATIONS_DIR}/versions/"*.py 2>/dev/null | head -n 1 || true)"
 if [ -n "${MIGRATION_FILE_GENERATED}" ]; then
   echo "Detected migration file: ${MIGRATION_FILE_GENERATED}"
-
-  # Patch for JSONEncodedList imports only if needed
   if grep -q "app.models.JSONEncodedList" "${MIGRATION_FILE_GENERATED}" && \
      ! grep -q "^from app.models import JSONEncodedList" "${MIGRATION_FILE_GENERATED}"; then
     echo "Patching migration for JSONEncodedList import..."
@@ -125,5 +123,81 @@ fi
 echo "Applying all pending database migrations to PostgreSQL..."
 flask db upgrade
 
+# --- 8) Load .env for add_default_users step ---------------------------------
+if [ -f "${ENV_FILE}" ]; then
+  echo "Loading environment variables from ${ENV_FILE}..."
+  set -a
+  # shellcheck disable=SC1091
+  source "${ENV_FILE}"
+  set +a
+else
+  echo "Warning: ${ENV_FILE} not found. Continuing without loading extra env vars."
+fi
+
+# --- 9) add_default_users ---------------------------------------------
+echo "Creating default users (idempotent)..."
+python - <<'EOF'
+import sys
+import os
+from datetime import datetime, timezone
+
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from app import create_app, db
+from app.models import User
+
+app = create_app()
+with app.app_context():
+    users_to_create = [
+        {'username': 'super_admin', 'password': 'super_admin', 'email': 'superadmin@firework', 'role': 'superadmin'},
+        {'username': 'admin',        'password': 'admin',        'email': 'admin@firework',        'role': 'admin'},
+        {'username': 'implementer',  'password': 'implementer',  'email': 'implementer@firework',  'role': 'implementer'},
+        {'username': 'approver1',    'password': 'approver1',    'email': 'approver1@firework',    'role': 'approver'},
+        {'username': 'approver2',    'password': 'approver2',    'email': 'approver2@firework',    'role': 'approver'},
+        {'username': 'requester1',   'password': 'requester1',   'email': 'requester1@firework',   'role': 'requester'},
+        {'username': 'requester2',   'password': 'requester2',   'email': 'requester2@firework',   'role': 'requester'},
+    ]
+
+    created = 0
+    skipped = 0
+    for u in users_to_create:
+        if User.query.filter_by(username=u['username']).first():
+            print(f"User '{u['username']}' already exists.")
+            skipped += 1
+            continue
+        new_user = User(
+            username=u['username'],
+            email=u['email'],
+            role=u['role'],
+            created_at=datetime.now(timezone.utc)
+        )
+        new_user.set_password(u['password'])
+        db.session.add(new_user)
+        created += 1
+
+    if created:
+        db.session.commit()
+
+    print(f"Default user creation process completed. Created: {created}, Skipped: {skipped}.")
+EOF
+
+# --- 10) start services (systemd + nginx) ------------------------------
+echo "Starting Firework services..."
+
+start_unit () {
+  local unit="$1"
+  if sudo systemctl start "$unit"; then
+    echo "Started: $unit"
+  else
+    echo "Error: Failed to start $unit. Check logs: journalctl -u ${unit}.service"
+    exit 1
+  fi
+}
+
+start_unit "firework"
+start_unit "nginx"
+
 echo "Firework Application and Database Schema Setup Completed."
-echo "Run './scripts/add_default_users.sh' to add default users to the database."
+echo "Services started: firework (Gunicorn), nginx."

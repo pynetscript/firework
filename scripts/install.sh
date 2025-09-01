@@ -1,10 +1,10 @@
 #!/bin/bash
 # A script to prepare the environment for the Firework app.
-# It is designed to be idempotent and can be run multiple times safely.
+# Idempotent; safe to run multiple times.
 
 set -Eeuo pipefail
 
-# --- Variables ---------------------------------------------------------------
+# --- Vars --------------------------------------------------------------------
 readonly APP_USER="firework_app_user"
 readonly APP_GROUP="www-data"
 readonly PROJECT_DIR="/home/firework/firework"
@@ -29,61 +29,168 @@ readonly SERVICE_FILE="/etc/systemd/system/firework.service"
 readonly NGINX_SITE="/etc/nginx/sites-available/firework"
 readonly NGINX_LINK="/etc/nginx/sites-enabled/firework"
 
-echo "========================================================"
-echo "Starting script..."
+EDITOR="${EDITOR:-nano}"
 
-# --- 0) System packages: pip, venv, Ansible ----------------------------------
-echo "[1/8] Ensuring system packages are installed..."
+# --- Helpers -----------------------------------------------------------------
+ask_yes_no () {
+  local prompt="${1:-Continue?} [y/N]: "
+  local ans
+  read -r -p "$prompt" ans || true
+  case "${ans:-}" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+gen_secret_key () {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PY'
+import secrets, base64
+print(base64.b64encode(secrets.token_bytes(32)).decode())
+PY
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 32
+  else
+    date +%s%N | sha256sum | awk '{print $1}'
+  fi
+}
+
+# Prompt for DB details (hidden password)
+prompt_db_details () {
+  echo "Configure database connection for .env (and local PostgreSQL if used):"
+  read -r -p "DB host [localhost]: " DB_HOST || true
+  DB_HOST="${DB_HOST:-localhost}"
+
+  read -r -p "DB port [5432]: " DB_PORT || true
+  DB_PORT="${DB_PORT:-5432}"
+
+  read -r -p "DB name [fireworkdb]: " DB_NAME || true
+  DB_NAME="${DB_NAME:-fireworkdb}"
+
+  read -r -p "DB user [firework]: " DB_USER || true
+  DB_USER="${DB_USER:-firework}"
+
+  printf "DB password: "
+  stty -echo
+  read -r DB_PASS || true
+  stty echo
+  echo
+  while [ -z "${DB_PASS:-}" ]; do
+    echo "Password cannot be empty."
+    printf "DB password: "
+    stty -echo
+    read -r DB_PASS || true
+    stty echo
+    echo
+  done
+}
+
+# Create ENV file from captured values
+write_env_file () {
+  local sk="$1"
+  local host="$2" port="$3" db="$4" user="$5" pass="$6"
+  sudo tee "${ENV_FILE}" >/dev/null <<EOF
+SECRET_KEY="${sk}"
+DATABASE_URL="postgresql://${user}:${pass}@${host}:${port}/${db}"
+EOF
+  echo "Wrote ${ENV_FILE}"
+}
+
+write_inventory_example () {
+  sudo tee "${INVENTORY_FILE}" >/dev/null <<'INV'
+all:
+  vars:
+    ansible_user: admin
+    ansible_connection: network_cli
+
+  children:
+    cisco_ios:
+      hosts:
+        R1:
+          ansible_host: 10.250.10.111
+          ansible_network_os: cisco.ios.ios
+        R2:
+          ansible_host: 10.250.10.112
+          ansible_network_os: cisco.ios.ios
+        R3:
+          ansible_host: 10.250.10.113
+          ansible_network_os: cisco.ios.ios
+        SW1:
+          ansible_host: 10.250.10.110
+          ansible_network_os: cisco.ios.ios
+
+    fortinet:
+      hosts:
+        fgt:
+          ansible_host: 10.250.10.101
+          ansible_network_os: fortinet.fortios.fortios
+          ansible_httpapi_use_ssl: yes
+          ansible_httpapi_validate_certs: no
+          ansible_connection: httpapi
+          ansible_httpapi_pass: "{{ fortinet_api_password }}"
+
+    paloalto:
+      hosts:
+        pafw:
+          ansible_host: 10.250.10.161
+          ansible_network_os: paloaltonetworks.panos.panos
+          ansible_connection: httpapi
+          ansible_user: admin
+          ansible_password: "{{ paloalto_api_password }}"
+          ansible_httpapi_use_ssl: yes
+          ansible_httpapi_validate_certs: no
+INV
+}
+
+is_local_host () {
+  case "${1}" in
+    localhost|127.0.0.1|::1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Escape single quotes for SQL
+sql_escape () {
+  printf "%s" "$1" | sed "s/'/''/g"
+}
+
+# --- Start -------------------------------------------------------------------
+echo "========================================================"
+echo "Installation started..."
+
+# 1) System packages ----------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[1/9] Ensuring system packages are installed..."
 export DEBIAN_FRONTEND=noninteractive
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update -y
   sudo apt-get install -y software-properties-common
-
-  if ! command -v pip3 >/dev/null 2>&1; then
-    echo "Installing python3-pip..."
-    sudo apt-get install -y python3-pip
-  else
-    echo "python3-pip already installed. Skipping."
-  fi
-
-  if ! python3 -m venv -h >/dev/null 2>&1; then
-    echo "Installing python3-venv..."
-    sudo apt-get install -y python3-venv
-  else
-    echo "python3-venv already installed. Skipping."
-  fi
-
+  command -v pip3 >/dev/null 2>&1 || sudo apt-get install -y python3-pip
+  python3 -m venv -h >/dev/null 2>&1 || sudo apt-get install -y python3-venv
   if ! command -v ansible >/dev/null 2>&1; then
-    echo "Adding Ansible PPA and installing Ansible..."
     sudo add-apt-repository --yes --update ppa:ansible/ansible
     sudo apt-get install -y ansible
-  else
-    echo "Ansible already installed. Skipping."
   fi
+  dpkg -s postgresql >/dev/null 2>&1 || sudo apt-get install -y postgresql postgresql-contrib
+  command -v nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
 else
-  echo "apt-get not found; skipping system package installation."
+  echo "apt-get not found; skipping package installation."
 fi
 
-# --- 1) Create users, folders, files -----------------------------------------
-echo "[2/8] Creating users, folders, and files if they do not exist..."
-
-# 1a) Create dedicated application user and home directory
+# 2) Users/dirs/files ---------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[2/9] Creating users, folders, and files..."
 if ! id "${APP_USER}" &>/dev/null; then
-  echo "Creating system user '${APP_USER}' (shell: nologin, group: ${APP_GROUP})..."
   sudo useradd -m -r -s /usr/sbin/nologin -g "${APP_GROUP}" "${APP_USER}"
-  echo "User '${APP_USER}' created with home directory at /home/${APP_USER}."
 else
-  echo "User '${APP_USER}' already exists. Skipping user creation."
-  if [ ! -d "/home/${APP_USER}" ]; then
-    echo "Home directory for '${APP_USER}' missing. Creating..."
-    sudo mkdir -p "/home/${APP_USER}"
-  fi
+  [ -d "/home/${APP_USER}" ] || sudo mkdir -p "/home/${APP_USER}"
 fi
-
-# Add application user to firework group (for traversal when /home/firework is 750/755)
 sudo usermod -aG firework "${APP_USER}"
+sudo -u "${APP_USER}" mkdir -p "/home/${APP_USER}/.ansible/cache" "/home/${APP_USER}/.ansible/tmp"
+sudo chown -R "${APP_USER}":"${APP_GROUP}" "/home/${APP_USER}/.ansible"
+sudo chmod 700 "/home/${APP_USER}"
+sudo find "/home/${APP_USER}/.ansible" -type d -exec chmod 700 {} \;
 
-# 1b) Create directories
 sudo mkdir -p \
   "${ANSIBLE_COLLECTIONS_PATH}" \
   "${PROJECT_DIR}/outputs" \
@@ -93,37 +200,129 @@ sudo mkdir -p \
   "${SCRIPTS_DIR}" \
   "${GV_ALL}"
 
-# 1c) Create files
 sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
+[ -f "${PGPASS_FILE}" ] || sudo -u firework touch "${PGPASS_FILE}"
 
-# Ensure .pgpass exists (empty is fine; you can fill later)
-if [ ! -f "${PGPASS_FILE}" ]; then
-  sudo -u firework touch "${PGPASS_FILE}"
+# 3) Interactive config -------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[3/9] Interactive configuration (.env, inventory, vault pass, vault.yml)..."
+
+# 3a) .env — REQUIRED (no prompt)
+echo "Configuring ${ENV_FILE} (required)..."
+# secret key
+read -r -p "SECRET_KEY (leave blank to auto-generate): " SK || true
+if [ -z "${SK:-}" ]; then
+  SK="$(gen_secret_key)"
+  echo "Generated SECRET_KEY."
+fi
+# db prompts (always)
+DB_HOST=""; DB_PORT=""; DB_NAME=""; DB_USER=""; DB_PASS=""
+prompt_db_details
+write_env_file "${SK}" "${DB_HOST}" "${DB_PORT}" "${DB_NAME}" "${DB_USER}" "${DB_PASS}"
+
+# 3b) inventory.yml
+if ask_yes_no "Populate inventory.yml with example template?"; then
+  write_inventory_example
+  echo "Example inventory written to ${INVENTORY_FILE}"
+elif ask_yes_no "Open ${INVENTORY_FILE} in ${EDITOR} now?"; then
+  sudo "${EDITOR}" "${INVENTORY_FILE}"
 fi
 
-# --- 2) Path posture  --------------------------------------------------------
-echo "[3/8] Applying path posture..."
-# Make /home/firework traversable and project dir group=www-data, mode=755
+# 3c) .vault_pass.txt
+while : ; do
+  printf "Please enter a password for vault_pass.txt: "
+  stty -echo
+  read -r VPASS || true
+  stty echo
+  echo
+  if [ -n "${VPASS:-}" ]; then
+    printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
+    echo "Vault password saved to ${VAULT_PASS_FILE}"
+    break
+  else
+    echo "Vault password cannot be empty."
+  fi
+done
+
+# 3d) group_vars/all/vault.yml (encrypted)
+if ask_yes_no "Create/overwrite encrypted ${GV_VAULT} now?"; then
+  if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
+    echo "Provide values to store in the vault (leave blank to skip a key)."
+    read -r -p "ansible_password: " APASS || true
+    read -r -p "fortinet_api_password: " FNPASS || true
+    read -r -p "fortinet_api_access_token: " FNTOK || true
+    read -r -p "paloalto_api_password: " PAPASS || true
+    APASS="${APASS:-admin}"
+
+    # make sure the dest dir exists (as firework)
+    sudo -u firework mkdir -p "${GV_ALL}"
+
+    # create a temp plaintext vault file AS firework in the project dir
+    TMP_YAML="$(sudo -u firework mktemp "${PROJECT_DIR}/.vault_tmp.XXXXXX.yml")"
+
+    # write the content AS firework by piping stdin into bash -c 'cat > file'
+    sudo -u firework bash -c "cat > '${TMP_YAML}'" <<YML
+---
+ansible_password: ${APASS}
+fortinet_api_password: ${FNPASS}
+fortinet_api_access_token: ${FNTOK}
+paloalto_api_password: ${PAPASS}
+YML
+
+    # lock the plaintext file, then encrypt it to the real vault (still as firework)
+    sudo -u firework chmod 600 "${TMP_YAML}"
+    sudo -u firework ansible-vault encrypt \
+      --vault-password-file "${VAULT_PASS_FILE}" \
+      --output "${GV_VAULT}" "${TMP_YAML}"
+
+    # securely remove the plaintext temp
+    sudo -u firework shred -u "${TMP_YAML}" || sudo -u firework rm -f "${TMP_YAML}"
+
+    # final perms on the encrypted vault
+    sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
+    sudo chmod 640 "${GV_VAULT}"
+    echo "Encrypted vault written to ${GV_VAULT}"
+  else
+    echo "ansible-vault not available or ${VAULT_PASS_FILE} empty."
+    if ask_yes_no "Write PLAINTEXT ${GV_VAULT} anyway?"; then
+      sudo tee "${GV_VAULT}" >/dev/null <<'YML'
+---
+# WARNING: PLAINTEXT (not encrypted) — run `ansible-vault encrypt group_vars/all/vault.yml`
+ansible_password: admin
+fortinet_api_password:
+fortinet_api_access_token:
+paloalto_api_password:
+YML
+      sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
+      sudo chmod 640 "${GV_VAULT}"
+      echo "Plaintext vault written to ${GV_VAULT}"
+    else
+      echo "Skipped creating ${GV_VAULT}."
+    fi
+  fi
+else
+  echo "Skipped ${GV_VAULT} creation."
+fi
+
+# 4) Path posture -------------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[4/9] Applying path posture..."
 sudo chmod 755 /home/firework
 sudo chgrp "${APP_GROUP}" "${PROJECT_DIR}"
 sudo chmod 755 "${PROJECT_DIR}"
 
-# --- 3) Ownership & permissions ----------------------------------------------
-echo "[4/8] Setting ownership and permissions..."
-
-# Ansible collections dir (owned by firework for ansible-galaxy to write)
+# 5) Ownership & permissions ---------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[5/9] Setting ownership and permissions..."
 sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
 sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}"
 
-# Outputs dir (setgid so group is preserved)
 sudo chown "${APP_USER}":"${APP_GROUP}" "${PROJECT_DIR}/outputs"
 sudo chmod 2775 "${PROJECT_DIR}/outputs"
 
-# Ansible temp dir
 sudo chown firework:"${APP_GROUP}" "${ANSIBLE_TMP_DIR}"
 sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 
-# Key config files
 sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
 sudo chmod 664 "${INVENTORY_FILE}"
 
@@ -136,32 +335,12 @@ sudo chmod 600 "${ENV_FILE}"
 sudo chown firework:firework "${PGPASS_FILE}"
 sudo chmod 600 "${PGPASS_FILE}"
 
-# group_vars / vault.yml normalization
 sudo chown -R firework:"${APP_GROUP}" "${GV_DIR}"
 sudo find "${GV_DIR}" -type d -exec chmod 750 {} \;
-# If vault.yml exists, lock it down
-if [ -f "${GV_VAULT}" ]; then
-  sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
-  sudo chmod 640 "${GV_VAULT}"
-else
-  # Optionally create an encrypted stub if ansible-vault & vault pass are present
-  if command -v ansible-vault >/dev/null 2>&1 && [ -f "${VAULT_PASS_FILE}" ]; then
-    echo "Creating encrypted stub ${GV_VAULT}..."
-    tmp_plain="$(mktemp)"
-    printf -- "---\n# Put your encrypted variables here\n" | sudo tee "${tmp_plain}" >/dev/null
-    sudo -u firework ansible-vault encrypt --vault-password-file "${VAULT_PASS_FILE}" \
-      --output "${GV_VAULT}" "${tmp_plain}"
-    sudo rm -f "${tmp_plain}"
-    sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
-    sudo chmod 640 "${GV_VAULT}"
-  else
-    echo "Skipping auto-create of ${GV_VAULT} (ansible-vault or vault pass file not available)."
-  fi
-fi
+[ -f "${GV_VAULT}" ] && sudo chmod 640 "${GV_VAULT}"
 
-# --- 3b) Playbooks in project root (leave as-is for now) ---------------------
-echo "Normalizing playbooks in project root..."
-declare -a PLAYBOOKS=(
+# Playbooks at repo root
+declare -a PLAYBOOKS_ROOT=(
   "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
   "${PROJECT_DIR}/post_check_firewall_rule_paloalto.yml"
   "${PROJECT_DIR}/pre_check_firewall_rule_fortinet.yml"
@@ -169,186 +348,124 @@ declare -a PLAYBOOKS=(
   "${PROJECT_DIR}/provision_firewall_rule_fortinet.yml"
   "${PROJECT_DIR}/provision_firewall_rule_paloalto.yml"
 )
-for pb in "${PLAYBOOKS[@]}"; do
-  if [ -f "$pb" ]; then
-    sudo chown firework:"${APP_GROUP}" "$pb"
-    sudo chmod 644 "$pb"
-  fi
+for pb in "${PLAYBOOKS_ROOT[@]}"; do
+  [ -f "$pb" ] || continue
+  sudo chown firework:"${APP_GROUP}" "$pb"
+  sudo chmod 644 "$pb"
 done
 
-# --- 3c) Scripts under scripts/ ----------------------------------------------
-echo "Normalizing scripts/ directory and files..."
-# scripts/ dir itself (baseline)
+# scripts/
 sudo chown -R firework:"${APP_GROUP}" "${SCRIPTS_DIR}"
 sudo find "${SCRIPTS_DIR}" -type d -exec chmod 755 {} \;
 sudo find "${SCRIPTS_DIR}" -type f -name "*.sh" -exec chmod 755 {} \;
 
-# per-file owner/mode overrides
+# explicit overrides
 declare -A SCRIPTS=(
   ["${SCRIPTS_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
   ["${SCRIPTS_DIR}/clean.sh"]="firework:${APP_GROUP}:755"
   ["${SCRIPTS_DIR}/install.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/reset.sh"]="firework:${APP_GROUP}:755"
   ["${SCRIPTS_DIR}/setup.sh"]="firework:firework:755"
   ["${SCRIPTS_DIR}/start_firework.sh"]="firework:firework:775"
   ["${SCRIPTS_DIR}/status_firework.sh"]="firework:firework:775"
   ["${SCRIPTS_DIR}/stop_firework.sh"]="firework:firework:775"
 )
 for script in "${!SCRIPTS[@]}"; do
-  if [ -f "$script" ]; then
-    IFS=":" read -r owner group mode <<<"${SCRIPTS[$script]}"
-    sudo chown "$owner":"$group" "$script"
-    sudo chmod "$mode" "$script"
-  fi
+  [ -f "$script" ] || continue
+  IFS=":" read -r owner group mode <<<"${SCRIPTS[$script]}"
+  sudo chown "$owner":"$group" "$script"
+  sudo chmod "$mode" "$script"
 done
 
-# run.py stays at repo root; keep it executable for convenience
-if [ -f "${PROJECT_DIR}/run.py" ]; then
-  sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py"
-  sudo chmod 755 "${PROJECT_DIR}/run.py"
-fi
+# run.py convenience
+[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py" && sudo chmod 755 "${PROJECT_DIR}/run.py"
 
-# --- 3d) requirements.txt -----------------------------------------------------
-echo "Normalizing requirements.txt (if present)..."
-REQ_FILE="${PROJECT_DIR}/requirements.txt"
-if [ -f "$REQ_FILE" ]; then
-  sudo chown firework:"${APP_GROUP}" "$REQ_FILE"
-  sudo chmod 644 "$REQ_FILE"
-fi
+# requirements.txt
+[ -f "${PROJECT_DIR}/requirements.txt" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/requirements.txt" && sudo chmod 644 "${PROJECT_DIR}/requirements.txt"
 
-# --- 3e) static/ (project root) ----------------------------------------------
-echo "Normalizing static/ directory (project root)..."
+# static/ root
 sudo chown firework:"${APP_GROUP}" "${STATIC_DIR}"
 sudo chmod 775 "${STATIC_DIR}"
 for sf in "${STATIC_DIR}/scripts.js" "${STATIC_DIR}/styles.css"; do
-  if [ -f "$sf" ]; then
-    sudo chown firework:"${APP_GROUP}" "$sf"
-    sudo chmod 644 "$sf"
-  fi
+  [ -f "$sf" ] || continue
+  sudo chown firework:"${APP_GROUP}" "$sf"
+  sudo chmod 644 "$sf"
 done
 
-# --- 3f) app/ tree normalization ---------------------------------------------
-echo "Normalizing app/ directory tree..."
+# app/ tree
 sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
 sudo find "${APP_DIR}" -type d -not -path "*/__pycache__" -exec chmod 755 {} \;
 sudo find "${APP_DIR}" -type d -name "__pycache__" -exec chown firework:firework {} \; -exec chmod 775 {} \;
-
-# Default: top-level app/*.py
 sudo find "${APP_DIR}" -maxdepth 1 -type f -name "*.py" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
-
-# Exceptions
-if [ -f "${APP_DIR}/routes.py" ]; then
-  sudo chown firework:firework "${APP_DIR}/routes.py"
-  sudo chmod 644 "${APP_DIR}/routes.py"
-fi
+[ -f "${APP_DIR}/routes.py" ] && sudo chown firework:firework "${APP_DIR}/routes.py" && sudo chmod 644 "${APP_DIR}/routes.py"
 for f in models.py utils.py; do
-  if [ -f "${APP_DIR}/$f" ]; then
-    sudo chown firework:"${APP_GROUP}" "${APP_DIR}/$f"
-    sudo chmod 664 "${APP_DIR}/$f"
-  fi
+  [ -f "${APP_DIR}/$f" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/$f" && sudo chmod 664 "${APP_DIR}/$f"
 done
-
 if [ -d "${APP_DIR}/services" ]; then
   sudo chown firework:"${APP_GROUP}" "${APP_DIR}/services"
   sudo chmod 755 "${APP_DIR}/services"
-  if [ -f "${APP_DIR}/services/network_automation.py" ]; then
-    sudo chown firework:firework "${APP_DIR}/services/network_automation.py"
-    sudo chmod 664 "${APP_DIR}/services/network_automation.py"
-  fi
+  [ -f "${APP_DIR}/services/network_automation.py" ] && sudo chown firework:firework "${APP_DIR}/services/network_automation.py" && sudo chmod 664 "${APP_DIR}/services/network_automation.py"
 fi
-
 if [ -d "${APP_DIR}/static" ]; then
   sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static"
   sudo chmod 775 "${APP_DIR}/static"
-  if [ -f "${APP_DIR}/static/favicon.png" ]; then
-    sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static/favicon.png"
-    sudo chmod 644 "${APP_DIR}/static/favicon.png"
-  fi
+  [ -f "${APP_DIR}/static/favicon.png" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static/favicon.png" && sudo chmod 644 "${APP_DIR}/static/favicon.png"
 fi
-
 if [ -d "${APP_DIR}/templates" ]; then
   sudo chown firework:"${APP_GROUP}" "${APP_DIR}/templates"
   sudo chmod 755 "${APP_DIR}/templates"
   sudo find "${APP_DIR}/templates" -maxdepth 1 -type f -name "*.html" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
 fi
+[ -d "${APP_DIR}/outputs" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/outputs" && sudo chmod 755 "${APP_DIR}/outputs"
 
-if [ -d "${APP_DIR}/outputs" ]; then
-  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/outputs"
-  sudo chmod 755 "${APP_DIR}/outputs"
-fi
-
-# --- 4) PostgreSQL: install & configure --------------------------------------
-echo "[5/8] Installing and configuring PostgreSQL..."
-# Install packages if missing
-if ! dpkg -s postgresql >/dev/null 2>&1; then
-  sudo apt-get install -y postgresql postgresql-contrib
-fi
-# Enable & start service
+# 6) PostgreSQL ---------------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[6/9] Installing and configuring PostgreSQL..."
 sudo systemctl enable --now postgresql >/dev/null 2>&1 || true
 
-# Create role 'firework' if missing
-if ! sudo -u postgres psql -Atqc "SELECT 1 FROM pg_roles WHERE rolname='firework'" | grep -q 1; then
-  sudo -u postgres psql -c "CREATE USER firework WITH PASSWORD 'firework';"
+# Use just-captured DB_* to set up local DB if host is local
+if is_local_host "${DB_HOST}"; then
+  if ! sudo -u postgres psql -Atqc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+    DB_PASS_ESC="$(sql_escape "${DB_PASS}")"
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS_ESC}';"
+  fi
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER ROLE ${DB_USER} CREATEDB;" >/dev/null
+  if ! sudo -u postgres psql -Atqc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+  fi
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};" >/dev/null
+else
+  echo "Remote DB host '${DB_HOST}' detected — skipping local role/DB creation."
 fi
-# Ensure CREATEDB on role
-sudo -u postgres psql -c "ALTER ROLE firework CREATEDB;" >/dev/null
 
-# Create database if missing, owned by firework
-if ! sudo -u postgres psql -Atqc "SELECT 1 FROM pg_database WHERE datname='fireworkdb'" | grep -q 1; then
-  sudo -u postgres psql -c "CREATE DATABASE fireworkdb OWNER firework;"
-fi
-# Grant privileges (idempotent)
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE fireworkdb TO firework;" >/dev/null
-
-# Ensure .pgpass has localhost entry
-grep -q "^localhost:5432:\*:firework:" "${PGPASS_FILE}" 2>/dev/null || echo "localhost:5432:*:firework:firework" | sudo tee -a "${PGPASS_FILE}" >/dev/null
+# Ensure .pgpass has the captured creds
+grep -q "^${DB_HOST}:${DB_PORT}:\*:${DB_USER}:" "${PGPASS_FILE}" 2>/dev/null || \
+  echo "${DB_HOST}:${DB_PORT}:*:${DB_USER}:${DB_PASS}" | sudo tee -a "${PGPASS_FILE}" >/dev/null
 sudo chown firework:firework "${PGPASS_FILE}"
 sudo chmod 600 "${PGPASS_FILE}"
 
-# --- 5) Install Ansible Collections (last-ish) --------------------------------
-echo "[6/8] Installing Ansible collections..."
-if ! command -v ansible-galaxy >/dev/null 2>&1; then
-  echo "WARNING: 'ansible-galaxy' not found in PATH. Skipping collection installs."
-else
+# 7) Ansible collections ------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[7/9] Installing Ansible collections..."
+if command -v ansible-galaxy >/dev/null 2>&1; then
   readonly ANSIBLE_ENV_VARS="ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}"
-
-  # Pre-create namespace dirs to avoid path bugs
   sudo -u firework mkdir -p "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
   sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
   sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
 
-  # fortinet.fortios
-  if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/fortinet/fortios" ]; then
-    echo "Installing fortinet.fortios..."
-    sudo -u firework env ${ANSIBLE_ENV_VARS} \
-      ansible-galaxy collection install fortinet.fortios -p "${ANSIBLE_COLLECTIONS_PATH}"
-  else
-    echo "fortinet.fortios collection already installed. Skipping."
-  fi
+  [ -d "${ANSIBLE_COLLECTIONS_PATH}/fortinet/fortios" ] || sudo -u firework env ${ANSIBLE_ENV_VARS} ansible-galaxy collection install fortinet.fortios -p "${ANSIBLE_COLLECTIONS_PATH}"
+  [ -d "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks/panos" ] || sudo -u firework env ${ANSIBLE_ENV_VARS} ansible-galaxy collection install paloaltonetworks.panos -p "${ANSIBLE_COLLECTIONS_PATH}"
 
-  # paloaltonetworks.panos
-  if [ ! -d "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks/panos" ]; then
-    echo "Installing paloaltonetworks.panos..."
-    sudo -u firework env ${ANSIBLE_ENV_VARS} \
-      ansible-galaxy collection install paloaltonetworks.panos -p "${ANSIBLE_COLLECTIONS_PATH}"
-  else
-    echo "paloaltonetworks.panos collection already installed. Skipping."
-  fi
-
-  # Post-install: normalize ansible_collections ownership & perms
-  echo "Normalizing ansible_collections ownership & permissions..."
   sudo chown -R firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
   sudo chmod -R u+rwX,g+rwX,o+rX "${ANSIBLE_COLLECTIONS_PATH}"
   sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
+else
+  echo "WARNING: ansible-galaxy not found; skipped collections."
 fi
 
-# --- 6) Install & configure Nginx --------------------------------------------
-echo "[7/8] Installing and configuring Nginx..."
-# install nginx if missing
-if ! command -v nginx >/dev/null 2>&1; then
-  sudo apt-get install -y nginx
-fi
-
-# write your site config
+# 8) Nginx --------------------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[8/9] Installing and configuring Nginx..."
 sudo tee "${NGINX_SITE}" >/dev/null <<'NGINX'
 server {
     listen 80;
@@ -374,19 +491,16 @@ server {
 NGINX
 sudo chown root:root "${NGINX_SITE}"
 sudo chmod 0644 "${NGINX_SITE}"
-
-# enable site, remove default
 sudo ln -sf "${NGINX_SITE}" "${NGINX_LINK}"
 [ -e /etc/nginx/sites-enabled/default ] && sudo rm -f /etc/nginx/sites-enabled/default || true
-
-# test and restart
 sudo nginx -t
 sudo systemctl restart nginx
+sudo systemctl enable nginx >/dev/null 2>&1 || true
 
-# --- 7) Create systemd service if missing ------------------------------------
-echo "[8/8] Create systemd service if missing..."
+# 9) systemd ------------------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[9/9] Create systemd service if missing..."
 if [ ! -f "${SERVICE_FILE}" ]; then
-  echo "Creating systemd service at ${SERVICE_FILE}..."
   sudo tee "${SERVICE_FILE}" >/dev/null <<'UNIT'
 [Unit]
 Description=Gunicorn instance to serve Firework Flask app
@@ -410,22 +524,12 @@ UNIT
   sudo chmod 0644 "${SERVICE_FILE}"
   sudo chown root:root "${SERVICE_FILE}"
   sudo systemctl daemon-reload
+  sudo systemctl enable firework >/dev/null 2>&1 || true
 else
-  echo "Systemd service already exists at ${SERVICE_FILE}. Skipping creation."
+  echo "Systemd service already exists; skipping."
 fi
 
-# --- Final confirmation -------------------------------------------------------
-cat <<EOF
-========================================================
-Setup complete!
-- Nginx site: ${NGINX_SITE}
-- Systemd unit: ${SERVICE_FILE}
-- PostgreSQL: role 'firework' and DB 'fireworkdb' ensured
-
-Remember to edit:
-- ${INVENTORY_FILE}
-- ${VAULT_PASS_FILE}
-- ${ENV_FILE}
-- ${GV_VAULT} (encrypted)
-========================================================
-EOF
+# Done ------------------------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "Installation completed!"
+echo "========================================================"
