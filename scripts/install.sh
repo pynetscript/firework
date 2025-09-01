@@ -57,7 +57,7 @@ PY
 
 # Prompt for DB details (hidden password)
 prompt_db_details () {
-  echo "Configure database connection for .env (and local PostgreSQL if used):"
+  echo "Please enter database connection details:"
   read -r -p "DB host [localhost]: " DB_HOST || true
   DB_HOST="${DB_HOST:-localhost}"
 
@@ -70,14 +70,14 @@ prompt_db_details () {
   read -r -p "DB user [firework]: " DB_USER || true
   DB_USER="${DB_USER:-firework}"
 
-  printf "DB password: "
+  printf "DB pass [........]: "
   stty -echo
   read -r DB_PASS || true
   stty echo
   echo
   while [ -z "${DB_PASS:-}" ]; do
     echo "Password cannot be empty."
-    printf "DB password: "
+    printf "DB pass [........]: "
     stty -echo
     read -r DB_PASS || true
     stty echo
@@ -93,7 +93,7 @@ write_env_file () {
 SECRET_KEY="${sk}"
 DATABASE_URL="postgresql://${user}:${pass}@${host}:${port}/${db}"
 EOF
-  echo "Wrote ${ENV_FILE}"
+  echo "${ENV_FILE}: OK"
 }
 
 write_inventory_example () {
@@ -154,6 +154,13 @@ sql_escape () {
   printf "%s" "$1" | sed "s/'/''/g"
 }
 
+# YAML-quote a value (single quotes, with inner quotes doubled)
+yaml_quote () {
+  local v="${1-}"
+  v="${v//\'/\'\'}"
+  printf "'%s'" "$v"
+}
+
 # --- Start -------------------------------------------------------------------
 echo "========================================================"
 echo "Installation started..."
@@ -208,100 +215,87 @@ echo "--------------------------------------------------------"
 echo "[3/9] Interactive configuration (.env, inventory, vault pass, vault.yml)..."
 
 # 3a) .env — REQUIRED (no prompt)
-echo "Configuring ${ENV_FILE} (required)..."
-# secret key
-read -r -p "SECRET_KEY (leave blank to auto-generate): " SK || true
+echo "#################################################################################"
+read -r -p "Please enter a SECRET_KEY or leave blank to auto-generate [${ENV_FILE}]: " SK || true
 if [ -z "${SK:-}" ]; then
   SK="$(gen_secret_key)"
-  echo "Generated SECRET_KEY."
+  echo "#################################################################################"
 fi
-# db prompts (always)
 DB_HOST=""; DB_PORT=""; DB_NAME=""; DB_USER=""; DB_PASS=""
 prompt_db_details
 write_env_file "${SK}" "${DB_HOST}" "${DB_PORT}" "${DB_NAME}" "${DB_USER}" "${DB_PASS}"
 
-# 3b) inventory.yml
+
+# 3b) inventory.yml (optional helper)
+echo "#################################################################################"
 if ask_yes_no "Populate inventory.yml with example template?"; then
   write_inventory_example
-  echo "Example inventory written to ${INVENTORY_FILE}"
+  echo "${INVENTORY_FILE}: OK"
 elif ask_yes_no "Open ${INVENTORY_FILE} in ${EDITOR} now?"; then
   sudo "${EDITOR}" "${INVENTORY_FILE}"
 fi
 
+## 3c) .vault_pass.txt
+#echo "#################################################################################"
+#printf "Please enter a password for vault_pass.txt: "
+#read -r VPASS
+#printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
+#echo "${VAULT_PASS_FILE}: OK"
+
 # 3c) .vault_pass.txt
-while : ; do
-  printf "Please enter a password for vault_pass.txt: "
-  stty -echo
-  read -r VPASS || true
-  stty echo
-  echo
-  if [ -n "${VPASS:-}" ]; then
-    printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
-    echo "Vault password saved to ${VAULT_PASS_FILE}"
-    break
-  else
-    echo "Vault password cannot be empty."
-  fi
-done
+echo "#################################################################################"
+read -r -s -p "Please enter a password for vault_pass.txt: " VPASS; echo
+printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
+echo "${VAULT_PASS_FILE}: OK"
 
-# 3d) group_vars/all/vault.yml (encrypted)
-if ask_yes_no "Create/overwrite encrypted ${GV_VAULT} now?"; then
-  if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
-    echo "Provide values to store in the vault (leave blank to skip a key)."
-    read -r -p "ansible_password: " APASS || true
-    read -r -p "fortinet_api_password: " FNPASS || true
-    read -r -p "fortinet_api_access_token: " FNTOK || true
-    read -r -p "paloalto_api_password: " PAPASS || true
-    APASS="${APASS:-admin}"
+# 3d) group_vars/all/vault.yml
+echo "#################################################################################"
+if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
+  echo "Please provide passwords/keys for network devices to store in ${GV_VAULT}."
+  read -r -p "ansible_password: " APASS || true
+  read -r -p "fortinet_api_password: " FNPASS || true
+  read -r -p "fortinet_api_access_token: " FNTOK || true
+  read -r -p "paloalto_api_password: " PAPASS || true
 
-    # make sure the dest dir exists (as firework)
-    sudo -u firework mkdir -p "${GV_ALL}"
+  # YAML-quoted values (single quotes, inner quotes doubled)
+  APASS_YAML="$(yaml_quote "${APASS}")"
+  FNPASS_YAML="$(yaml_quote "${FNPASS}")"
+  FNTOK_YAML="$(yaml_quote "${FNTOK}")"
+  PAPASS_YAML="$(yaml_quote "${PAPASS}")"
 
-    # create a temp plaintext vault file AS firework in the project dir
-    TMP_YAML="$(sudo -u firework mktemp "${PROJECT_DIR}/.vault_tmp.XXXXXX.yml")"
-
-    # write the content AS firework by piping stdin into bash -c 'cat > file'
-    sudo -u firework bash -c "cat > '${TMP_YAML}'" <<YML
+  tmp_yaml="$(sudo -u firework mktemp)"
+  sudo -u firework tee "${tmp_yaml}" >/dev/null <<YML
 ---
-ansible_password: ${APASS}
-fortinet_api_password: ${FNPASS}
-fortinet_api_access_token: ${FNTOK}
-paloalto_api_password: ${PAPASS}
+ansible_password: ${APASS_YAML}
+fortinet_api_password: ${FNPASS_YAML}
+fortinet_api_access_token: ${FNTOK_YAML}
+paloalto_api_password: ${PAPASS_YAML}
 YML
 
-    # lock the plaintext file, then encrypt it to the real vault (still as firework)
-    sudo -u firework chmod 600 "${TMP_YAML}"
-    sudo -u firework ansible-vault encrypt \
-      --vault-password-file "${VAULT_PASS_FILE}" \
-      --output "${GV_VAULT}" "${TMP_YAML}"
-
-    # securely remove the plaintext temp
-    sudo -u firework shred -u "${TMP_YAML}" || sudo -u firework rm -f "${TMP_YAML}"
-
-    # final perms on the encrypted vault
-    sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
-    sudo chmod 640 "${GV_VAULT}"
-    echo "Encrypted vault written to ${GV_VAULT}"
+  if sudo -u firework ansible-vault encrypt \
+       --vault-password-file "${VAULT_PASS_FILE}" \
+       --output "${GV_VAULT}" "${tmp_yaml}" >/dev/null 2>&1; then
+    sudo rm -f "${tmp_yaml}"
+    echo "${GV_VAULT}: OK"
+    echo "Note: You can edit later with: ansible-vault edit ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}"
   else
-    echo "ansible-vault not available or ${VAULT_PASS_FILE} empty."
-    if ask_yes_no "Write PLAINTEXT ${GV_VAULT} anyway?"; then
-      sudo tee "${GV_VAULT}" >/dev/null <<'YML'
----
-# WARNING: PLAINTEXT (not encrypted) — run `ansible-vault encrypt group_vars/all/vault.yml`
-ansible_password: admin
-fortinet_api_password:
-fortinet_api_access_token:
-paloalto_api_password:
-YML
-      sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
-      sudo chmod 640 "${GV_VAULT}"
-      echo "Plaintext vault written to ${GV_VAULT}"
-    else
-      echo "Skipped creating ${GV_VAULT}."
-    fi
+    echo "Encryption FAILED; leaving plaintext temp at: ${tmp_yaml}"
+    echo "You can inspect it, then encrypt manually:"
+    echo "  ansible-vault encrypt ${tmp_yaml} --vault-password-file ${VAULT_PASS_FILE} --output ${GV_VAULT}"
   fi
 else
-  echo "Skipped ${GV_VAULT} creation."
+  echo "ansible-vault not available or ${VAULT_PASS_FILE} empty."
+  echo "Writing PLAINTEXT ${GV_VAULT} (you should encrypt it later):"
+  APASS_YAML="$(yaml_quote "admin")"
+  sudo tee "${GV_VAULT}" >/dev/null <<YML
+---
+# WARNING: PLAINTEXT (not encrypted) — later run:
+#   ansible-vault encrypt ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}
+ansible_password: ${APASS_YAML}
+fortinet_api_password: ''
+fortinet_api_access_token: ''
+paloalto_api_password: ''
+YML
 fi
 
 # 4) Path posture -------------------------------------------------------------
@@ -444,6 +438,16 @@ grep -q "^${DB_HOST}:${DB_PORT}:\*:${DB_USER}:" "${PGPASS_FILE}" 2>/dev/null || 
 sudo chown firework:firework "${PGPASS_FILE}"
 sudo chmod 600 "${PGPASS_FILE}"
 
+# --- PostgreSQL verification (like nginx -t) ---
+if command -v psql >/dev/null 2>&1; then
+  echo "psql client: $(psql --version 2>/dev/null || echo 'unknown')"
+  if PGPASSFILE="${PGPASS_FILE}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT 1" >/dev/null 2>&1; then
+    echo "PostgreSQL: OK"
+  else
+    echo "PostgreSQL: FAIL"
+  fi
+fi
+
 # 7) Ansible collections ------------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[7/9] Installing Ansible collections..."
@@ -453,9 +457,11 @@ if command -v ansible-galaxy >/dev/null 2>&1; then
   sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
   sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
 
-  [ -d "${ANSIBLE_COLLECTIONS_PATH}/fortinet/fortios" ] || sudo -u firework env ${ANSIBLE_ENV_VARS} ansible-galaxy collection install fortinet.fortios -p "${ANSIBLE_COLLECTIONS_PATH}"
-  [ -d "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks/panos" ] || sudo -u firework env ${ANSIBLE_ENV_VARS} ansible-galaxy collection install paloaltonetworks.panos -p "${ANSIBLE_COLLECTIONS_PATH}"
+  sudo -u firework env ${ANSSIBLE_ENV_VARS:-ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}} \
+    ansible-galaxy collection install -p "${ANSIBLE_COLLECTIONS_PATH}" \
+      fortinet.fortios paloaltonetworks.panos
 
+  # Normalize ownership/perms afterward
   sudo chown -R firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
   sudo chmod -R u+rwX,g+rwX,o+rX "${ANSIBLE_COLLECTIONS_PATH}"
   sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
@@ -493,9 +499,22 @@ sudo chown root:root "${NGINX_SITE}"
 sudo chmod 0644 "${NGINX_SITE}"
 sudo ln -sf "${NGINX_SITE}" "${NGINX_LINK}"
 [ -e /etc/nginx/sites-enabled/default ] && sudo rm -f /etc/nginx/sites-enabled/default || true
-sudo nginx -t
-sudo systemctl restart nginx
-sudo systemctl enable nginx >/dev/null 2>&1 || true
+
+# Test config and restart
+if sudo nginx -t; then
+  sudo systemctl restart nginx
+  sudo systemctl enable nginx >/dev/null 2>&1 || true
+else
+  echo "nginx -t failed; see errors above."
+fi
+
+# Verify service is running
+nginx_state="$(systemctl is-active nginx 2>/dev/null || true)"
+echo "nginx: OK"
+if [ "${nginx_state}" != "active" ]; then
+  echo "nginx: FAIL"
+  sudo journalctl -u nginx --no-pager -n 30 || true
+fi
 
 # 9) systemd ------------------------------------------------------------------
 echo "--------------------------------------------------------"
@@ -525,8 +544,9 @@ UNIT
   sudo chown root:root "${SERVICE_FILE}"
   sudo systemctl daemon-reload
   sudo systemctl enable firework >/dev/null 2>&1 || true
+  echo "Systemd service: OK"
 else
-  echo "Systemd service already exists; skipping."
+  echo "Systemd service: Already exists; skipping."
 fi
 
 # Done ------------------------------------------------------------------------
