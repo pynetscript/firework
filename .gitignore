@@ -1,20 +1,11 @@
-# Python
 *.pyc
 __pycache__/
 venv/
 .env
-
-# Flask-Migrate / Alembic
 migrations/**/__pycache__/
 migrations/**/*.pyc
-
-# Output files from Ansible/Collectors
 outputs/
-
-# Logs
 *.log
-
-# Ansible
 .ansible/
 ansible_collections/
 ansible_tmp/
@@ -23,13 +14,8 @@ ansible_tmp/
 group_vars/all/vault.yml
 .vault_pass.txt
 inventory.yml
-
-# Flask
 instance/
-
-# Editor/OS backup files
 *.bak
 *.bak[0-9]*
 *.swp
 *~
-trash/

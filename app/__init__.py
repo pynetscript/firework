@@ -47,7 +47,7 @@ def create_app():
     def load_user(user_id):
         return User.query.get(int(user_id))
 
-    log_file_path = os.path.join(app.root_path, '..', 'firework_app.log')
+    log_file_path = os.path.join(app.root_path, '..', 'firework.log')
     handler = RotatingFileHandler(log_file_path, maxBytes=1 * 1024 * 1024 * 1024, backupCount=1)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)

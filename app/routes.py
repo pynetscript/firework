@@ -1693,10 +1693,10 @@ def profile():
 @roles_required('superadmin')
 def admin_debug():
     """
-    Displays the content of the firework_app.log file for superadmins.
+    Displays the content of the firework.log file for superadmins.
     """
     log_content = "Log file not found."
-    log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'firework_app.log')
+    log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'firework.log')
 
     try:
         with open(log_file_path, 'r') as f:

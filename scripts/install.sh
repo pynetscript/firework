@@ -8,23 +8,32 @@ set -Eeuo pipefail
 readonly APP_USER="firework_app_user"
 readonly APP_GROUP="www-data"
 readonly PROJECT_DIR="/home/firework/firework"
+
 readonly ANSIBLE_COLLECTIONS_PATH="${PROJECT_DIR}/ansible_collections"
 readonly ANSIBLE_TMP_DIR="${PROJECT_DIR}/ansible_tmp"
+
 readonly INVENTORY_FILE="${PROJECT_DIR}/inventory.yml"
 readonly VAULT_PASS_FILE="${PROJECT_DIR}/.vault_pass.txt"
 readonly ENV_FILE="${PROJECT_DIR}/.env"
 readonly PGPASS_FILE="/home/firework/.pgpass"
+
 readonly STATIC_DIR="${PROJECT_DIR}/static"
 readonly APP_DIR="${PROJECT_DIR}/app"
+readonly SCRIPTS_DIR="${PROJECT_DIR}/scripts"
+
 readonly GV_DIR="${PROJECT_DIR}/group_vars"
 readonly GV_ALL="${GV_DIR}/all"
 readonly GV_VAULT="${GV_ALL}/vault.yml"
+
+readonly SERVICE_FILE="/etc/systemd/system/firework.service"
+readonly NGINX_SITE="/etc/nginx/sites-available/firework"
+readonly NGINX_LINK="/etc/nginx/sites-enabled/firework"
 
 echo "========================================================"
 echo "Starting script..."
 
 # --- 0) System packages: pip, venv, Ansible ----------------------------------
-echo "[0/5] Ensuring system packages (pip, venv, Ansible) are installed..."
+echo "[1/8] Ensuring system packages are installed..."
 export DEBIAN_FRONTEND=noninteractive
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update -y
@@ -56,7 +65,7 @@ else
 fi
 
 # --- 1) Create users, folders, files -----------------------------------------
-echo "[1/5] Creating users, folders, and files if they do not exist..."
+echo "[2/8] Creating users, folders, and files if they do not exist..."
 
 # 1a) Create dedicated application user and home directory
 if ! id "${APP_USER}" &>/dev/null; then
@@ -81,6 +90,7 @@ sudo mkdir -p \
   "${ANSIBLE_TMP_DIR}" \
   "${STATIC_DIR}" \
   "${APP_DIR}" \
+  "${SCRIPTS_DIR}" \
   "${GV_ALL}"
 
 # 1c) Create files
@@ -91,15 +101,15 @@ if [ ! -f "${PGPASS_FILE}" ]; then
   sudo -u firework touch "${PGPASS_FILE}"
 fi
 
-# --- 2) Path posture to match working VM -------------------------------------
-echo "[2/5] Applying working-VM path posture..."
+# --- 2) Path posture  --------------------------------------------------------
+echo "[3/8] Applying path posture..."
 # Make /home/firework traversable and project dir group=www-data, mode=755
 sudo chmod 755 /home/firework
 sudo chgrp "${APP_GROUP}" "${PROJECT_DIR}"
 sudo chmod 755 "${PROJECT_DIR}"
 
 # --- 3) Ownership & permissions ----------------------------------------------
-echo "[3/5] Setting ownership and permissions..."
+echo "[4/8] Setting ownership and permissions..."
 
 # Ansible collections dir (owned by firework for ansible-galaxy to write)
 sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
@@ -149,7 +159,7 @@ else
   fi
 fi
 
-# --- 3b) Playbooks in project root -------------------------------------------
+# --- 3b) Playbooks in project root (leave as-is for now) ---------------------
 echo "Normalizing playbooks in project root..."
 declare -a PLAYBOOKS=(
   "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
@@ -166,16 +176,22 @@ for pb in "${PLAYBOOKS[@]}"; do
   fi
 done
 
-# --- 3c) Scripts in project root ---------------------------------------------
-echo "Normalizing project scripts..."
+# --- 3c) Scripts under scripts/ ----------------------------------------------
+echo "Normalizing scripts/ directory and files..."
+# scripts/ dir itself (baseline)
+sudo chown -R firework:"${APP_GROUP}" "${SCRIPTS_DIR}"
+sudo find "${SCRIPTS_DIR}" -type d -exec chmod 755 {} \;
+sudo find "${SCRIPTS_DIR}" -type f -name "*.sh" -exec chmod 755 {} \;
+
+# per-file owner/mode overrides
 declare -A SCRIPTS=(
-  ["${PROJECT_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
-  ["${PROJECT_DIR}/clean.sh"]="firework:${APP_GROUP}:755"
-  ["${PROJECT_DIR}/run.py"]="firework:${APP_GROUP}:755"
-  ["${PROJECT_DIR}/setup.sh"]="firework:firework:755"
-  ["${PROJECT_DIR}/start_firework.sh"]="firework:firework:775"
-  ["${PROJECT_DIR}/status_firework.sh"]="firework:firework:775"
-  ["${PROJECT_DIR}/stop_firework.sh"]="firework:firework:775"
+  ["${SCRIPTS_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/clean.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/install.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/setup.sh"]="firework:firework:755"
+  ["${SCRIPTS_DIR}/start_firework.sh"]="firework:firework:775"
+  ["${SCRIPTS_DIR}/status_firework.sh"]="firework:firework:775"
+  ["${SCRIPTS_DIR}/stop_firework.sh"]="firework:firework:775"
 )
 for script in "${!SCRIPTS[@]}"; do
   if [ -f "$script" ]; then
@@ -184,6 +200,12 @@ for script in "${!SCRIPTS[@]}"; do
     sudo chmod "$mode" "$script"
   fi
 done
+
+# run.py stays at repo root; keep it executable for convenience
+if [ -f "${PROJECT_DIR}/run.py" ]; then
+  sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py"
+  sudo chmod 755 "${PROJECT_DIR}/run.py"
+fi
 
 # --- 3d) requirements.txt -----------------------------------------------------
 echo "Normalizing requirements.txt (if present)..."
@@ -254,8 +276,36 @@ if [ -d "${APP_DIR}/outputs" ]; then
   sudo chmod 755 "${APP_DIR}/outputs"
 fi
 
-# --- 4) Install Ansible Collections (last) ------------------------------------
-echo "[4/5] Installing Ansible collections..."
+# --- 4) PostgreSQL: install & configure --------------------------------------
+echo "[5/8] Installing and configuring PostgreSQL..."
+# Install packages if missing
+if ! dpkg -s postgresql >/dev/null 2>&1; then
+  sudo apt-get install -y postgresql postgresql-contrib
+fi
+# Enable & start service
+sudo systemctl enable --now postgresql >/dev/null 2>&1 || true
+
+# Create role 'firework' if missing
+if ! sudo -u postgres psql -Atqc "SELECT 1 FROM pg_roles WHERE rolname='firework'" | grep -q 1; then
+  sudo -u postgres psql -c "CREATE USER firework WITH PASSWORD 'firework';"
+fi
+# Ensure CREATEDB on role
+sudo -u postgres psql -c "ALTER ROLE firework CREATEDB;" >/dev/null
+
+# Create database if missing, owned by firework
+if ! sudo -u postgres psql -Atqc "SELECT 1 FROM pg_database WHERE datname='fireworkdb'" | grep -q 1; then
+  sudo -u postgres psql -c "CREATE DATABASE fireworkdb OWNER firework;"
+fi
+# Grant privileges (idempotent)
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE fireworkdb TO firework;" >/dev/null
+
+# Ensure .pgpass has localhost entry
+grep -q "^localhost:5432:\*:firework:" "${PGPASS_FILE}" 2>/dev/null || echo "localhost:5432:*:firework:firework" | sudo tee -a "${PGPASS_FILE}" >/dev/null
+sudo chown firework:firework "${PGPASS_FILE}"
+sudo chmod 600 "${PGPASS_FILE}"
+
+# --- 5) Install Ansible Collections (last-ish) --------------------------------
+echo "[6/8] Installing Ansible collections..."
 if ! command -v ansible-galaxy >/dev/null 2>&1; then
   echo "WARNING: 'ansible-galaxy' not found in PATH. Skipping collection installs."
 else
@@ -291,15 +341,91 @@ else
   sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
 fi
 
-# --- 5) Final confirmation ----------------------------------------------------
+# --- 6) Install & configure Nginx --------------------------------------------
+echo "[7/8] Installing and configuring Nginx..."
+# install nginx if missing
+if ! command -v nginx >/dev/null 2>&1; then
+  sudo apt-get install -y nginx
+fi
+
+# write your site config
+sudo tee "${NGINX_SITE}" >/dev/null <<'NGINX'
+server {
+    listen 80;
+    server_name _;
+
+    # Serve static files directly from the app/static directory
+    location /static {
+        alias /home/firework/firework/app/static;
+        expires 30d;
+        access_log on; # Keep access logging on for debugging
+        log_not_found off;
+    }
+
+    # Proxy all other requests to the Gunicorn Unix socket
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:/tmp/firework.sock;
+        proxy_read_timeout 180;
+        proxy_connect_timeout 180;
+        proxy_send_timeout 180;
+    }
+}
+NGINX
+sudo chown root:root "${NGINX_SITE}"
+sudo chmod 0644 "${NGINX_SITE}"
+
+# enable site, remove default
+sudo ln -sf "${NGINX_SITE}" "${NGINX_LINK}"
+[ -e /etc/nginx/sites-enabled/default ] && sudo rm -f /etc/nginx/sites-enabled/default || true
+
+# test and restart
+sudo nginx -t
+sudo systemctl restart nginx
+
+# --- 7) Create systemd service if missing ------------------------------------
+echo "[8/8] Create systemd service if missing..."
+if [ ! -f "${SERVICE_FILE}" ]; then
+  echo "Creating systemd service at ${SERVICE_FILE}..."
+  sudo tee "${SERVICE_FILE}" >/dev/null <<'UNIT'
+[Unit]
+Description=Gunicorn instance to serve Firework Flask app
+After=network.target postgresql.service
+
+[Service]
+User=firework_app_user
+Group=www-data
+WorkingDirectory=/home/firework/firework
+Environment="HOME=/home/firework_app_user"
+Environment="ANSIBLE_CACHE_DIR=/home/firework_app_user/.ansible/cache"
+Environment="ANSIBLE_TMPDIR=/home/firework_app_user/.ansible/tmp"
+Environment="FIREWORK_VAULT_PASS_FILE=/home/firework/firework/.vault_pass.txt"
+EnvironmentFile=/home/firework/firework/.env
+ExecStart=/home/firework/firework/venv/bin/gunicorn --workers 3 --bind unix:/tmp/firework.sock --timeout 120 run:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  sudo chmod 0644 "${SERVICE_FILE}"
+  sudo chown root:root "${SERVICE_FILE}"
+  sudo systemctl daemon-reload
+else
+  echo "Systemd service already exists at ${SERVICE_FILE}. Skipping creation."
+fi
+
+# --- Final confirmation -------------------------------------------------------
 cat <<EOF
 ========================================================
-[5/5] Setup complete!
+Setup complete!
+- Nginx site: ${NGINX_SITE}
+- Systemd unit: ${SERVICE_FILE}
+- PostgreSQL: role 'firework' and DB 'fireworkdb' ensured
 
 Remember to edit:
-  - ${INVENTORY_FILE}
-  - ${VAULT_PASS_FILE}
-  - ${ENV_FILE}
-  - ${GV_VAULT} (encrypted)
+- ${INVENTORY_FILE}
+- ${VAULT_PASS_FILE}
+- ${ENV_FILE}
+- ${GV_VAULT} (encrypted)
 ========================================================
 EOF
