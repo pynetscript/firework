@@ -59,10 +59,8 @@
 
             if (element && utcTimestampString && utcTimestampString !== 'None') {
                 try {
-                    // Create a JavaScript Date object. It automatically handles the client's local timezone
                     const date = new Date(utcTimestampString);
 
-                    // Format the date for display in a user-friendly way
                     const options = {
                         year: 'numeric',
                         month: '2-digit',
@@ -72,14 +70,12 @@
                         second: '2-digit',
                         hour12: false // Use 24-hour format
                     };
-                    // 'en-GB' format gives DD/MM/YYYY, HH:MM:SS
                     element.textContent = date.toLocaleString('en-GB', options);
                 } catch (e) {
                     console.error('Error parsing date:', e);
-                    element.textContent = 'Invalid Date'; // Fallback for parsing errors
+                    element.textContent = 'Invalid Date';
                 }
             } else if (element) {
-                // If timestamp is None or not provided, ensure it shows N/A or appropriate fallback
                 element.textContent = 'N/A';
             }
         });
