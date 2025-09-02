@@ -31,7 +31,7 @@
       register: pa_policy_match_output
       ignore_errors: yes
 
-    - name: Set policy_found_flag if Palo Alto policy matches
+    - name: Set policy_found_flag if policy matches
       set_fact:
         policy_found_flag: true
       when:
