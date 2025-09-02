@@ -19,7 +19,7 @@
     fortigate_service_name: "{{ (protocol | upper) ~ '-' ~ (dest_port | replace('-', '_')) if protocol | lower not in ['any', 'icmp'] else ('ALL_ICMP' if protocol | lower == 'icmp' else 'ALL') | trim }}"
 
   tasks:
-    - name: Debug FortiGate Post-Check variables
+    - name: Debug Post-Check variables
       debug:
         msg: "Post-checking Rule ID: {{ rule_id }} on {{ inventory_hostname }} (FortiGate) for Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}"
 
