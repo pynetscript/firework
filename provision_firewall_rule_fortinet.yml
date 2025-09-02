@@ -5,7 +5,7 @@
   connection: httpapi
   collections:
     - fortinet.fortios
-  any_errors_fatal: true # This will cause the playbook to fail immediately if any task fails.
+  any_errors_fatal: true
 
   vars:
     rule_id: "{{ rule_id }}"
@@ -14,18 +14,16 @@
     protocol: "{{ protocol }}"
     dest_port: "{{ dest_port }}"
     rule_description: "{{ rule_description }}"
-
-    # Define object names based on rule parameters for consistency
     src_addr_name: "h-{{ source_ip }}"
     dst_addr_name: "h-{{ destination_ip }}"
     fortigate_service_name: "{{ (protocol | upper) ~ '-' ~ (dest_port | replace('-', '_')) if protocol | lower not in ['any', 'icmp'] else ('ALL_ICMP' if protocol | lower == 'icmp' else 'ALL') | trim }}"
 
   tasks:
-    - name: Debug FortiGate Provisioning variables
+    - name: Debug Provisioning variables
       debug:
         msg: "Provisioning Rule ID: {{ rule_id }} on {{ inventory_hostname }} (FortiGate) for Source: {{ source_ip }}, Destination: {{ destination_ip }}, Protocol: {{ protocol }}, Port: {{ dest_port }}"
 
-    - name: Create FortiGate Source Address Object
+    - name: Create Source Address Object
       fortinet.fortios.fortios_firewall_address:
           vdom: "root"
           state: "present"
@@ -35,7 +33,7 @@
               subnet: "{{ source_ip }}/32"
               type: "ipmask"
 
-    - name: Create FortiGate Destination Address Object
+    - name: Create Destination Address Object
       fortinet.fortios.fortios_firewall_address:
           vdom: "root"
           state: "present"
@@ -45,7 +43,7 @@
               subnet: "{{ destination_ip }}/32"
               type: "ipmask"
 
-    - name: Create FortiGate Service Object (TCP)
+    - name: Create Service Object (TCP)
       when:
           - protocol | lower == 'tcp'
       fortinet.fortios.fortios_firewall_service_custom:
@@ -57,7 +55,7 @@
                protocol: "TCP/UDP/SCTP"
                tcp_portrange: "{{ dest_port }}"
 
-    - name: Create FortiGate Service Object (UDP)
+    - name: Create Service Object (UDP)
       when:
           - protocol | lower == 'udp'
       fortinet.fortios.fortios_firewall_service_custom:
@@ -69,7 +67,7 @@
                protocol: "TCP/UDP/SCTP"
                udp_portrange: "{{ dest_port }}"
 
-    - name: Create FortiGate Firewall Policy
+    - name: Create Firewall Policy
       fortinet.fortios.fortios_firewall_policy:
           vdom: "root"
           state: "present"
