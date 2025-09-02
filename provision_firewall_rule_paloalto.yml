@@ -14,15 +14,9 @@
     protocol: "{{ protocol }}"
     dest_port: "{{ dest_port }}"
     rule_description: "{{ rule_description }}"
-
-    # Define object names based on rule parameters for consistency
     src_addr_name: "h-{{ source_ip }}"
     dst_addr_name: "h-{{ destination_ip }}"
-
-    # Define service name based on protocol and dest_port
     pa_service_name: "{{ 'any' if protocol | lower == 'any' else ('ICMP' if protocol | lower == 'icmp' else (protocol | upper) + '-' + (dest_port | string)) }}"
-
-    # Define protocol for service object (needs to be name, not number)
     pa_protocol_for_service_object: "{{ protocol | lower | trim if protocol | string not in ['6', '17', '1'] else ({'6':'tcp', '17':'udp', '1':'icmp'}[protocol | string]) }}"
 
   tasks:
