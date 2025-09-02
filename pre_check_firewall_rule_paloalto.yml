@@ -2,7 +2,7 @@
 - name: Palo Alto Pre-Check for Existing Firewall Policy
   hosts: "{{ firewall_name }}" # Target a single firewall
   gather_facts: no
-  connection: httpapi # Use httpapi for Palo Alto
+  connection: httpapi
   collections:
     - paloaltonetworks.panos
 
