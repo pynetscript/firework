@@ -21,20 +21,18 @@ main {
     padding: 2rem;
 }
 
-/* --- Suggested Improvements for Aesthetics (from previous feedback) --- */
-
-/* Basic form styling */
+/* Form styling */
 form {
     background-color: #f9f9f9;
     padding: 2rem;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    max-width: 600px; /* Limit form width */
-    margin: 2rem auto; /* Center form */
+    max-width: 600px;
+    margin: 2rem auto;
 }
 
 label {
-    display: block; /* Make labels stack */
+    display: block;
     margin-bottom: 0.5rem;
     font-weight: bold;
     color: #555;
@@ -43,12 +41,12 @@ label {
 input[type="text"],
 input[type="number"],
 textarea {
-    width: calc(100% - 20px); /* Account for padding */
+    width: calc(100% - 20px);
     padding: 10px;
     margin-bottom: 1rem;
     border: 1px solid #ddd;
     border-radius: 4px;
-    box-sizing: border-box; /* Include padding in width */
+    box-sizing: border-box;
 }
 
 button[type="submit"],
@@ -61,7 +59,7 @@ button {
     cursor: pointer;
     font-size: 1rem;
     transition: background-color 0.3s ease;
-    margin-right: 10px; /* Space between buttons */
+    margin-right: 10px;
 }
 
 button[type="submit"]:hover,
@@ -69,14 +67,14 @@ button:hover {
     background-color: #0056b3;
 }
 
-/* Basic table styling */
+/* Table styling */
 table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 1.5rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     border-radius: 8px;
-    overflow: hidden; /* For rounded corners on table */
+    overflow: hidden;
 }
 
 th, td {
