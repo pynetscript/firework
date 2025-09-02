@@ -1,8 +1,8 @@
 ---
 - name: FortiGate Pre-Check for Existing Firewall Policy
-  hosts: "{{ firewall_name }}" # Target a single firewall
+  hosts: "{{ firewall_name }}"
   gather_facts: no
-  connection: httpapi # Use httpapi for FortiGate
+  connection: httpapi
   collections:
     - fortinet.fortios
 
@@ -10,7 +10,7 @@
     check_source_ip: "{{ source_ip }}"
     check_destination_ip: "{{ destination_ip }}"
     check_protocol: "{{ protocol }}"
-    check_port: "{{ port }}" # [WARNING]: Consider renaming 'port' to avoid conflicts with Ansible reserved names (e.g., 'service_port')
+    check_port: "{{ port }}"
     policy_found_flag: false
 
   tasks:
@@ -26,7 +26,7 @@
         validate_certs: no
         return_content: yes
       register: fgt_policy_lookup_result
-      ignore_errors: yes # Allow the playbook to continue even if the API call encounters an error
+      ignore_errors: yes
 
     - name: Set policy_found_flag based on API lookup result
       set_fact:
@@ -39,9 +39,9 @@
       run_once: true
       delegate_to: localhost # Run this locally to update the flag once
 
-    - name: Indicate if policy was found (FortiGate)
+    - name: Indicate if policy was found
       debug:
         msg: "POLICY_EXISTS"
       when: policy_found_flag
       run_once: true
-      delegate_to: localhost # Run this locally to ensure message is printed once for the run
+      delegate_to: localhost
