@@ -33,7 +33,7 @@ def user_list():
 @login_required
 @roles_required('superadmin')
 def add_user():
-    """Allows a superadmin to add new users with specified roles."""
+    """Allow superadmin to add new users with specified roles."""
     if request.method == 'POST':
         username = request.form.get('username')
         email = request.form.get('email')
@@ -83,7 +83,7 @@ def add_user():
 @login_required
 @roles_required('superadmin')
 def edit_user(user_id):
-    """Allows superadmin to edit an existing user's details and role."""
+    """Allow superadmin to edit an existing user's details and role."""
     user = User.query.get_or_404(user_id)
 
     if request.method == 'POST':
@@ -184,7 +184,7 @@ def edit_user(user_id):
 @login_required
 @roles_required('superadmin')
 def delete_user(user_id):
-    """Allows superadmin to delete a user."""
+    """Allow superadmin to delete a user."""
     user = User.query.get_or_404(user_id)
 
     if user.id == current_user.id:
