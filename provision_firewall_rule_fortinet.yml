@@ -1,11 +1,11 @@
 ---
 - name: FortiGate Provision Firewall Rule
-  hosts: "{{ firewall_name }}" # Target a single firewall
+  hosts: "{{ firewall_name }}"
   gather_facts: no
-  connection: httpapi # Use httpapi for FortiGate
+  connection: httpapi
   collections:
     - fortinet.fortios
-  any_errors_fatal: true # IMPORTANT: This will cause the playbook to fail immediately if any task fails.
+  any_errors_fatal: true # This will cause the playbook to fail immediately if any task fails.
 
   vars:
     rule_id: "{{ rule_id }}"
@@ -32,7 +32,7 @@
           access_token: "{{ fortinet_api_access_token }}"
           firewall_address:
               name: "{{ src_addr_name }}"
-              subnet: "{{ source_ip }}/32" # Assuming /32 for host
+              subnet: "{{ source_ip }}/32"
               type: "ipmask"
 
     - name: Create FortiGate Destination Address Object
@@ -42,7 +42,7 @@
           access_token: "{{ fortinet_api_access_token }}"
           firewall_address:
               name: "{{ dst_addr_name }}"
-              subnet: "{{ destination_ip }}/32" # Assuming /32 for host
+              subnet: "{{ destination_ip }}/32"
               type: "ipmask"
 
     - name: Create FortiGate Service Object (TCP)
