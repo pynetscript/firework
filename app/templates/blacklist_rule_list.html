@@ -71,24 +71,24 @@
         const responseMessageDiv = document.getElementById('responseMessage');
         const blacklistSearchInput = document.getElementById('blacklistSearchInput');
 
-        let allBlacklistRules = []; // Store all fetched rules for filtering
+        let allBlacklistRules = [];
 
         // Function to load and display blacklist rules
         async function loadBlacklistRules() {
             blacklistRulesTableBody.innerHTML = `<tr><td colspan="15" class="py-4 px-6 text-center text-gray-500">Loading blacklist rules...</td></tr>`;
             noRulesMessage.classList.add('hidden');
-            deleteSelectedButton.classList.add('hidden'); // Hide delete button initially
-            selectAllRulesCheckbox.checked = false; // Uncheck select all
-            responseMessageDiv.classList.add('hidden'); // Hide any previous messages
+            deleteSelectedButton.classList.add('hidden');
+            selectAllRulesCheckbox.checked = false;
+            responseMessageDiv.classList.add('hidden');
 
             try {
-                const response = await fetch('/api/blacklist_rules'); // Assuming this endpoint exists
+                const response = await fetch('/api/blacklist_rules');
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const rules = await response.json();
-                allBlacklistRules = rules; // Store original rules
-                filterBlacklistRules(); // Call filter function to render (initial render with empty search)
+                allBlacklistRules = rules;
+                filterBlacklistRules();
             } catch (error) {
                 console.error('Error fetching blacklist rules:', error);
                 blacklistRulesTableBody.innerHTML = `<tr><td colspan="15" class="py-4 px-6 text-center text-red-500">Failed to load rules. Please check server logs.</td></tr>`;
@@ -117,7 +117,6 @@
             renderRulesTable(filteredRules);
         }
 
-        // Helper for date formatting
         const formatTimestamp = (timestamp, formattedHtml = true) => {
             if (timestamp) {
                 try {
@@ -135,7 +134,7 @@
                     if (formattedHtml) {
                         return `<span data-utc-timestamp="${timestamp}">${formattedString}</span>`;
                     }
-                    return formattedString; // Return raw string for search
+                    return formattedString;
                 } catch (e) {
                     console.error('Error parsing date:', e);
                     return 'Invalid Date';
@@ -144,9 +143,9 @@
             return 'N/A';
         };
 
-        // Function to render the rules table (now accepts filtered rules)
+        // Function to render the rules table
         function renderRulesTable(rulesToRender) {
-            blacklistRulesTableBody.innerHTML = ''; // Clear existing rows
+            blacklistRulesTableBody.innerHTML = '';
             if (rulesToRender.length === 0) {
                 noRulesMessage.classList.remove('hidden');
                 return;
@@ -193,7 +192,7 @@
             updateDeleteSelectedButtonVisibility();
         }
 
-        // Handle Select All checkbox
+        // Select All checkbox
         selectAllRulesCheckbox.addEventListener('change', function() {
             const checkboxes = document.querySelectorAll('.rule-checkbox');
             checkboxes.forEach(checkbox => {
@@ -202,7 +201,7 @@
             updateDeleteSelectedButtonVisibility();
         });
 
-        // Handle individual rule checkbox change
+        // Individual checkbox
         blacklistRulesTableBody.addEventListener('change', function(event) {
             if (event.target.classList.contains('rule-checkbox')) {
                 updateDeleteSelectedButtonVisibility();
@@ -218,7 +217,7 @@
             }
         });
 
-        // Update visibility of "Delete Selected" button
+        // "Delete Selected" button
         function updateDeleteSelectedButtonVisibility() {
             const checkedCheckboxes = document.querySelectorAll('.rule-checkbox:checked');
             if (checkedCheckboxes.length > 0) {
@@ -228,7 +227,6 @@
             }
         }
 
-        // Handle Delete Selected Button (This remains an AJAX call)
         deleteSelectedButton.addEventListener('click', async function() {
             const selectedRuleIds = Array.from(document.querySelectorAll('.rule-checkbox:checked'))
                                      .map(cb => cb.dataset.ruleId);
@@ -263,7 +261,7 @@
             }
         });
 
-        // Handle individual Edit buttons using event delegation (Delete event listener removed)
+        // Edit button
         blacklistRulesTableBody.addEventListener('click', async function(event) {
             if (event.target.classList.contains('edit-rule-btn')) {
                 const ruleId = event.target.dataset.ruleId;
@@ -271,7 +269,6 @@
             }
         });
 
-        // Helper function to display messages for AJAX responses
         function showResponseMessage(message, type) {
             responseMessageDiv.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800');
             if (type === 'success') {
@@ -283,10 +280,8 @@
             responseMessageDiv.classList.remove('hidden');
         }
 
-        // Add event listener for search input
         blacklistSearchInput.addEventListener('input', filterBlacklistRules);
 
-        // Initial load of rules
         loadBlacklistRules();
     });
 </script>
