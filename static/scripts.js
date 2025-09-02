@@ -1,1 +1,1 @@
-console.log("Firework App Loaded");
+console.log("Firework Loaded");
