@@ -100,7 +100,7 @@ class NetworkAutomationService:
 
         app_logger.debug("--- Subprocess Environment for Ansible ---")
         for k, v in env.items():
-            # Exclude FIREWORK_VAULT_PASS_FILE from verbose logging if sensitive
+            # Exclude FIREWORK_VAULT_PASS_FILE from verbose logging
             if k in ['PATH', 'USER', 'HOME', 'ANSIBLE_CACHE_DIR', 'ANSIBLE_TMPDIR', 'TMPDIR', 'ANSIBLE_COLLECTIONS_PATH', 'ANSIBLE_HOST_KEY_CHECKING', 'FIREWORK_VAULT_PASS_FILE']:
                  # Mask sensitive path for logging
                 if k == 'FIREWORK_VAULT_PASS_FILE':
