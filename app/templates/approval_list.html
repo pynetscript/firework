@@ -84,12 +84,11 @@
         const approvalsTableBody = document.querySelector('#approvalsTable tbody');
         const tableRows = approvalsTableBody ? approvalsTableBody.querySelectorAll('tr') : [];
 
-        if (approvalSearchInput && approvalsTableBody) { // Ensure elements exist before adding listener
+        if (approvalSearchInput && approvalsTableBody) {
             approvalSearchInput.addEventListener('input', function() {
                 const searchTerm = approvalSearchInput.value.toLowerCase();
 
                 tableRows.forEach(function(row) {
-                    // Get all text content from the cells in the current row for broad search
                     const rowText = row.textContent.toLowerCase();
 
                     if (rowText.includes(searchTerm)) {
@@ -101,7 +100,6 @@
             });
         }
 
-        // --- START Timezone Conversion (Updated for DD/MM/YYYY HH:MM:SS format) ---
         const timestampCells = document.querySelectorAll('#approvalsTable tbody td[data-utc-timestamp]');
         timestampCells.forEach(cell => {
             const utcTimestampString = cell.getAttribute('data-utc-timestamp');
@@ -115,19 +113,16 @@
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
-                    hour12: false // Use 24-hour format
+                    hour12: false
                 };
 
-                // Format the date and time using 'en-GB' locale for DD/MM/YYYY
                 let formattedDateTime = date.toLocaleString('en-GB', options);
 
-                // Remove the comma and replace it with a space to match the desired format
                 formattedDateTime = formattedDateTime.replace(', ', ' ');
 
                 cell.textContent = formattedDateTime;
             }
         });
-        // --- END Timezone Conversion ---
     });
 </script>
  {% endblock %} 
