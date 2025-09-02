@@ -16,11 +16,10 @@
   tasks:
     - name: Debug FortiGate Pre-Check variables
       debug:
-        msg: "Pre-checking for existing policy on {{ inventory_hostname }} (FortiGate) for Source: {{ check_source_ip }}, Dest: {{ check_destination_ip }}, Proto: {{ check_protocol }}, Port: {{ check_port }}"
+        msg: "Pre-checking for existing policy on {{ inventory_hostname }} (FortiGate) for Source: {{ check_source_ip }}, Dest: {{ check_destination_ip }}, Protocol: {{ check_protocol }}, Port: {{ check_port }}"
 
-    - name: Perform FortiGate Policy Lookup via API
+    - name: Policy Lookup via API
       ansible.builtin.uri:
-        # Construct the URL with dynamic variables, hardcoded srcintf, and using ansible_host for the IP
         url: "https://{{ ansible_host }}/api/v2/monitor/firewall/policy-lookup/?access_token={{ fortinet_api_access_token }}&srcintf=port3&sourceip={{ check_source_ip }}&protocol={{ check_protocol }}&dest={{ check_destination_ip }}&destport={{ check_port }}"
         method: GET
         validate_certs: no
