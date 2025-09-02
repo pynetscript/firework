@@ -1,5 +1,5 @@
 ---
-- name: Gather network data from Cisco devices
+- name: Gather network data from network devices
   hosts: cisco_ios
   gather_facts: no
   # ignore_unreachable: yes
@@ -61,7 +61,7 @@
 - name: Gather from FortiGate
   hosts: fortinet
   gather_facts: no
-  ignore_unreachable: yes # Continue if a FortiGate device is unreachable
+  ignore_unreachable: yes
   collections:
     - fortinet.fortios
   tasks:
