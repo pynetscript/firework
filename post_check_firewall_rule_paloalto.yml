@@ -15,11 +15,11 @@
     pa_protocol_number: "{{ { 'tcp': 6, 'udp': 17, 'icmp': 1 }.get(protocol | lower, protocol) }}"
 
   tasks:
-    - name: Debug Palo Alto Post-Check variables
+    - name: Debug Post-Check variables
       debug:
         msg: "Post-checking Rule ID: {{ rule_id }} on {{ inventory_hostname }} (Palo Alto) for Source: {{ source_ip }}, Dest: {{ destination_ip }}, Proto: {{ protocol }}, Port: {{ dest_port }}"
 
-    - name: Run Palo Alto Security Policy Match for Post-Check
+    - name: Run Security Policy Match
       paloaltonetworks.panos.panos_op:
         provider:
           ip_address: "{{ ansible_host }}"
@@ -31,7 +31,7 @@
       register: pa_post_check_output
       ignore_errors: yes
 
-    - name: Check if Palo Alto security rule matches (Post-Check)
+    - name: Check if security rule matches
       fail:
         msg: "Palo Alto security rule for Rule ID {{ rule_id }} not found or incorrect on {{ inventory_hostname }} during post-check! Output: {{ pa_post_check_output.stdout_xml | default('N/A') }}"
       when: >-
@@ -41,7 +41,7 @@
           (pa_post_check_output.stdout_xml | regex_search('<entry name="No matching rule found"')) )
       ignore_errors: yes
 
-    - name: Indicate if policy was verified (Palo Alto)
+    - name: Indicate if policy was verified
       debug:
         msg: "POLICY_VERIFIED"
       when: not ansible_failed_result is defined or not ansible_failed_result.msg.startswith('Palo Alto security rule')
