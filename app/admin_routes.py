@@ -89,7 +89,7 @@ def edit_user(user_id):
     if request.method == 'POST':
         # Check if the user is attempting to change their own role
         if user.id == current_user.id and request.form.get('role') != current_user.role:
-            flash("You cannot change your own role.", 'error')
+            flash(f"You cannot change your own role.", 'error')
             app_logger.warning(f"User {current_user.username} attempted to change their own role.")
             return redirect(url_for('admin.edit_user', user_id=user.id))
 
@@ -109,7 +109,7 @@ def edit_user(user_id):
         password_changed = False
         if new_password:
             user.set_password(new_password)
-            flash('User password updated successfully!', 'success')
+            flash(f"User password updated successfully!", 'success')
             log_activity(
                 event_type='USER_PASSWORD_CHANGED',
                 description=f"Password for user '{user.username}' (ID: {user.id}) changed.",
@@ -188,7 +188,7 @@ def delete_user(user_id):
     user = User.query.get_or_404(user_id)
 
     if user.id == current_user.id:
-        flash("You cannot delete your own account.", 'error')
+        flash(f"You cannot delete your own account.", 'error')
         app_logger.warning(f"{current_user.username} attempted to delete their own account (ID: {user_id}).")
         log_activity(
             event_type='UNAUTHORIZED_SELF_DELETE_ATTEMPT',
