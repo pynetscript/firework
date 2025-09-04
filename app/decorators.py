@@ -15,12 +15,12 @@ def roles_required(*roles):
         def decorated_view(*args, **kwargs):
             if not current_user.is_authenticated:
                 app_logger.warning(f"Unauthorized access attempt by unauthenticated user to {request.path}")
-                flash('Please log in to access this page.', 'warning')
+                flash(f"Please log in to access this page.", 'warning')
                 return redirect(url_for('auth.login', next=request.url))
 
             if not current_user.has_role(*roles):
                 app_logger.warning(f"Unauthorized access attempt by user {current_user.username} (Role: {current_user.role}) to {request.path}. Required roles: {roles}")
-                flash('You do not have the necessary permissions to access this page.', 'danger')
+                flash(f"You do not have the necessary permissions to access this page.", 'danger')
                 abort(403)
             return fn(*args, **kwargs)
         return decorated_view
@@ -46,7 +46,7 @@ def no_self_approval(f):
 
         if current_user.is_authenticated and current_user.id == rule.requester_id:
             app_logger.warning(f"Self-approval attempt detected for rule ID {rule_id} by user {current_user.username} (ID: {current_user.id}).")
-            flash('You cannot approve your own requests.', 'danger')
+            flash(f"You cannot approve your own requests.", 'danger')
             abort(403)
 
         return f(*args, **kwargs)
