@@ -596,7 +596,7 @@ def submit_request():
                 )
 
             db.session.commit()
-            flash(flash_message, 'info') # Flash messages will still work on the redirected page
+            flash(flash_message, 'info')
 
             # Determine if the current user can access approvals
             can_access_approvals = current_user.has_role('approver') or \
@@ -780,7 +780,7 @@ def approve_deny_request(rule_id):
 
     # Ensure only pending rules can be acted upon by non-superadmin/admin approvers
     if not current_user.has_role('superadmin', 'admin') and rule.approval_status != 'Pending Approval':
-        flash('Request ID {rule.id} is not pending approval.', 'warning')
+        flash(f"Request ID {rule.id} is not pending approval.", "warning")
         app_logger.info(f"Request ID {rule.id} is not pedning approval. Status: {rule.approval_status}).")
         log_activity(
             event_type='APPROVAL_FAILED',
@@ -1639,7 +1639,7 @@ def profile():
         password_changed = False
         if password:
             user.set_password(password)
-            flash('Password updated successfully.', 'success')
+            flash(f"Password updated successfully.", 'success')
             app_logger.info(f"User {user.username} (ID: {user.id}) updated their password.")
             log_activity(
                 event_type='USER_PASSWORD_CHANGED',
@@ -1669,7 +1669,7 @@ def profile():
                 changes_made = True
 
             db.session.commit()
-            flash('Profile updated successfully!', 'success')
+            flash(f"Profile updated successfully!", 'success')
             app_logger.info(f"User {user.username} (ID: {user.id}) updated their profile.")
 
             if changes_made:
@@ -1706,7 +1706,7 @@ def admin_debug():
             log_content = f.read()
     except FileNotFoundError:
         app_logger.error(f"firework_app.log not found at: {log_file_path}")
-        flash("Error: Log file 'firework_app.log' could not be found.", 'error')
+        flash(f"Error: Log file 'firework_app.log' could not be found.", 'error')
     except Exception as e:
         app_logger.error(f"Error reading firework_app.log: {e}", exc_info=True)
         flash(f"Error reading log file: {e}", 'error')
