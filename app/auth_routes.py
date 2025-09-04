@@ -12,7 +12,7 @@ app_logger = logging.getLogger(__name__)
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        flash('You are already logged in.', 'info')
+        flash(f"You are already logged in.", 'info')
         app_logger.info(f"Attempted to access login page while already authenticated: User ID {current_user.id}")
         return redirect(url_for('routes.home'))
 
@@ -26,7 +26,7 @@ def login():
             login_user(user)
             user.last_login = datetime.now(timezone.utc)
             db.session.commit()
-            flash('Logged in successfully!', 'success')
+            flash(f"Logged in successfully!", 'success')
             app_logger.info(f"User {username} (ID: {user.id}) logged in successfully.")
 
             log_activity(
@@ -40,7 +40,7 @@ def login():
             next_page = request.args.get('next')
             return redirect(next_page or url_for('routes.home'))
         else:
-            flash('Invalid username or password.', 'error')
+            flash(f"Invalid username or password.", 'error')
             app_logger.warning(f"Failed login attempt for username: {username}.")
             return render_template('login.html', username=username)
 
@@ -54,7 +54,7 @@ def logout():
 
     app_logger.info(f"User {current_user.username} (ID: {current_user.id}) logged out.")
     logout_user()
-    flash('You have been logged out.', 'info')
+    flash(f"You have been logged out.", 'info')
 
     log_activity(
         event_type='USER_LOGOUT',
