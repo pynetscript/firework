@@ -796,7 +796,7 @@ def approve_deny_request(rule_id):
         justification = request.form.get('approver_comment')
 
         rule.approver_id = current_user.id
-        rule.approval_justification = justification
+        rule.approval_comment = justification
 
         if action == 'approve':
             rule.status = 'Pending Implementation'
