@@ -52,9 +52,6 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 - Ubuntu 24.04+
 - Internet access
 - **firework** user as sudoer
-- Ngnix 1.24+
-- PostgreSQL 16.9+
-- Ansible 2.18.+
 
 ### Installation
 The install.sh script will:
