@@ -50,12 +50,29 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 
 ### Requirements  
 - Ubuntu 24.04+
-- Python 3.12+
+- Internet access
+- **firework** user as sudoer
 - Ngnix 1.24+
 - PostgreSQL 16.9+
 - Ansible 2.18.+
 
-### Install  
+### Installation
+The install.sh script will:
+- Update/upgrade the OS.
+- Install, configure, and verify (if not already installed):
+  - Python
+  - Nginx
+  - PostgreSQL
+  - Ansible
+- Create necessary users, folders, files, and set correct ownership and permissions.
+- Create and enable the firework.service systemd unit.
+- Prompt you for:
+  - SECRET_KEY
+  - PostgreSQL password
+  - Ansible Vault password
+  - Ansible Vault inventory variables
+  - Template inventory.yml file
+
 ```bash
 git clone https://github.com/pynetscript/firework.git
 cd firework/scripts
