@@ -456,7 +456,7 @@ if command -v ansible-galaxy >/dev/null 2>&1; then
 
   sudo -u firework env ${ANSIBLE_ENV_VARS:-ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}} \
     ansible-galaxy collection install --force -p "${ANSIBLE_COLLECTIONS_PATH}" \
-      fortinet.fortios paloaltonetworks.panos
+      fortinet.fortios:2.4.0 paloaltonetworks.panos:3.0.1
 
   # Normalize ownership/perms afterward
   sudo chown -R "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
@@ -465,6 +465,8 @@ if command -v ansible-galaxy >/dev/null 2>&1; then
 else
   echo "WARNING: ansible-galaxy not found; skipped collections."
 fi
+
+export ANSIBLE_COLLECTIONS_PATH="/home/firework/firework/ansible_collections"
 
 # 8) Nginx --------------------------------------------------------------------
 echo "--------------------------------------------------------"
