@@ -305,34 +305,20 @@ sudo chmod 755 "${PROJECT_DIR}"
 # 5) Ownership & permissions ---------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[5/11] Setting ownership and permissions..."
-sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
-sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}"
-
-sudo chown "${APP_USER}":"${APP_GROUP}" "${PROJECT_DIR}/outputs"
-sudo chmod 2775 "${PROJECT_DIR}/outputs"
-
+# Top-level directories/files
 sudo chown firework:"${APP_GROUP}" "${ANSIBLE_TMP_DIR}"
 sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 
-sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
-sudo chmod 664 "${INVENTORY_FILE}"
+sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/outputs"
+sudo chmod 2775 "${PROJECT_DIR}/outputs"
 
-sudo chown firework:"${APP_GROUP}" "${VAULT_PASS_FILE}"
-sudo chmod 640 "${VAULT_PASS_FILE}"
+# Corrected ownership for ansible_collections
+sudo chown -R "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+sudo chmod -R 775 "${ANSIBLE_COLLECTIONS_PATH}"
 
-sudo chown firework:firework "${ENV_FILE}"
-sudo chmod 600 "${ENV_FILE}"
-
-sudo chown firework:firework "${PGPASS_FILE}"
-sudo chmod 600 "${PGPASS_FILE}"
-
-# FIX 1: Change group_vars directory permissions from 750 to 775.
-sudo chown -R firework:"${APP_GROUP}" "${GV_DIR}"
-sudo find "${GV_DIR}" -type d -exec chmod 775 {} \;
-[ -f "${GV_VAULT}" ] && sudo chmod 640 "${GV_VAULT}"
-
-# Playbooks at repo root
+# Corrected ownership/permissions for playbooks
 declare -a PLAYBOOKS_ROOT=(
+  "${PROJECT_DIR}/collector.yml"
   "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
   "${PROJECT_DIR}/post_check_firewall_rule_paloalto.yml"
   "${PROJECT_DIR}/pre_check_firewall_rule_fortinet.yml"
@@ -342,76 +328,77 @@ declare -a PLAYBOOKS_ROOT=(
 )
 for pb in "${PLAYBOOKS_ROOT[@]}"; do
   [ -f "$pb" ] || continue
-  sudo chown firework:"${APP_GROUP}" "$pb"
-  # FIX 2: Change playbook file permissions from 644 to 664.
+  sudo chown firework:firework "$pb"
   sudo chmod 664 "$pb"
 done
 
-# scripts/
-# FIX 4: Change scripts directory permissions from 755 to 775.
-sudo chown -R firework:"${APP_GROUP}" "${SCRIPTS_DIR}"
+# Corrected ownership for group_vars
+sudo chown -R firework:firework "${GV_DIR}"
+sudo find "${GV_DIR}" -type d -exec chmod 775 {} \;
+# Corrected ownership/permissions for vault.yml
+sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
+sudo chmod 640 "${GV_VAULT}"
+
+# Corrected ownership for inventory.yml
+sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
+sudo chmod 664 "${INVENTORY_FILE}"
+
+sudo chown firework:firework "${VAULT_PASS_FILE}"
+sudo chmod 640 "${VAULT_PASS_FILE}"
+
+sudo chown firework:firework "${ENV_FILE}"
+sudo chmod 600 "${ENV_FILE}"
+
+sudo chown firework:firework "${PGPASS_FILE}"
+sudo chmod 600 "${PGPASS_FILE}"
+
+# Corrected permissions for scripts directory
+sudo chown -R firework:firework "${SCRIPTS_DIR}"
 sudo find "${SCRIPTS_DIR}" -type d -exec chmod 775 {} \;
-sudo find "${SCRIPTS_DIR}" -type f -name "*.sh" -exec chmod 755 {} \;
+sudo find "${SCRIPTS_DIR}" -type f -exec chmod 775 {} \;
 
-# explicit overrides
-declare -A SCRIPTS=(
-  ["${SCRIPTS_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/clean.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/install.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/reset.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/setup.sh"]="firework:firework:755"
-  ["${SCRIPTS_DIR}/start_firework.sh"]="firework:firework:775"
-  ["${SCRIPTS_DIR}/status_firework.sh"]="firework:firework:775"
-  ["${SCRIPTS_DIR}/stop_firework.sh"]="firework:firework:775"
-)
-for script in "${!SCRIPTS[@]}"; do
-  [ -f "$script" ] || continue
-  IFS=":" read -r owner group mode <<<"${SCRIPTS[$script]}"
-  sudo chown "$owner":"$group" "$script"
-  sudo chmod "$mode" "$script"
-done
+# Corrected permissions for run.py
+[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:firework "${PROJECT_DIR}/run.py" && sudo chmod 775 "${PROJECT_DIR}/run.py"
 
-# FIX 3: Change run.py permissions from 755 to 775.
-[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py" && sudo chmod 775 "${PROJECT_DIR}/run.py"
-
-# requirements.txt
+# Corrected permissions for requirements.txt
 [ -f "${PROJECT_DIR}/requirements.txt" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/requirements.txt" && sudo chmod 644 "${PROJECT_DIR}/requirements.txt"
 
-# static/ root
-# FIX 5: Change static directory permissions from 755 to 775.
-sudo chown firework:"${APP_GROUP}" "${STATIC_DIR}"
-sudo chmod 775 "${STATIC_DIR}"
-for sf in "${STATIC_DIR}/scripts.js" "${STATIC_DIR}/styles.css"; do
-  [ -f "$sf" ] || continue
-  sudo chown firework:"${APP_GROUP}" "$sf"
-  sudo chmod 644 "$sf"
-done
+# Corrected permissions for static directory
+sudo chown -R firework:"${APP_GROUP}" "${STATIC_DIR}"
+sudo find "${STATIC_DIR}" -type d -exec chmod 755 {} \;
+sudo find "${STATIC_DIR}" -type f -exec chmod 664 {} \;
 
-# app/ tree
+# Corrected permissions for app directory
 sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
-sudo find "${APP_DIR}" -type d -not -path "*/__pycache__" -exec chmod 755 {} \;
-sudo find "${APP_DIR}" -type d -name "__pycache__" -exec chown firework:firework {} \; -exec chmod 775 {} \;
-sudo find "${APP_DIR}" -maxdepth 1 -type f -name "*.py" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
-[ -f "${APP_DIR}/routes.py" ] && sudo chown firework:firework "${APP_DIR}/routes.py" && sudo chmod 644 "${APP_DIR}/routes.py"
-for f in models.py utils.py; do
-  [ -f "${APP_DIR}/$f" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/$f" && sudo chmod 664 "${APP_DIR}/$f"
-done
-if [ -d "${APP_DIR}/services" ]; then
-  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/services"
-  sudo chmod 755 "${APP_DIR}/services"
-  [ -f "${APP_DIR}/services/network_automation.py" ] && sudo chown firework:firework "${APP_DIR}/services/network_automation.py" && sudo chmod 664 "${APP_DIR}/services/network_automation.py"
-fi
-if [ -d "${APP_DIR}/static" ]; then
-  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static"
-  sudo chmod 775 "${APP_DIR}/static"
-  [ -f "${APP_DIR}/static/favicon.png" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static/favicon.png" && sudo chmod 644 "${APP_DIR}/static/favicon.png"
-fi
-if [ -d "${APP_DIR}/templates" ]; then
-  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/templates"
-  sudo chmod 755 "${APP_DIR}/templates"
-  sudo find "${APP_DIR}/templates" -maxdepth 1 -type f -name "*.html" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
-fi
-[ -d "${APP_DIR}/outputs" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/outputs" && sudo chmod 755 "${APP_DIR}/outputs"
+sudo find "${APP_DIR}" -type d -exec chmod 755 {} \;
+sudo find "${APP_DIR}" -type f -exec chmod 664 {} \;
+sudo chown -R firework:firework "${APP_DIR}/__pycache__"
+sudo find "${APP_DIR}/__pycache__" -type d -exec chmod 775 {} \;
+sudo find "${APP_DIR}/__pycache__" -type f -exec chmod 664 {} \;
+
+# App-specific overrides
+sudo chown firework:firework "${APP_DIR}/admin_routes.py"
+sudo chown firework:firework "${APP_DIR}/auth_routes.py"
+sudo chown firework:firework "${APP_DIR}/decorators.py"
+sudo chown firework:firework "${APP_DIR}/__init__.py"
+sudo chown firework:firework "${APP_DIR}/routes.py"
+sudo chown firework:firework "${APP_DIR}/utils.py"
+
+sudo chown firework:"${APP_GROUP}" "${APP_DIR}/models.py"
+
+sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}/services"
+sudo find "${APP_DIR}/services" -type d -exec chmod 755 {} \;
+sudo find "${APP_DIR}/services" -type f -exec chmod 664 {} \;
+
+sudo chown firework:firework "${APP_DIR}/services/network_automation.py"
+
+sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}/static"
+sudo find "${APP_DIR}/static" -type d -exec chmod 775 {} \;
+sudo find "${APP_DIR}/static" -type f -exec chmod 664 {} \;
+
+sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}/templates"
+sudo find "${APP_DIR}/templates" -type d -exec chmod 755 {} \;
+sudo find "${APP_DIR}/templates" -type f -exec chmod 644 {} \;
 
 # 6) PostgreSQL ---------------------------------------------------------------
 echo "--------------------------------------------------------"
