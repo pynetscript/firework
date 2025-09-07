@@ -440,25 +440,26 @@ fi
 # 7) Ansible collections ------------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[7/11] Installing Ansible collections..."
-# Readonly-safe fallbacks (do NOT reassign APP_* if they were declared readonly earlier)
+# Readonly-safe inputs
 _APP_DIR="${APP_DIR:-/home/firework/firework}"
 _APP_USER="${APP_USER:-firework}"
 _APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"
 
-COLLECTIONS_DIR="$_APP_DIR/ansible_collections"
+# We want the repo root (/home/firework/firework), not .../app
+if [ "$(basename "$_APP_DIR")" = "app" ]; then
+  _PROJ_DIR="$(cd "$_APP_DIR/.." && pwd -P)"
+else
+  _PROJ_DIR="$_APP_DIR"
+fi
+
+COLLECTIONS_DIR="$_PROJ_DIR/ansible_collections"
 mkdir -p "$COLLECTIONS_DIR"
 
-# Ensure write/ownership even if the dir was created by root in a prior run
+# Ensure it's writable by the app user
 if [ "$EUID" -eq 0 ]; then
   chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"
-elif [ ! -w "$COLLECTIONS_DIR" ]; then
-  if command -v sudo >/dev/null 2>&1; then
-    sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"
-  else
-    echo "Collections dir is not writable and sudo is unavailable."
-    echo "Please run: chown -R $_APP_USER:$_APP_GROUP_PROJECT \"$COLLECTIONS_DIR\""
-    exit 1
-  fi
+elif [ ! -w "$COLLECTIONS_DIR" ] && command -v sudo >/dev/null 2>&1; then
+  sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"
 fi
 chmod 775 "$COLLECTIONS_DIR"
 
@@ -468,15 +469,13 @@ if [ -z "$ANSIBLE_GALAXY_BIN" ]; then
   exit 1
 fi
 
-# Idempotent, version-pinned installs to the project path
-"$ANSIBLE_GALAXY_BIN" collection install -p "$COLLECTIONS_DIR" \
-  fortinet.fortios:2.4.0 \
-  paloaltonetworks.panos:3.1.1 \
-  ansible.netcommon:7.2.0 \
-  ansible.utils:5.1.2 || { echo "Ansible collections install: FAIL"; exit 1; }
+# Reinstall (force) to the desired path
+"$ANSIBLE_GALAXY_BIN" collection install --force -p "$COLLECTIONS_DIR" \
+  fortinet.fortios \
+  paloaltonetworks.panos \
+  ansible.netcommon \
+  ansible.utils || { echo "Ansible collections install: FAIL"; exit 1; }
 
-# Make sure runtime can find them
-#export ANSIBLE_COLLECTIONS_PATHS="$COLLECTIONS_DIR:$HOME/.ansible/collections:/usr/share/ansible/collections"
 echo "Ansible collections: OK"
 
 # 8) Nginx --------------------------------------------------------------------
