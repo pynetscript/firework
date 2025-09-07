@@ -10,7 +10,7 @@ readonly APP_USER="firework_app_user"
 readonly APP_GROUP="www-data"
 readonly PROJECT_DIR="/home/firework/firework"
 
-ANSIBLE_COLLECTIONS_PATH="${PROJECT_DIR}/ansible_collections"
+readonly ANSIBLE_COLLECTIONS_PATH="${PROJECT_DIR}/ansible_collections"
 readonly ANSIBLE_TMP_DIR="${PROJECT_DIR}/ansible_tmp"
 
 readonly INVENTORY_FILE="${PROJECT_DIR}/inventory.yml"
@@ -467,8 +467,6 @@ if command -v ansible-galaxy >/dev/null 2>&1; then
 else
   echo "WARNING: ansible-galaxy not found; skipped collections."
 fi
-
-export ANSIBLE_COLLECTIONS_PATHS="${ANSIBLE_COLLECTIONS_PATH}"
 
 # 8) Nginx --------------------------------------------------------------------
 echo "--------------------------------------------------------"
