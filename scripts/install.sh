@@ -316,32 +316,44 @@ sudo chmod 755 "${PROJECT_DIR}"
 # 5) Ownership & permissions ---------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[5/11] Setting ownership and permissions..."
-sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+
+# /ansible_collections
+sudo chown "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
 sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}"
 
+# /outputs
 sudo chown "${APP_USER}":"${APP_GROUP}" "${PROJECT_DIR}/outputs"
 sudo chmod 2775 "${PROJECT_DIR}/outputs"
 
+# /ansible_tmp
 sudo chown firework:"${APP_GROUP}" "${ANSIBLE_TMP_DIR}"
 sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 
+# inventory.yml
 sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
 sudo chmod 664 "${INVENTORY_FILE}"
 
+# .vault_pass.txt
 sudo chown firework:"${APP_GROUP}" "${VAULT_PASS_FILE}"
 sudo chmod 640 "${VAULT_PASS_FILE}"
 
+# .env
 sudo chown firework:firework "${ENV_FILE}"
 sudo chmod 600 "${ENV_FILE}"
 
+# .pgpass
 sudo chown firework:firework "${PGPASS_FILE}"
 sudo chmod 600 "${PGPASS_FILE}"
 
-sudo chown -R firework:"${APP_GROUP}" "${GV_DIR}"
-sudo find "${GV_DIR}" -type d -exec chmod 750 {} \;
-[ -f "${GV_VAULT}" ] && sudo chmod 640 "${GV_VAULT}"
+# group_vars/all/vault.yml
+sudo chown -R firework:firework "${GV_DIR}"
+sudo chmod 775 "${GV_DIR}"
+sudo chown -R firework:firework "${GV_ALL}"
+sudo chmod 775 "${GV_ALL}"
+sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
+sudo chmod 640 "${GV_VAULT}"
 
-# Playbooks at repo root
+# playbooks
 declare -a PLAYBOOKS_ROOT=(
   "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
   "${PROJECT_DIR}/post_check_firewall_rule_paloalto.yml"
@@ -352,49 +364,34 @@ declare -a PLAYBOOKS_ROOT=(
 )
 for pb in "${PLAYBOOKS_ROOT[@]}"; do
   [ -f "$pb" ] || continue
-  sudo chown firework:"${APP_GROUP}" "$pb"
-  sudo chmod 644 "$pb"
+  sudo chown firework:firework "$pb"
+  sudo chmod 664 "$pb"
 done
 
 # scripts/
-sudo chown -R firework:"${APP_GROUP}" "${SCRIPTS_DIR}"
-sudo find "${SCRIPTS_DIR}" -type d -exec chmod 755 {} \;
-sudo find "${SCRIPTS_DIR}" -type f -name "*.sh" -exec chmod 755 {} \;
+sudo chown -R firework:firework "${SCRIPTS_DIR}"
+sudo find "${SCRIPTS_DIR}" -type d -exec chmod 775 {} \;
+sudo find "${SCRIPTS_DIR}" -type f -name "*.sh" -exec chmod 775 {} \;
 
-# explicit overrides
-declare -A SCRIPTS=(
-  ["${SCRIPTS_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/clean.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/install.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/reset.sh"]="firework:${APP_GROUP}:755"
-  ["${SCRIPTS_DIR}/setup.sh"]="firework:firework:755"
-  ["${SCRIPTS_DIR}/start_firework.sh"]="firework:firework:775"
-  ["${SCRIPTS_DIR}/status_firework.sh"]="firework:firework:775"
-  ["${SCRIPTS_DIR}/stop_firework.sh"]="firework:firework:775"
-)
-for script in "${!SCRIPTS[@]}"; do
-  [ -f "$script" ] || continue
-  IFS=":" read -r owner group mode <<<"${SCRIPTS[$script]}"
-  sudo chown "$owner":"$group" "$script"
-  sudo chmod "$mode" "$script"
-done
-
-# run.py convenience
-[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py" && sudo chmod 755 "${PROJECT_DIR}/run.py"
+# run.py
+[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:firework "${PROJECT_DIR}/run.py" && sudo chmod 775 "${PROJECT_DIR}/run.py"
 
 # requirements.txt
 [ -f "${PROJECT_DIR}/requirements.txt" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/requirements.txt" && sudo chmod 644 "${PROJECT_DIR}/requirements.txt"
 
-# static/ root
+# collector.yml
+[ -f "${PROJECT_DIR}/collector.yml" ] && sudo chown firework:firework "${PROJECT_DIR}/collector.yml" && sudo chmod 664 "${PROJECT_DIR}/collector.yml"
+
+# /static
 sudo chown firework:"${APP_GROUP}" "${STATIC_DIR}"
-sudo chmod 775 "${STATIC_DIR}"
+sudo chmod 755 "${STATIC_DIR}"
 for sf in "${STATIC_DIR}/scripts.js" "${STATIC_DIR}/styles.css"; do
   [ -f "$sf" ] || continue
   sudo chown firework:"${APP_GROUP}" "$sf"
-  sudo chmod 644 "$sf"
+  sudo chmod 755 "$sf"
 done
 
-# app/ tree
+# /app
 sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
 sudo find "${APP_DIR}" -type d -not -path "*/__pycache__" -exec chmod 755 {} \;
 sudo find "${APP_DIR}" -type d -name "__pycache__" -exec chown firework:firework {} \; -exec chmod 775 {} \;
