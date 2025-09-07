@@ -222,7 +222,7 @@ sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 echo "--------------------------------------------------------"
 echo "[3/11] Interactive configuration (.env, inventory, vault pass, vault.yml)..."
 
-# 3a) .env — REQUIRED (no prompt)
+# 3a) .env
 echo "#################################################################################"
 read -r -p "Please enter a SECRET_KEY or leave blank to auto-generate [${ENV_FILE}]: " SK || true
 if [ -z "${SK:-}" ]; then
@@ -234,7 +234,7 @@ prompt_db_details
 write_env_file "${SK}" "${DB_HOST}" "${DB_PORT}" "${DB_NAME}" "${DB_USER}" "${DB_PASS}"
 
 
-# 3b) inventory.yml (optional helper)
+# 3b) inventory.yml
 echo "#################################################################################"
 if ask_yes_no "Populate inventory.yml with example template?"; then
   write_inventory_example
@@ -242,13 +242,6 @@ if ask_yes_no "Populate inventory.yml with example template?"; then
 elif ask_yes_no "Open ${INVENTORY_FILE} in ${EDITOR} now?"; then
   sudo "${EDITOR}" "${INVENTORY_FILE}"
 fi
-
-## 3c) .vault_pass.txt
-#echo "#################################################################################"
-#printf "Please enter a password for vault_pass.txt: "
-#read -r VPASS
-#printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
-#echo "${VAULT_PASS_FILE}: OK"
 
 # 3c) .vault_pass.txt
 echo "#################################################################################"
@@ -266,10 +259,10 @@ if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
   read -r -p "paloalto_api_password: " PAPASS || true
 
   # YAML-quoted values (single quotes, inner quotes doubled)
-  APASS_YAML="$(yaml_quote "${APASS}")"
-  FNPASS_YAML="$(yaml_quote "${FNPASS}")"
-  FNTOK_YAML="$(yaml_quote "${FNTOK}")"
-  PAPASS_YAML="$(yaml_quote "${PAPASS}")"
+  APASS_YAML="${APASS}"
+  FNPASS_YAML="${FNPASS}"
+  FNTOK_YAML="${FNTOK}"
+  PAPASS_YAML="${PAPASS}"
 
   tmp_yaml="$(sudo -u firework mktemp)"
   sudo -u firework tee "${tmp_yaml}" >/dev/null <<YML
@@ -318,7 +311,7 @@ echo "--------------------------------------------------------"
 echo "[5/11] Setting ownership and permissions..."
 
 # /ansible_collections
-sudo chown "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+sudo chown -R firework:firework "${ANSIBLE_COLLECTIONS_PATH}"
 sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}"
 
 # /outputs
@@ -458,16 +451,15 @@ echo "--------------------------------------------------------"
 echo "[7/11] Installing Ansible collections..."
 if command -v ansible-galaxy >/dev/null 2>&1; then
   readonly ANSIBLE_ENV_VARS="ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}"
-  sudo -u firework mkdir -p "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
-  sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
-  sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+  #sudo chown "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+  #sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
 
   sudo -u firework env ${ANSIBLE_ENV_VARS:-ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}} \
     ansible-galaxy collection install --force -p "${ANSIBLE_COLLECTIONS_PATH}" \
       fortinet.fortios paloaltonetworks.panos
 
   # Normalize ownership/perms afterward
-  sudo chown -R firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+  sudo chown -R "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
   sudo chmod -R u+rwX,g+rwX,o+rX "${ANSIBLE_COLLECTIONS_PATH}"
   sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
 else
@@ -728,9 +720,10 @@ echo "[11/11] Starting services..."
 
 firework_state="$(systemctl is-active nginx 2>/dev/null || true)"
 if [ "${firework_state}" != "active" ]; then
-  start_unit "firework"
+  sudo systemctl restart firework
   sudo systemctl start firework
 else
+  sudo systemctl restart firework
   echo "Firework already running."
 fi
 
