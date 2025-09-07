@@ -312,94 +312,94 @@ sudo chmod 755 "${PROJECT_DIR}"
 # 5) Ownership & permissions ---------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[5/11] Setting ownership and permissions..."
-# Top-level directories/files
-sudo chown firework:"${APP_GROUP}" "${ANSIBLE_TMP_DIR}"
-sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 
-sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/outputs"
-sudo chmod 2775 "${PROJECT_DIR}/outputs"
+# Readonly-safe inputs
+_APP_DIR="${APP_DIR:-/home/firework/firework}"
+_APP_USER="${APP_USER:-firework}"
+_WEB_GROUP="${WEB_GROUP:-www-data}"
+_APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"      # group for code files
+_APP_SERVICE_USER="${APP_SERVICE_USER:-firework_app_user}" # service/app user
 
-# Corrected ownership for ansible_collections
-sudo chown -R "${APP_USER}":"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
-sudo chmod -R 775 "${ANSIBLE_COLLECTIONS_PATH}"
+# If APP_DIR points to .../app, move to repo root
+if [ "$(basename "$_APP_DIR")" = "app" ]; then
+  _PROJ_DIR="$(cd "$_APP_DIR/.." && pwd -P)"
+else
+  _PROJ_DIR="$_APP_DIR"
+fi
 
-# Corrected ownership/permissions for playbooks
-declare -a PLAYBOOKS_ROOT=(
-  "${PROJECT_DIR}/collector.yml"
-  "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
-  "${PROJECT_DIR}/post_check_firewall_rule_paloalto.yml"
-  "${PROJECT_DIR}/pre_check_firewall_rule_fortinet.yml"
-  "${PROJECT_DIR}/pre_check_firewall_rule_paloalto.yml"
-  "${PROJECT_DIR}/provision_firewall_rule_fortinet.yml"
-  "${PROJECT_DIR}/provision_firewall_rule_paloalto.yml"
+umask 0002
+
+# --- group_vars (dir 775; vault.yml 640, firework:www-data) ---
+mkdir -p "$_PROJ_DIR/group_vars/all"
+chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/group_vars" 2>/dev/null || sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/group_vars"
+chmod 775 "$_PROJ_DIR/group_vars" "$_PROJ_DIR/group_vars/all" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/group_vars" "$_PROJ_DIR/group_vars/all"
+
+VAULT_FILE="$_PROJ_DIR/group_vars/all/vault.yml"
+if [ ! -f "$VAULT_FILE" ]; then
+  cat > /tmp/_vault.yml <<'YAML'
+ansible_password: ""
+fortinet_api_password: ""
+fortinet_api_access_token: ""
+paloalto_api_password: ""
+YAML
+  mv /tmp/_vault.yml "$VAULT_FILE"
+fi
+chown "$_APP_USER:$_WEB_GROUP" "$VAULT_FILE" 2>/dev/null || sudo chown "$_APP_USER:$_WEB_GROUP" "$VAULT_FILE"
+chmod 640 "$VAULT_FILE" 2>/dev/null || sudo chmod 640 "$VAULT_FILE"
+
+# --- playbooks (rw-rw-r--; firework:firework) ---
+PLAYBOOKS=(
+  post_check_firewall_rule_fortinet.yml
+  post_check_firewall_rule_paloalto.yml
+  pre_check_firewall_rule_fortinet.yml
+  pre_check_firewall_rule_paloalto.yml
+  provision_firewall_rule_fortinet.yml
+  provision_firewall_rule_paloalto.yml
+  collector.yml
 )
-for pb in "${PLAYBOOKS_ROOT[@]}"; do
-  [ -f "$pb" ] || continue
-  sudo chown firework:firework "$pb"
-  sudo chmod 664 "$pb"
+for name in "${PLAYBOOKS[@]}"; do
+  p="$(find "$_PROJ_DIR" -maxdepth 1 -type f -name "$name" -print -quit)"
+  [ -n "$p" ] || continue
+  chown "$_APP_USER:$_APP_GROUP_PROJECT" "$p" 2>/dev/null || sudo chown "$_APP_USER:$_APP_GROUP_PROJECT" "$p"
+  chmod 664 "$p" 2>/dev/null || sudo chmod 664 "$p"
 done
 
-# Corrected ownership for group_vars
-sudo chown -R firework:firework "${GV_DIR}"
-sudo find "${GV_DIR}" -type d -exec chmod 775 {} \;
+# --- run.py (rwxrwxr-x; firework:firework) ---
+if [ -f "$_PROJ_DIR/run.py" ]; then
+  chown "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/run.py" 2>/dev/null || sudo chown "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/run.py"
+  chmod 775 "$_PROJ_DIR/run.py" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/run.py"
+fi
 
-# Corrected ownership for inventory.yml
-sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
-sudo chmod 664 "${INVENTORY_FILE}"
+# --- scripts dir (rwxrwxr-x; firework:firework) ---
+mkdir -p "$_PROJ_DIR/scripts"
+chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/scripts" 2>/dev/null || sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/scripts"
+chmod 775 "$_PROJ_DIR/scripts" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/scripts"
+find "$_PROJ_DIR/scripts" -maxdepth 1 -type f -name "*.sh" -exec chmod 775 {} \; 2>/dev/null || sudo find "$_PROJ_DIR/scripts" -maxdepth 1 -type f -name "*.sh" -exec chmod 775 {} \;
 
-sudo chown firework:firework "${VAULT_PASS_FILE}"
-sudo chmod 640 "${VAULT_PASS_FILE}"
+# --- static (dir 755; firework:www-data) ---
+mkdir -p "$_PROJ_DIR/static"
+chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/static" 2>/dev/null || sudo chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/static"
+chmod 755 "$_PROJ_DIR/static" 2>/dev/null || sudo chmod 755 "$_PROJ_DIR/static"
+find "$_PROJ_DIR/static" -type f -exec chmod 664 {} \; 2>/dev/null || sudo find "$_PROJ_DIR/static" -type f -exec chmod 664 {} \;
 
-sudo chown firework:firework "${ENV_FILE}"
-sudo chmod 600 "${ENV_FILE}"
+# --- ansible_tmp (dir 775; firework:www-data) ---
+mkdir -p "$_PROJ_DIR/ansible_tmp"
+chown "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/ansible_tmp" 2>/dev/null || sudo chown "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/ansible_tmp"
+chmod 775 "$_PROJ_DIR/ansible_tmp" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/ansible_tmp"
 
-sudo chown firework:firework "${PGPASS_FILE}"
-sudo chmod 600 "${PGPASS_FILE}"
+# --- outputs (dir 2775; firework_app_user:www-data; files 664) ---
+mkdir -p "$_PROJ_DIR/outputs"
+chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$_PROJ_DIR/outputs" 2>/dev/null || sudo chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$_PROJ_DIR/outputs"
+chmod 2775 "$_PROJ_DIR/outputs" 2>/dev/null || sudo chmod 2775 "$_PROJ_DIR/outputs"
+find "$_PROJ_DIR/outputs" -type f -exec chmod 664 {} \; 2>/dev/null || sudo find "$_PROJ_DIR/outputs" -type f -exec chmod 664 {} \;
 
-# Corrected permissions for scripts directory
-sudo chown -R firework:firework "${SCRIPTS_DIR}"
-sudo find "${SCRIPTS_DIR}" -type d -exec chmod 775 {} \;
-sudo find "${SCRIPTS_DIR}" -type f -exec chmod 775 {} \;
+# --- app/ (group www-data like on working VM) ---
+chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/app" 2>/dev/null || sudo chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/app"
 
-# Corrected permissions for run.py
-[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:firework "${PROJECT_DIR}/run.py" && sudo chmod 775 "${PROJECT_DIR}/run.py"
+# --- ansible_collections  ---
+mkdir -p "$_PROJ_DIR/ansible_collections" 2>/dev/null || sudo mkdir -p "$_PROJ_DIR/ansible_collections"
 
-# Corrected permissions for requirements.txt
-[ -f "${PROJECT_DIR}/requirements.txt" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/requirements.txt" && sudo chmod 644 "${PROJECT_DIR}/requirements.txt"
-
-# Corrected permissions for static directory
-sudo chown -R firework:"${APP_GROUP}" "${STATIC_DIR}"
-sudo find "${STATIC_DIR}" -type d -exec chmod 755 {} \;
-sudo find "${STATIC_DIR}" -type f -exec chmod 664 {} \;
-
-# Corrected permissions for app directory (excluding __pycache__)
-sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
-sudo find "${APP_DIR}" -type d -not -path "*/__pycache__*" -exec chmod 755 {} \;
-sudo find "${APP_DIR}" -type f -not -path "*/__pycache__*" -exec chmod 664 {} \;
-
-# App-specific overrides
-sudo chown firework:firework "${APP_DIR}/admin_routes.py"
-sudo chown firework:firework "${APP_DIR}/auth_routes.py"
-sudo chown firework:firework "${APP_DIR}/decorators.py"
-sudo chown firework:firework "${APP_DIR}/__init__.py"
-sudo chown firework:firework "${APP_DIR}/routes.py"
-sudo chown firework:firework "${APP_DIR}/utils.py"
-
-sudo chown firework:"${APP_GROUP}" "${APP_DIR}/models.py"
-
-sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}/services"
-sudo find "${APP_DIR}/services" -type d -exec chmod 755 {} \;
-sudo find "${APP_DIR}/services" -type f -exec chmod 664 {} \;
-
-sudo chown firework:firework "${APP_DIR}/services/network_automation.py"
-
-sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}/static"
-sudo find "${APP_DIR}/static" -type d -exec chmod 775 {} \;
-sudo find "${APP_DIR}/static" -type f -exec chmod 664 {} \;
-
-sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}/templates"
-sudo find "${APP_DIR}/templates" -type d -exec chmod 755 {} \;
-sudo find "${APP_DIR}/templates" -type f -exec chmod 644 {} \;
+echo "Ownership/permissions: OK"
 
 # 6) PostgreSQL ---------------------------------------------------------------
 echo "--------------------------------------------------------"
@@ -441,11 +441,14 @@ fi
 echo "--------------------------------------------------------"
 echo "[7/11] Installing Ansible collections..."
 
+# Readonly-safe inputs
 _APP_DIR="${APP_DIR:-/home/firework/firework}"
 _APP_USER="${APP_USER:-firework}"
 _APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"
+_WEB_GROUP="${WEB_GROUP:-www-data}"
+_APP_SERVICE_USER="${APP_SERVICE_USER:-firework_app_user}"
 
-# Ensure we use repo root (…/firework), not …/app
+# Use repo root (…/firework), not …/app
 if [ "$(basename "$_APP_DIR")" = "app" ]; then
   _PROJ_DIR="$(cd "$_APP_DIR/.." && pwd -P)"
 else
@@ -454,26 +457,10 @@ fi
 
 COLLECTIONS_DIR="$_PROJ_DIR/ansible_collections"
 
-# Create dir (use sudo if needed)
-mkdir -p "$COLLECTIONS_DIR" 2>/dev/null || \
-{ command -v sudo >/dev/null 2>&1 && sudo mkdir -p "$COLLECTIONS_DIR"; }
-
-# Ensure ownership (sudo if needed)
-chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR" 2>/dev/null || \
-{ command -v sudo >/dev/null 2>&1 && sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"; }
-
-# Ensure mode 775 (sudo if needed; clear immutable bit if set)
-chmod 775 "$COLLECTIONS_DIR" 2>/dev/null || {
-  if command -v sudo >/dev/null 2>&1; then
-    # try removing immutable flag if present, then chmod again
-    if command -v lsattr >/dev/null 2>&1 && command -v chattr >/dev/null 2>&1; then
-      sudo lsattr "$COLLECTIONS_DIR" | grep -q ' i ' && sudo chattr -i "$COLLECTIONS_DIR" || true
-    fi
-    sudo chmod 775 "$COLLECTIONS_DIR"
-  else
-    echo "Cannot chmod $COLLECTIONS_DIR (no sudo). Please adjust perms manually."; exit 1
-  fi
-}
+# Create & fix perms/owner (owner: firework_app_user; group: www-data; dirs 775)
+mkdir -p "$COLLECTIONS_DIR" 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo mkdir -p "$COLLECTIONS_DIR"; }
+chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$COLLECTIONS_DIR" 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$COLLECTIONS_DIR"; }
+find "$COLLECTIONS_DIR" -type d -exec chmod 775 {} \; 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo find "$COLLECTIONS_DIR" -type d -exec chmod 775 {} \; ; }
 
 ANSIBLE_GALAXY_BIN="$(command -v ansible-galaxy || true)"
 if [ -z "$ANSIBLE_GALAXY_BIN" ]; then
@@ -483,9 +470,10 @@ fi
 # Reinstall (force) to the desired path
 "$ANSIBLE_GALAXY_BIN" collection install --force -p "$COLLECTIONS_DIR" \
   fortinet.fortios \
-  paloaltonetworks.panos \
-  ansible.netcommon \
-  ansible.utils || { echo "Ansible collections install: FAIL"; exit 1; }
+  paloaltonetworks.panos || { echo "Ansible collections install: FAIL"; exit 1; }
+
+# Ensure files are readable by group, writable by owner
+find "$COLLECTIONS_DIR" -type f -exec chmod 664 {} \; 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo find "$COLLECTIONS_DIR" -type f -exec chmod 664 {} \; ; }
 
 echo "Ansible collections: OK"
 
