@@ -76,14 +76,22 @@ prompt_db_details () {
   read -r -p "DB user [firework]: " DB_USER || true
   DB_USER="${DB_USER:-firework}"
 
-  read -r -s -p "DB pass [........]: " DB_PASS; echo
+  printf "DB pass [........]: "
+  stty -echo
+  read -r DB_PASS || true
+  stty echo
+  echo
   while [ -z "${DB_PASS:-}" ]; do
     echo "Password cannot be empty."
-    read -r -s -p "DB pass [........]: " DB_PASS; echo
+    printf "DB pass [........]: "
+    stty -echo
+    read -r DB_PASS || true
+    stty echo
+    echo
   done
 }
 
-# Create .env from captured values
+# Create ENV file from captured values
 write_env_file () {
   local sk="$1"
   local host="$2" port="$3" db="$4" user="$5" pass="$6"
@@ -152,21 +160,11 @@ sql_escape () {
   printf "%s" "$1" | sed "s/'/''/g"
 }
 
-# YAML-quote a value (single quotes, inner quotes doubled)
+# YAML-quote a value (single quotes, with inner quotes doubled)
 yaml_quote () {
   local v="${1-}"
   v="${v//\'/\'\'}"
   printf "'%s'" "$v"
-}
-
-start_unit () {
-  local unit="$1"
-  if sudo systemctl start "$unit"; then
-    echo "Started: $unit"
-  else
-    echo "Error: Failed to start $unit. See: journalctl -u ${unit}.service"
-    exit 1
-  fi
 }
 
 # --- Start -------------------------------------------------------------------
@@ -214,8 +212,6 @@ sudo mkdir -p \
   "${APP_DIR}" \
   "${SCRIPTS_DIR}" \
   "${GV_ALL}"
-# Ensure ansible_collections is owned by firework
-sudo chown firework:firework "${ANSIBLE_COLLECTIONS_PATH}"
 
 sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 [ -f "${PGPASS_FILE}" ] || sudo -u firework touch "${PGPASS_FILE}"
@@ -224,20 +220,19 @@ sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 echo "--------------------------------------------------------"
 echo "[3/11] Interactive configuration (.env, inventory, vault pass, vault.yml)..."
 
-# Ensure vault.yml exists with correct ownership and permissions before interaction
-sudo touch "${GV_VAULT}"
-sudo chown firework:firework "${GV_VAULT}"
-sudo chmod 640 "${GV_VAULT}"
-
-# 3a) .env — REQUIRED (no prompt for proceeding)
+# 3a) .env — REQUIRED (no prompt)
 echo "#################################################################################"
 read -r -p "Please enter a SECRET_KEY or leave blank to auto-generate [${ENV_FILE}]: " SK || true
-[ -z "${SK:-}" ] && SK="$(gen_secret_key)"
+if [ -z "${SK:-}" ]; then
+  SK="$(gen_secret_key)"
+  echo "#################################################################################"
+fi
 DB_HOST=""; DB_PORT=""; DB_NAME=""; DB_USER=""; DB_PASS=""
 prompt_db_details
 write_env_file "${SK}" "${DB_HOST}" "${DB_PORT}" "${DB_NAME}" "${DB_USER}" "${DB_PASS}"
 
-# 3b) inventory.yml (helper)
+
+# 3b) inventory.yml (optional helper)
 echo "#################################################################################"
 if ask_yes_no "Populate inventory.yml with example template?"; then
   write_inventory_example
@@ -246,13 +241,20 @@ elif ask_yes_no "Open ${INVENTORY_FILE} in ${EDITOR} now?"; then
   sudo "${EDITOR}" "${INVENTORY_FILE}"
 fi
 
-# 3c) .vault_pass.txt (REQUIRED)
+## 3c) .vault_pass.txt
+#echo "#################################################################################"
+#printf "Please enter a password for vault_pass.txt: "
+#read -r VPASS
+#printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
+#echo "${VAULT_PASS_FILE}: OK"
+
+# 3c) .vault_pass.txt
 echo "#################################################################################"
 read -r -s -p "Please enter a password for vault_pass.txt: " VPASS; echo
 printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
 echo "${VAULT_PASS_FILE}: OK"
 
-# 3d) group_vars/all/vault.yml (encrypted or plaintext fallback)
+# 3d) group_vars/all/vault.yml
 echo "#################################################################################"
 if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
   echo "Please provide passwords/keys for network devices to store in ${GV_VAULT}."
@@ -261,6 +263,7 @@ if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
   read -r -p "fortinet_api_access_token: " FNTOK || true
   read -r -p "paloalto_api_password: " PAPASS || true
 
+  # YAML-quoted values (single quotes, inner quotes doubled)
   APASS_YAML="$(yaml_quote "${APASS}")"
   FNPASS_YAML="$(yaml_quote "${FNPASS}")"
   FNTOK_YAML="$(yaml_quote "${FNTOK}")"
@@ -280,20 +283,19 @@ YML
        --output "${GV_VAULT}" "${tmp_yaml}" >/dev/null 2>&1; then
     sudo rm -f "${tmp_yaml}"
     echo "${GV_VAULT}: OK"
-    echo "Note: edit later with:"
-    echo "  ansible-vault edit ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}"
+    echo "Note: You can edit later with: ansible-vault edit ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}"
   else
     echo "Encryption FAILED; leaving plaintext temp at: ${tmp_yaml}"
-    echo "You can encrypt manually:"
+    echo "You can inspect it, then encrypt manually:"
     echo "  ansible-vault encrypt ${tmp_yaml} --vault-password-file ${VAULT_PASS_FILE} --output ${GV_VAULT}"
   fi
 else
   echo "ansible-vault not available or ${VAULT_PASS_FILE} empty."
-  echo "Writing PLAINTEXT ${GV_VAULT} (encrypt it later):"
+  echo "Writing PLAINTEXT ${GV_VAULT} (you should encrypt it later):"
   APASS_YAML="$(yaml_quote "admin")"
   sudo tee "${GV_VAULT}" >/dev/null <<YML
 ---
-# WARNING: PLAINTEXT — later run:
+# WARNING: PLAINTEXT (not encrypted) — later run:
 #   ansible-vault encrypt ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}
 ansible_password: ${APASS_YAML}
 fortinet_api_password: ''
@@ -312,94 +314,109 @@ sudo chmod 755 "${PROJECT_DIR}"
 # 5) Ownership & permissions ---------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[5/11] Setting ownership and permissions..."
+sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}"
 
-# Readonly-safe inputs
-_APP_DIR="${APP_DIR:-/home/firework/firework}"
-_APP_USER="${APP_USER:-firework}"
-_WEB_GROUP="${WEB_GROUP:-www-data}"
-_APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"      # group for code files
-_APP_SERVICE_USER="${APP_SERVICE_USER:-firework_app_user}" # service/app user
+sudo chown "${APP_USER}":"${APP_GROUP}" "${PROJECT_DIR}/outputs"
+sudo chmod 2775 "${PROJECT_DIR}/outputs"
 
-# If APP_DIR points to .../app, move to repo root
-if [ "$(basename "$_APP_DIR")" = "app" ]; then
-  _PROJ_DIR="$(cd "$_APP_DIR/.." && pwd -P)"
-else
-  _PROJ_DIR="$_APP_DIR"
-fi
+sudo chown firework:"${APP_GROUP}" "${ANSIBLE_TMP_DIR}"
+sudo chmod 775 "${ANSIBLE_TMP_DIR}"
 
-umask 0002
+sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
+sudo chmod 664 "${INVENTORY_FILE}"
 
-# --- group_vars (dir 775; vault.yml 640, firework:www-data) ---
-mkdir -p "$_PROJ_DIR/group_vars/all"
-chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/group_vars" 2>/dev/null || sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/group_vars"
-chmod 775 "$_PROJ_DIR/group_vars" "$_PROJ_DIR/group_vars/all" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/group_vars" "$_PROJ_DIR/group_vars/all"
+sudo chown firework:"${APP_GROUP}" "${VAULT_PASS_FILE}"
+sudo chmod 640 "${VAULT_PASS_FILE}"
 
-VAULT_FILE="$_PROJ_DIR/group_vars/all/vault.yml"
-if [ ! -f "$VAULT_FILE" ]; then
-  cat > /tmp/_vault.yml <<'YAML'
-ansible_password: ""
-fortinet_api_password: ""
-fortinet_api_access_token: ""
-paloalto_api_password: ""
-YAML
-  mv /tmp/_vault.yml "$VAULT_FILE"
-fi
-chown "$_APP_USER:$_WEB_GROUP" "$VAULT_FILE" 2>/dev/null || sudo chown "$_APP_USER:$_WEB_GROUP" "$VAULT_FILE"
-chmod 640 "$VAULT_FILE" 2>/dev/null || sudo chmod 640 "$VAULT_FILE"
+sudo chown firework:firework "${ENV_FILE}"
+sudo chmod 600 "${ENV_FILE}"
 
-# --- playbooks (rw-rw-r--; firework:firework) ---
-PLAYBOOKS=(
-  post_check_firewall_rule_fortinet.yml
-  post_check_firewall_rule_paloalto.yml
-  pre_check_firewall_rule_fortinet.yml
-  pre_check_firewall_rule_paloalto.yml
-  provision_firewall_rule_fortinet.yml
-  provision_firewall_rule_paloalto.yml
-  collector.yml
+sudo chown firework:firework "${PGPASS_FILE}"
+sudo chmod 600 "${PGPASS_FILE}"
+
+sudo chown -R firework:"${APP_GROUP}" "${GV_DIR}"
+sudo find "${GV_DIR}" -type d -exec chmod 750 {} \;
+[ -f "${GV_VAULT}" ] && sudo chmod 640 "${GV_VAULT}"
+
+# Playbooks at repo root
+declare -a PLAYBOOKS_ROOT=(
+  "${PROJECT_DIR}/post_check_firewall_rule_fortinet.yml"
+  "${PROJECT_DIR}/post_check_firewall_rule_paloalto.yml"
+  "${PROJECT_DIR}/pre_check_firewall_rule_fortinet.yml"
+  "${PROJECT_DIR}/pre_check_firewall_rule_paloalto.yml"
+  "${PROJECT_DIR}/provision_firewall_rule_fortinet.yml"
+  "${PROJECT_DIR}/provision_firewall_rule_paloalto.yml"
 )
-for name in "${PLAYBOOKS[@]}"; do
-  p="$(find "$_PROJ_DIR" -maxdepth 1 -type f -name "$name" -print -quit)"
-  [ -n "$p" ] || continue
-  chown "$_APP_USER:$_APP_GROUP_PROJECT" "$p" 2>/dev/null || sudo chown "$_APP_USER:$_APP_GROUP_PROJECT" "$p"
-  chmod 664 "$p" 2>/dev/null || sudo chmod 664 "$p"
+for pb in "${PLAYBOOKS_ROOT[@]}"; do
+  [ -f "$pb" ] || continue
+  sudo chown firework:"${APP_GROUP}" "$pb"
+  sudo chmod 644 "$pb"
 done
 
-# --- run.py (rwxrwxr-x; firework:firework) ---
-if [ -f "$_PROJ_DIR/run.py" ]; then
-  chown "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/run.py" 2>/dev/null || sudo chown "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/run.py"
-  chmod 775 "$_PROJ_DIR/run.py" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/run.py"
+# scripts/
+sudo chown -R firework:"${APP_GROUP}" "${SCRIPTS_DIR}"
+sudo find "${SCRIPTS_DIR}" -type d -exec chmod 755 {} \;
+sudo find "${SCRIPTS_DIR}" -type f -name "*.sh" -exec chmod 755 {} \;
+
+# explicit overrides
+declare -A SCRIPTS=(
+  ["${SCRIPTS_DIR}/add_default_users.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/clean.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/install.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/reset.sh"]="firework:${APP_GROUP}:755"
+  ["${SCRIPTS_DIR}/setup.sh"]="firework:firework:755"
+  ["${SCRIPTS_DIR}/start_firework.sh"]="firework:firework:775"
+  ["${SCRIPTS_DIR}/status_firework.sh"]="firework:firework:775"
+  ["${SCRIPTS_DIR}/stop_firework.sh"]="firework:firework:775"
+)
+for script in "${!SCRIPTS[@]}"; do
+  [ -f "$script" ] || continue
+  IFS=":" read -r owner group mode <<<"${SCRIPTS[$script]}"
+  sudo chown "$owner":"$group" "$script"
+  sudo chmod "$mode" "$script"
+done
+
+# run.py convenience
+[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py" && sudo chmod 755 "${PROJECT_DIR}/run.py"
+
+# requirements.txt
+[ -f "${PROJECT_DIR}/requirements.txt" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/requirements.txt" && sudo chmod 644 "${PROJECT_DIR}/requirements.txt"
+
+# static/ root
+sudo chown firework:"${APP_GROUP}" "${STATIC_DIR}"
+sudo chmod 775 "${STATIC_DIR}"
+for sf in "${STATIC_DIR}/scripts.js" "${STATIC_DIR}/styles.css"; do
+  [ -f "$sf" ] || continue
+  sudo chown firework:"${APP_GROUP}" "$sf"
+  sudo chmod 644 "$sf"
+done
+
+# app/ tree
+sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
+sudo find "${APP_DIR}" -type d -not -path "*/__pycache__" -exec chmod 755 {} \;
+sudo find "${APP_DIR}" -type d -name "__pycache__" -exec chown firework:firework {} \; -exec chmod 775 {} \;
+sudo find "${APP_DIR}" -maxdepth 1 -type f -name "*.py" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
+[ -f "${APP_DIR}/routes.py" ] && sudo chown firework:firework "${APP_DIR}/routes.py" && sudo chmod 644 "${APP_DIR}/routes.py"
+for f in models.py utils.py; do
+  [ -f "${APP_DIR}/$f" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/$f" && sudo chmod 664 "${APP_DIR}/$f"
+done
+if [ -d "${APP_DIR}/services" ]; then
+  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/services"
+  sudo chmod 755 "${APP_DIR}/services"
+  [ -f "${APP_DIR}/services/network_automation.py" ] && sudo chown firework:firework "${APP_DIR}/services/network_automation.py" && sudo chmod 664 "${APP_DIR}/services/network_automation.py"
 fi
-
-# --- scripts dir (rwxrwxr-x; firework:firework) ---
-mkdir -p "$_PROJ_DIR/scripts"
-chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/scripts" 2>/dev/null || sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$_PROJ_DIR/scripts"
-chmod 775 "$_PROJ_DIR/scripts" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/scripts"
-find "$_PROJ_DIR/scripts" -maxdepth 1 -type f -name "*.sh" -exec chmod 775 {} \; 2>/dev/null || sudo find "$_PROJ_DIR/scripts" -maxdepth 1 -type f -name "*.sh" -exec chmod 775 {} \;
-
-# --- static (dir 755; firework:www-data) ---
-mkdir -p "$_PROJ_DIR/static"
-chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/static" 2>/dev/null || sudo chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/static"
-chmod 755 "$_PROJ_DIR/static" 2>/dev/null || sudo chmod 755 "$_PROJ_DIR/static"
-find "$_PROJ_DIR/static" -type f -exec chmod 664 {} \; 2>/dev/null || sudo find "$_PROJ_DIR/static" -type f -exec chmod 664 {} \;
-
-# --- ansible_tmp (dir 775; firework:www-data) ---
-mkdir -p "$_PROJ_DIR/ansible_tmp"
-chown "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/ansible_tmp" 2>/dev/null || sudo chown "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/ansible_tmp"
-chmod 775 "$_PROJ_DIR/ansible_tmp" 2>/dev/null || sudo chmod 775 "$_PROJ_DIR/ansible_tmp"
-
-# --- outputs (dir 2775; firework_app_user:www-data; files 664) ---
-mkdir -p "$_PROJ_DIR/outputs"
-chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$_PROJ_DIR/outputs" 2>/dev/null || sudo chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$_PROJ_DIR/outputs"
-chmod 2775 "$_PROJ_DIR/outputs" 2>/dev/null || sudo chmod 2775 "$_PROJ_DIR/outputs"
-find "$_PROJ_DIR/outputs" -type f -exec chmod 664 {} \; 2>/dev/null || sudo find "$_PROJ_DIR/outputs" -type f -exec chmod 664 {} \;
-
-# --- app/ (group www-data like on working VM) ---
-chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/app" 2>/dev/null || sudo chown -R "$_APP_USER:$_WEB_GROUP" "$_PROJ_DIR/app"
-
-# --- ansible_collections  ---
-mkdir -p "$_PROJ_DIR/ansible_collections" 2>/dev/null || sudo mkdir -p "$_PROJ_DIR/ansible_collections"
-
-echo "Ownership/permissions: OK"
+if [ -d "${APP_DIR}/static" ]; then
+  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static"
+  sudo chmod 775 "${APP_DIR}/static"
+  [ -f "${APP_DIR}/static/favicon.png" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/static/favicon.png" && sudo chmod 644 "${APP_DIR}/static/favicon.png"
+fi
+if [ -d "${APP_DIR}/templates" ]; then
+  sudo chown firework:"${APP_GROUP}" "${APP_DIR}/templates"
+  sudo chmod 755 "${APP_DIR}/templates"
+  sudo find "${APP_DIR}/templates" -maxdepth 1 -type f -name "*.html" -exec chown firework:"${APP_GROUP}" {} \; -exec chmod 644 {} \;
+fi
+[ -d "${APP_DIR}/outputs" ] && sudo chown firework:"${APP_GROUP}" "${APP_DIR}/outputs" && sudo chmod 755 "${APP_DIR}/outputs"
 
 # 6) PostgreSQL ---------------------------------------------------------------
 echo "--------------------------------------------------------"
@@ -427,7 +444,7 @@ grep -q "^${DB_HOST}:${DB_PORT}:\*:${DB_USER}:" "${PGPASS_FILE}" 2>/dev/null || 
 sudo chown firework:firework "${PGPASS_FILE}"
 sudo chmod 600 "${PGPASS_FILE}"
 
-# PostgreSQL verification (like nginx -t)
+# --- PostgreSQL verification (like nginx -t) ---
 if command -v psql >/dev/null 2>&1; then
   echo "psql client: $(psql --version 2>/dev/null || echo 'unknown')"
   if PGPASSFILE="${PGPASS_FILE}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT 1" >/dev/null 2>&1; then
@@ -440,42 +457,23 @@ fi
 # 7) Ansible collections ------------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[7/11] Installing Ansible collections..."
+if command -v ansible-galaxy >/dev/null 2>&1; then
+  readonly ANSIBLE_ENV_VARS="ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}"
+  sudo -u firework mkdir -p "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+  sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+  sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
 
-# Readonly-safe inputs
-_APP_DIR="${APP_DIR:-/home/firework/firework}"
-_APP_USER="${APP_USER:-firework}"
-_APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"
-_WEB_GROUP="${WEB_GROUP:-www-data}"
-_APP_SERVICE_USER="${APP_SERVICE_USER:-firework_app_user}"
+  sudo -u firework env ${ANSIBLE_ENV_VARS:-ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}} \
+    ansible-galaxy collection install --force -p "${ANSIBLE_COLLECTIONS_PATH}" \
+      fortinet.fortios paloaltonetworks.panos
 
-# Use repo root (…/firework), not …/app
-if [ "$(basename "$_APP_DIR")" = "app" ]; then
-  _PROJ_DIR="$(cd "$_APP_DIR/.." && pwd -P)"
+  # Normalize ownership/perms afterward
+  sudo chown -R firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
+  sudo chmod -R u+rwX,g+rwX,o+rX "${ANSIBLE_COLLECTIONS_PATH}"
+  sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
 else
-  _PROJ_DIR="$_APP_DIR"
+  echo "WARNING: ansible-galaxy not found; skipped collections."
 fi
-
-COLLECTIONS_DIR="$_PROJ_DIR/ansible_collections"
-
-# Create & fix perms/owner (owner: firework_app_user; group: www-data; dirs 775)
-mkdir -p "$COLLECTIONS_DIR" 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo mkdir -p "$COLLECTIONS_DIR"; }
-chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$COLLECTIONS_DIR" 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo chown -R "$_APP_SERVICE_USER:$_WEB_GROUP" "$COLLECTIONS_DIR"; }
-find "$COLLECTIONS_DIR" -type d -exec chmod 775 {} \; 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo find "$COLLECTIONS_DIR" -type d -exec chmod 775 {} \; ; }
-
-ANSIBLE_GALAXY_BIN="$(command -v ansible-galaxy || true)"
-if [ -z "$ANSIBLE_GALAXY_BIN" ]; then
-  echo "ansible-galaxy not found (is Ansible installed?). FAIL"; exit 1
-fi
-
-# Reinstall (force) to the desired path
-"$ANSIBLE_GALAXY_BIN" collection install --force -p "$COLLECTIONS_DIR" \
-  fortinet.fortios \
-  paloaltonetworks.panos || { echo "Ansible collections install: FAIL"; exit 1; }
-
-# Ensure files are readable by group, writable by owner
-find "$COLLECTIONS_DIR" -type f -exec chmod 664 {} \; 2>/dev/null || { command -v sudo >/dev/null 2>&1 && sudo find "$COLLECTIONS_DIR" -type f -exec chmod 664 {} \; ; }
-
-echo "Ansible collections: OK"
 
 # 8) Nginx --------------------------------------------------------------------
 echo "--------------------------------------------------------"
@@ -485,13 +483,15 @@ server {
     listen 80;
     server_name _;
 
+    # Serve static files directly from the app/static directory
     location /static {
         alias /home/firework/firework/app/static;
         expires 30d;
-        access_log on;
+        access_log on; # Keep access logging on for debugging
         log_not_found off;
     }
 
+    # Proxy all other requests to the Gunicorn Unix socket
     location / {
         include proxy_params;
         proxy_pass http://unix:/tmp/firework.sock;
@@ -516,16 +516,15 @@ fi
 
 # Verify service is running
 nginx_state="$(systemctl is-active nginx 2>/dev/null || true)"
-if [ "${nginx_state}" = "active" ]; then
-  echo "nginx: OK"
-else
+echo "nginx: OK"
+if [ "${nginx_state}" != "active" ]; then
   echo "nginx: FAIL"
   sudo journalctl -u nginx --no-pager -n 30 || true
 fi
 
-# 9) systemd unit (do not start yet) ------------------------------------------
+# 9) systemd ------------------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[9/11] Ensure systemd service exists..."
+echo "[9/11] Create systemd service if missing..."
 if [ ! -f "${SERVICE_FILE}" ]; then
   sudo tee "${SERVICE_FILE}" >/dev/null <<'UNIT'
 [Unit]
@@ -559,15 +558,6 @@ fi
 # 10) App setup: venv, deps, migrations, default users ------------------------
 echo "--------------------------------------------------------"
 echo "[10/11] Python venv, dependencies, DB migrations, default users..."
-# Create/activate venv
-#if [ ! -d "${VENV_DIR}" ]; then
-#  echo "Creating virtual environment at '${VENV_DIR}'..."
-#  python3 -m venv "${VENV_DIR}"
-#else
-#  echo "Virtual environment already exists at '${VENV_DIR}'."
-#fi
-# shellcheck disable=SC1091
-#source "${VENV_DIR}/bin/activate"
 
 PY_BIN="$(command -v python3 || true)"
 if [ -z "$PY_BIN" ]; then
@@ -736,12 +726,18 @@ EOF
 # 11) Start services ----------------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[11/11] Starting services..."
-start_unit "firework"
 
-# Nginx should already be active; re-check status for completeness
+firework_state="$(systemctl is-active nginx 2>/dev/null || true)"
+if [ "${firework_state}" != "active" ]; then
+  start_unit "firework"
+  sudo systemctl start firework
+else
+  echo "Firework already running."
+fi
+
 nginx_state="$(systemctl is-active nginx 2>/dev/null || true)"
 if [ "${nginx_state}" != "active" ]; then
-  start_unit "nginx"
+  sudo systemctl start nginx
 else
   echo "Nginx already running."
 fi
