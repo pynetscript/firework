@@ -370,13 +370,10 @@ sudo chown -R firework:"${APP_GROUP}" "${STATIC_DIR}"
 sudo find "${STATIC_DIR}" -type d -exec chmod 755 {} \;
 sudo find "${STATIC_DIR}" -type f -exec chmod 664 {} \;
 
-# Corrected permissions for app directory
+# Corrected permissions for app directory (excluding __pycache__)
 sudo chown -R firework:"${APP_GROUP}" "${APP_DIR}"
-sudo find "${APP_DIR}" -type d -exec chmod 755 {} \;
-sudo find "${APP_DIR}" -type f -exec chmod 664 {} \;
-sudo chown -R firework:firework "${APP_DIR}/__pycache__"
-sudo find "${APP_DIR}/__pycache__" -type d -exec chmod 775 {} \;
-sudo find "${APP_DIR}/__pycache__" -type f -exec chmod 664 {} \;
+sudo find "${APP_DIR}" -type d -not -path "*/__pycache__*" -exec chmod 755 {} \;
+sudo find "${APP_DIR}" -type f -not -path "*/__pycache__*" -exec chmod 664 {} \;
 
 # App-specific overrides
 sudo chown firework:firework "${APP_DIR}/admin_routes.py"
@@ -668,6 +665,9 @@ fi
 # Apply migrations
 echo "Upgrading database..."
 (cd "${PROJECT_DIR}" && flask db upgrade)
+
+# Set ownership and permissions for the now-existing __pycache__ directories
+sudo find "${APP_DIR}" -type d -name "__pycache__" -exec chown firework:firework {} \; -exec chmod 775 {} \;
 
 # Load .env for default user creation (if present)
 if [ -f "${ENV_FILE}" ]; then
