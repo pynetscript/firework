@@ -49,7 +49,7 @@ The app demonstrates how **open-source automation (Python + Flask + Ansible + Po
 
 ---
 
-## Quickstart  
+## Quickstart
 
 ### Requirements  
 - Ubuntu 24.04+
@@ -58,8 +58,6 @@ The app demonstrates how **open-source automation (Python + Flask + Ansible + Po
   - 20GB disk
 - Internet access
 - **firework** user as sudoer
-
----
 
 ### Installation
 The install.sh script will:
