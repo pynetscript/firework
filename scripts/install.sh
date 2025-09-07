@@ -440,23 +440,35 @@ fi
 # 7) Ansible collections ------------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[7/11] Installing Ansible collections..."
-APP_DIR="${APP_DIR:-/home/firework/firework}"
-APP_USER="${APP_USER:-firework}"
-APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"
+# Readonly-safe fallbacks (do NOT reassign APP_* if they were declared readonly earlier)
+_APP_DIR="${APP_DIR:-/home/firework/firework}"
+_APP_USER="${APP_USER:-firework}"
+_APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"
 
-COLLECTIONS_DIR="$APP_DIR/ansible_collections"
+COLLECTIONS_DIR="$_APP_DIR/ansible_collections"
 mkdir -p "$COLLECTIONS_DIR"
-# if running with sudo, fix ownership so installs run as $APP_USER
-if [ "$EUID" -eq 0 ]; then chown -R "$APP_USER:$APP_GROUP_PROJECT" "$COLLECTIONS_DIR"; fi
+
+# Ensure write/ownership even if the dir was created by root in a prior run
+if [ "$EUID" -eq 0 ]; then
+  chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"
+elif [ ! -w "$COLLECTIONS_DIR" ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"
+  else
+    echo "Collections dir is not writable and sudo is unavailable."
+    echo "Please run: chown -R $_APP_USER:$_APP_GROUP_PROJECT \"$COLLECTIONS_DIR\""
+    exit 1
+  fi
+fi
 chmod 775 "$COLLECTIONS_DIR"
 
-# Install to the app path explicitly (avoid $HOME differences when using sudo)
-ANSIBLE_GALAXY_BIN="$(command -v ansible-galaxy)"
+ANSIBLE_GALAXY_BIN="$(command -v ansible-galaxy || true)"
 if [ -z "$ANSIBLE_GALAXY_BIN" ]; then
-  echo "ansible-galaxy not found (is Ansible installed?). FAIL"; exit 1
+  echo "ansible-galaxy not found (is Ansible installed?). FAIL"
+  exit 1
 fi
 
-# version-pinned, idempotent
+# Idempotent, version-pinned installs to the project path
 "$ANSIBLE_GALAXY_BIN" collection install -p "$COLLECTIONS_DIR" \
   fortinet.fortios:2.4.0 \
   paloaltonetworks.panos:3.1.1 \
