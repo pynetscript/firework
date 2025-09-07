@@ -551,14 +551,47 @@ fi
 echo "--------------------------------------------------------"
 echo "[10/11] Python venv, dependencies, DB migrations, default users..."
 # Create/activate venv
-if [ ! -d "${VENV_DIR}" ]; then
-  echo "Creating virtual environment at '${VENV_DIR}'..."
-  python3 -m venv "${VENV_DIR}"
-else
-  echo "Virtual environment already exists at '${VENV_DIR}'."
-fi
+#if [ ! -d "${VENV_DIR}" ]; then
+#  echo "Creating virtual environment at '${VENV_DIR}'..."
+#  python3 -m venv "${VENV_DIR}"
+#else
+#  echo "Virtual environment already exists at '${VENV_DIR}'."
+#fi
 # shellcheck disable=SC1091
-source "${VENV_DIR}/bin/activate"
+#source "${VENV_DIR}/bin/activate"
+
+PY_BIN="$(command -v python3 || true)"
+if [ -z "$PY_BIN" ]; then
+  echo "Python 3 not found. FAIL"
+  exit 1
+fi
+
+# Ensure venv support
+if ! "$PY_BIN" -c "import ensurepip" >/dev/null 2>&1; then
+  PYV="$("$PY_BIN" - <<'PY'
+import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}")
+PY
+)"
+  VENV_PKG="${PYV}-venv"
+  if command -v apt-get >/dev/null 2>&1; then
+    if [ "$EUID" -ne 0 ]; then SUDO="sudo"; else SUDO=""; fi
+    export DEBIAN_FRONTEND=noninteractive
+    $SUDO apt-get update -y
+    $SUDO apt-get install -y "$VENV_PKG" || $SUDO apt-get install -y python3-venv
+  else
+    "$PY_BIN" -m ensurepip --upgrade || true
+  fi
+fi
+
+# (Re)create venv if missing/broken
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+  rm -rf "$VENV_DIR"
+  "$PY_BIN" -m venv "$VENV_DIR" || { echo "Create venv: FAIL"; exit 1; }
+fi
+
+# shellcheck disable=SC1090
+. "$VENV_DIR/bin/activate"
+python -m pip install -U pip wheel setuptools || { echo "pip bootstrap: FAIL"; deactivate; exit 1; }
 
 # Install deps
 if [ -f "${REQ_FILE}" ]; then
