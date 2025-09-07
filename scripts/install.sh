@@ -214,6 +214,8 @@ sudo mkdir -p \
   "${APP_DIR}" \
   "${SCRIPTS_DIR}" \
   "${GV_ALL}"
+# Ensure ansible_collections is owned by firework
+sudo chown firework:firework "${ANSIBLE_COLLECTIONS_PATH}"
 
 sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 [ -f "${PGPASS_FILE}" ] || sudo -u firework touch "${PGPASS_FILE}"
