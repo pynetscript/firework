@@ -62,9 +62,9 @@
                     <td class="py-2 px-2 text-left break-words">{{ rule.requester_username if rule.requester_username else '' }}</td>
                     <td class="py-2 px-2 text-left break-words">{{ rule.approver_username if rule.approver_username else '' }}</td>
                     <td class="py-2 px-2 text-left break-words">{{ rule.implementer_username if rule.implementer_username else '' }}</td>
-                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.created_at %}{{ rule.created_at.isoformat() }}Z{% endif %}">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else '' }}</td>
-                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.approved_at %}{{ rule.approved_at.isoformat() }}Z{% endif %}">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else '' }}</td>
-                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.implemented_at %}{{ rule.implemented_at.isoformat() }}Z{% endif %}">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else '' }}</td>
+                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.created_at %}{{ rule.created_at.isoformat() }}{% endif %}">{{ rule.created_at.strftime('%Y-%m-%d %H:%M:%S') if rule.created_at else '' }}</td>
+                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.approved_at %}{{ rule.approved_at.isoformat() }}{% endif %}">{{ rule.approved_at.strftime('%Y-%m-%d %H:%M:%S') if rule.approved_at else '' }}</td>
+                    <td class="py-2 px-2 text-left break-words" data-utc-timestamp="{% if rule.implemented_at %}{{ rule.implemented_at.isoformat() }}{% endif %}">{{ rule.implemented_at.strftime('%Y-%m-%d %H:%M:%S') if rule.implemented_at else '' }}</td>
                     <td class="py-2 px-2 text-center whitespace-nowrap">
                         {% if rule.status == 'Pending' or rule.status == 'Approved - Pending Implementation' %}
                             <button class="cancel-button bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-md text-xs shadow-md transition duration-300 ease-in-out transform hover:scale-105"
