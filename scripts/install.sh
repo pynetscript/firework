@@ -440,25 +440,32 @@ fi
 # 7) Ansible collections ------------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[7/11] Installing Ansible collections..."
-if command -v ansible-galaxy >/dev/null 2>&1; then
-  readonly ANSIBLE_ENV_VARS="ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}"
-  sudo -u firework mkdir -p "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
-  sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
-  sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
+APP_DIR="${APP_DIR:-/home/firework/firework}"
+APP_USER="${APP_USER:-firework}"
+APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"
 
-  # Show native output
-  sudo -u firework env ${ANSIBLE_ENV_VARS} \
-  sudo -u firework env ${ANSIBLE_ENV_VARS:-ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}} \
-    ansible-galaxy collection install -p "${ANSIBLE_COLLECTIONS_PATH}" \
-      fortinet.fortios paloaltonetworks.panos
+COLLECTIONS_DIR="$APP_DIR/ansible_collections"
+mkdir -p "$COLLECTIONS_DIR"
+# if running with sudo, fix ownership so installs run as $APP_USER
+if [ "$EUID" -eq 0 ]; then chown -R "$APP_USER:$APP_GROUP_PROJECT" "$COLLECTIONS_DIR"; fi
+chmod 775 "$COLLECTIONS_DIR"
 
-  # Normalize ownership/perms afterward
-  sudo chown -R firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
-  sudo chmod -R u+rwX,g+rwX,o+rX "${ANSIBLE_COLLECTIONS_PATH}"
-  sudo find "${ANSIBLE_COLLECTIONS_PATH}" -type d -exec chmod 775 {} \;
-else
-  echo "WARNING: ansible-galaxy not found; skipped collections."
+# Install to the app path explicitly (avoid $HOME differences when using sudo)
+ANSIBLE_GALAXY_BIN="$(command -v ansible-galaxy)"
+if [ -z "$ANSIBLE_GALAXY_BIN" ]; then
+  echo "ansible-galaxy not found (is Ansible installed?). FAIL"; exit 1
 fi
+
+# version-pinned, idempotent
+"$ANSIBLE_GALAXY_BIN" collection install -p "$COLLECTIONS_DIR" \
+  fortinet.fortios:2.4.0 \
+  paloaltonetworks.panos:3.1.1 \
+  ansible.netcommon:7.2.0 \
+  ansible.utils:5.1.2 || { echo "Ansible collections install: FAIL"; exit 1; }
+
+# Make sure runtime can find them
+#export ANSIBLE_COLLECTIONS_PATHS="$COLLECTIONS_DIR:$HOME/.ansible/collections:/usr/share/ansible/collections"
+echo "Ansible collections: OK"
 
 # 8) Nginx --------------------------------------------------------------------
 echo "--------------------------------------------------------"
