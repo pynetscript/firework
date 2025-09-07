@@ -25,12 +25,13 @@ The app demonstrates how **open-source automation (Python + Flask + Ansible + Po
 - **RBAC User Management** (SuperAdmin, Admin, Approver, Requester, Implementer).  
 - **Workflow**: Request → Pre-check → Approval → Provision → Post-check.  
 - **Pre-checks**:
-  - Blacklist validation.  
-  - Network path analysis (reachability check).  
-  - Conflicting rule detection.  
-- **Automated rule provisioning** via Ansible (FortiGate & Palo Alto).  
-- **Post-deployment certification** to confirm success.  
-- **Dashboard + Audit Logs** for monitoring and compliance.  
+  - Request input validation.
+  - Blacklist rule validation.  
+  - Network path analysis.  
+  - Conflicting rule detection.
+- **Automated rule provisioning** via Ansible (FortiGate & Palo Alto).
+- **Post-deployment certification** to confirm success.
+- **Dashboard + Audit Logs** for monitoring and compliance.
 
 ---
 
