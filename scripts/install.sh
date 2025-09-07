@@ -185,7 +185,7 @@ if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get install -y ansible
   fi
   # Add this line to install pan-python
-  pip install pan-python
+  pip install pan-python --break-system-packages
   dpkg -s postgresql >/dev/null 2>&1 || sudo apt-get install -y postgresql postgresql-contrib
   command -v nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
 else
