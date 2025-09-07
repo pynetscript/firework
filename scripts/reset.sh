@@ -51,7 +51,7 @@ rm -f "${SOCKET_FILE}"
 # --- Reset logs ------------------------------------------------------------
 echo "Resetting logs..."
 LOGS_RESET=0
-for lf in "${PROJECT_DIR}/firework_app.log" "${PROJECT_DIR}/firework.log"; do
+for lf in "${PROJECT_DIR}/firework.log"; do
   if [ -e "$lf" ]; then
     if ! : > "$lf" 2>/dev/null; then
       sudo sh -c ": > '$lf'" || true
