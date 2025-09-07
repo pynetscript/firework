@@ -53,6 +53,9 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 
 ### Requirements  
 - Ubuntu 24.04+
+  - 2 vCPUs
+  - 4GB RAM
+  - 20GB disk
 - Internet access
 - **firework** user as sudoer
 
