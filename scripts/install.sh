@@ -222,6 +222,11 @@ sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 echo "--------------------------------------------------------"
 echo "[3/11] Interactive configuration (.env, inventory, vault pass, vault.yml)..."
 
+# Ensure vault.yml exists with correct ownership and permissions before interaction
+sudo touch "${GV_VAULT}"
+sudo chown firework:firework "${GV_VAULT}"
+sudo chmod 640 "${GV_VAULT}"
+
 # 3a) .env — REQUIRED (no prompt for proceeding)
 echo "#################################################################################"
 read -r -p "Please enter a SECRET_KEY or leave blank to auto-generate [${ENV_FILE}]: " SK || true
@@ -335,9 +340,6 @@ done
 # Corrected ownership for group_vars
 sudo chown -R firework:firework "${GV_DIR}"
 sudo find "${GV_DIR}" -type d -exec chmod 775 {} \;
-# Corrected ownership/permissions for vault.yml
-sudo chown firework:"${APP_GROUP}" "${GV_VAULT}"
-sudo chmod 640 "${GV_VAULT}"
 
 # Corrected ownership for inventory.yml
 sudo chown firework:"${APP_GROUP}" "${INVENTORY_FILE}"
