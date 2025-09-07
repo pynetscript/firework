@@ -1130,7 +1130,7 @@ def add_blacklist_rule():
     if request.method == 'POST':
         sequence = request.form.get('sequence', type=int)
         rule_name = request.form.get('rule_name')
-        enabled = request.form.get('enabled') == 'True'
+        enabled = request.form.get('enabled') == 'on'
         source_ip = request.form.get('source_ip') or None
         destination_ip = request.form.get('destination_ip') or None
         protocol = request.form.get('protocol') or None
