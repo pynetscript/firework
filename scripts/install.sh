@@ -326,8 +326,9 @@ sudo chmod 600 "${ENV_FILE}"
 sudo chown firework:firework "${PGPASS_FILE}"
 sudo chmod 600 "${PGPASS_FILE}"
 
+# FIX 1: Change group_vars directory permissions from 750 to 775.
 sudo chown -R firework:"${APP_GROUP}" "${GV_DIR}"
-sudo find "${GV_DIR}" -type d -exec chmod 750 {} \;
+sudo find "${GV_DIR}" -type d -exec chmod 775 {} \;
 [ -f "${GV_VAULT}" ] && sudo chmod 640 "${GV_VAULT}"
 
 # Playbooks at repo root
@@ -342,12 +343,14 @@ declare -a PLAYBOOKS_ROOT=(
 for pb in "${PLAYBOOKS_ROOT[@]}"; do
   [ -f "$pb" ] || continue
   sudo chown firework:"${APP_GROUP}" "$pb"
-  sudo chmod 644 "$pb"
+  # FIX 2: Change playbook file permissions from 644 to 664.
+  sudo chmod 664 "$pb"
 done
 
 # scripts/
+# FIX 4: Change scripts directory permissions from 755 to 775.
 sudo chown -R firework:"${APP_GROUP}" "${SCRIPTS_DIR}"
-sudo find "${SCRIPTS_DIR}" -type d -exec chmod 755 {} \;
+sudo find "${SCRIPTS_DIR}" -type d -exec chmod 775 {} \;
 sudo find "${SCRIPTS_DIR}" -type f -name "*.sh" -exec chmod 755 {} \;
 
 # explicit overrides
@@ -368,13 +371,14 @@ for script in "${!SCRIPTS[@]}"; do
   sudo chmod "$mode" "$script"
 done
 
-# run.py convenience
-[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py" && sudo chmod 755 "${PROJECT_DIR}/run.py"
+# FIX 3: Change run.py permissions from 755 to 775.
+[ -f "${PROJECT_DIR}/run.py" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/run.py" && sudo chmod 775 "${PROJECT_DIR}/run.py"
 
 # requirements.txt
 [ -f "${PROJECT_DIR}/requirements.txt" ] && sudo chown firework:"${APP_GROUP}" "${PROJECT_DIR}/requirements.txt" && sudo chmod 644 "${PROJECT_DIR}/requirements.txt"
 
 # static/ root
+# FIX 5: Change static directory permissions from 755 to 775.
 sudo chown firework:"${APP_GROUP}" "${STATIC_DIR}"
 sudo chmod 775 "${STATIC_DIR}"
 for sf in "${STATIC_DIR}/scripts.js" "${STATIC_DIR}/styles.css"; do
