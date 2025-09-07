@@ -18,7 +18,6 @@ The app demonstrates how **open-source automation (Python + Flask + Ansible + Po
 
 <img width="750" height="575" alt="Firework-Architecture" src="https://github.com/user-attachments/assets/7c2bb17f-3e6f-4332-8f29-3bd3bb9069cd" />
 
-
 ---
 
 ## Features  
@@ -59,6 +58,8 @@ The app demonstrates how **open-source automation (Python + Flask + Ansible + Po
   - 20GB disk
 - Internet access
 - **firework** user as sudoer
+
+---
 
 ### Installation
 The install.sh script will:
