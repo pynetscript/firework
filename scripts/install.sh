@@ -212,6 +212,8 @@ sudo mkdir -p \
   "${APP_DIR}" \
   "${SCRIPTS_DIR}" \
   "${GV_ALL}"
+# ADD THIS LINE TO FIX THE ENCRYPTION PERMISSION ERROR
+sudo chown firework:firework "${GV_ALL}"
 
 sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 [ -f "${PGPASS_FILE}" ] || sudo -u firework touch "${PGPASS_FILE}"
