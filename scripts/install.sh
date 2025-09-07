@@ -532,6 +532,8 @@ Environment="HOME=/home/firework_app_user"
 Environment="ANSIBLE_CACHE_DIR=/home/firework_app_user/.ansible/cache"
 Environment="ANSIBLE_TMPDIR=/home/firework_app_user/.ansible/tmp"
 Environment="FIREWORK_VAULT_PASS_FILE=/home/firework/firework/.vault_pass.txt"
+Environment="ANSIBLE_COLLECTIONS_PATH=/home/firework/firework/ansible_collections:/home/firework_app_user/.ansible/collections:/usr/share/ansible/collections"
+Environment="ANSIBLE_CONFIG=/home/firework/firework/ansible.cfg"
 EnvironmentFile=/home/firework/firework/.env
 ExecStart=/home/firework/firework/venv/bin/gunicorn --workers 3 --bind unix:/tmp/firework.sock --timeout 120 run:app
 Restart=always
