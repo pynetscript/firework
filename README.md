@@ -22,7 +22,7 @@ The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)
 ---
 
 ## Features  
-- **RBAC User Management** (SuperAdmin, Admin, Approver, Requester).  
+- **RBAC User Management** (SuperAdmin, Admin, Approver, Requester, Implementer).  
 - **Workflow**: Request → Pre-check → Approval → Provision → Post-check.  
 - **Pre-checks**:
   - Blacklist validation.  
