@@ -14,7 +14,7 @@ Firework introduces a **secure, automated, and auditable workflow** for managing
 - **Pre-checks & post-checks** for rule validation and certification.  
 - **Comprehensive logging** for accountability and audit readiness.  
 
-The app demonstrates how **open-source automation (Flask + Ansible + PostgreSQL)** can be adapted to create a **trusted firewall management system** for both operations teams and compliance officers.
+The app demonstrates how **open-source automation (Python + Flask + Ansible + PostgreSQL)** can be adapted to create a **trusted firewall management system** for both operations teams and compliance officers.
 
 <img width="750" height="575" alt="Firework-Architecture" src="https://github.com/user-attachments/assets/7c2bb17f-3e6f-4332-8f29-3bd3bb9069cd" />
 
