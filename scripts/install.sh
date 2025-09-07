@@ -440,12 +440,12 @@ fi
 # 7) Ansible collections ------------------------------------------------------
 echo "--------------------------------------------------------"
 echo "[7/11] Installing Ansible collections..."
-# Readonly-safe inputs
+
 _APP_DIR="${APP_DIR:-/home/firework/firework}"
 _APP_USER="${APP_USER:-firework}"
 _APP_GROUP_PROJECT="${APP_GROUP_PROJECT:-firework}"
 
-# We want the repo root (/home/firework/firework), not .../app
+# Ensure we use repo root (…/firework), not …/app
 if [ "$(basename "$_APP_DIR")" = "app" ]; then
   _PROJ_DIR="$(cd "$_APP_DIR/.." && pwd -P)"
 else
@@ -453,20 +453,31 @@ else
 fi
 
 COLLECTIONS_DIR="$_PROJ_DIR/ansible_collections"
-mkdir -p "$COLLECTIONS_DIR"
 
-# Ensure it's writable by the app user
-if [ "$EUID" -eq 0 ]; then
-  chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"
-elif [ ! -w "$COLLECTIONS_DIR" ] && command -v sudo >/dev/null 2>&1; then
-  sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"
-fi
-chmod 775 "$COLLECTIONS_DIR"
+# Create dir (use sudo if needed)
+mkdir -p "$COLLECTIONS_DIR" 2>/dev/null || \
+{ command -v sudo >/dev/null 2>&1 && sudo mkdir -p "$COLLECTIONS_DIR"; }
+
+# Ensure ownership (sudo if needed)
+chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR" 2>/dev/null || \
+{ command -v sudo >/dev/null 2>&1 && sudo chown -R "$_APP_USER:$_APP_GROUP_PROJECT" "$COLLECTIONS_DIR"; }
+
+# Ensure mode 775 (sudo if needed; clear immutable bit if set)
+chmod 775 "$COLLECTIONS_DIR" 2>/dev/null || {
+  if command -v sudo >/dev/null 2>&1; then
+    # try removing immutable flag if present, then chmod again
+    if command -v lsattr >/dev/null 2>&1 && command -v chattr >/dev/null 2>&1; then
+      sudo lsattr "$COLLECTIONS_DIR" | grep -q ' i ' && sudo chattr -i "$COLLECTIONS_DIR" || true
+    fi
+    sudo chmod 775 "$COLLECTIONS_DIR"
+  else
+    echo "Cannot chmod $COLLECTIONS_DIR (no sudo). Please adjust perms manually."; exit 1
+  fi
+}
 
 ANSIBLE_GALAXY_BIN="$(command -v ansible-galaxy || true)"
 if [ -z "$ANSIBLE_GALAXY_BIN" ]; then
-  echo "ansible-galaxy not found (is Ansible installed?). FAIL"
-  exit 1
+  echo "ansible-galaxy not found (is Ansible installed?). FAIL"; exit 1
 fi
 
 # Reinstall (force) to the desired path
