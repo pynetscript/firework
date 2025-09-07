@@ -1,5 +1,6 @@
 #!/bin/bash
-# A script to prepare the environment for the Firework app.
+# Firework installer: system deps, config, permissions, PostgreSQL, Ansible, Nginx,
+# systemd unit, Python venv + deps, DB migrations, default users, and service start.
 # Idempotent; safe to run multiple times.
 
 set -Eeuo pipefail
@@ -28,6 +29,11 @@ readonly GV_VAULT="${GV_ALL}/vault.yml"
 readonly SERVICE_FILE="/etc/systemd/system/firework.service"
 readonly NGINX_SITE="/etc/nginx/sites-available/firework"
 readonly NGINX_LINK="/etc/nginx/sites-enabled/firework"
+
+readonly VENV_DIR="${PROJECT_DIR}/venv"
+readonly REQ_FILE="${PROJECT_DIR}/requirements.txt"
+readonly MIGRATIONS_DIR="${PROJECT_DIR}/migrations"
+readonly FLASK_APP_FILE="${PROJECT_DIR}/run.py"
 
 EDITOR="${EDITOR:-nano}"
 
@@ -70,22 +76,14 @@ prompt_db_details () {
   read -r -p "DB user [firework]: " DB_USER || true
   DB_USER="${DB_USER:-firework}"
 
-  printf "DB pass [........]: "
-  stty -echo
-  read -r DB_PASS || true
-  stty echo
-  echo
+  read -r -s -p "DB pass [........]: " DB_PASS; echo
   while [ -z "${DB_PASS:-}" ]; do
     echo "Password cannot be empty."
-    printf "DB pass [........]: "
-    stty -echo
-    read -r DB_PASS || true
-    stty echo
-    echo
+    read -r -s -p "DB pass [........]: " DB_PASS; echo
   done
 }
 
-# Create ENV file from captured values
+# Create .env from captured values
 write_env_file () {
   local sk="$1"
   local host="$2" port="$3" db="$4" user="$5" pass="$6"
@@ -154,11 +152,21 @@ sql_escape () {
   printf "%s" "$1" | sed "s/'/''/g"
 }
 
-# YAML-quote a value (single quotes, with inner quotes doubled)
+# YAML-quote a value (single quotes, inner quotes doubled)
 yaml_quote () {
   local v="${1-}"
   v="${v//\'/\'\'}"
   printf "'%s'" "$v"
+}
+
+start_unit () {
+  local unit="$1"
+  if sudo systemctl start "$unit"; then
+    echo "Started: $unit"
+  else
+    echo "Error: Failed to start $unit. See: journalctl -u ${unit}.service"
+    exit 1
+  fi
 }
 
 # --- Start -------------------------------------------------------------------
@@ -167,7 +175,7 @@ echo "Installation started..."
 
 # 1) System packages ----------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[1/9] Ensuring system packages are installed..."
+echo "[1/11] Ensuring system packages are installed..."
 export DEBIAN_FRONTEND=noninteractive
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update -y
@@ -186,7 +194,7 @@ fi
 
 # 2) Users/dirs/files ---------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[2/9] Creating users, folders, and files..."
+echo "[2/11] Creating users, folders, and files..."
 if ! id "${APP_USER}" &>/dev/null; then
   sudo useradd -m -r -s /usr/sbin/nologin -g "${APP_GROUP}" "${APP_USER}"
 else
@@ -212,21 +220,17 @@ sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 
 # 3) Interactive config -------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[3/9] Interactive configuration (.env, inventory, vault pass, vault.yml)..."
+echo "[3/11] Interactive configuration (.env, inventory, vault pass, vault.yml)..."
 
-# 3a) .env — REQUIRED (no prompt)
+# 3a) .env — REQUIRED (no prompt for proceeding)
 echo "#################################################################################"
 read -r -p "Please enter a SECRET_KEY or leave blank to auto-generate [${ENV_FILE}]: " SK || true
-if [ -z "${SK:-}" ]; then
-  SK="$(gen_secret_key)"
-  echo "#################################################################################"
-fi
+[ -z "${SK:-}" ] && SK="$(gen_secret_key)"
 DB_HOST=""; DB_PORT=""; DB_NAME=""; DB_USER=""; DB_PASS=""
 prompt_db_details
 write_env_file "${SK}" "${DB_HOST}" "${DB_PORT}" "${DB_NAME}" "${DB_USER}" "${DB_PASS}"
 
-
-# 3b) inventory.yml (optional helper)
+# 3b) inventory.yml (helper)
 echo "#################################################################################"
 if ask_yes_no "Populate inventory.yml with example template?"; then
   write_inventory_example
@@ -235,20 +239,13 @@ elif ask_yes_no "Open ${INVENTORY_FILE} in ${EDITOR} now?"; then
   sudo "${EDITOR}" "${INVENTORY_FILE}"
 fi
 
-## 3c) .vault_pass.txt
-#echo "#################################################################################"
-#printf "Please enter a password for vault_pass.txt: "
-#read -r VPASS
-#printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
-#echo "${VAULT_PASS_FILE}: OK"
-
-# 3c) .vault_pass.txt
+# 3c) .vault_pass.txt (REQUIRED)
 echo "#################################################################################"
 read -r -s -p "Please enter a password for vault_pass.txt: " VPASS; echo
 printf "%s\n" "${VPASS}" | sudo tee "${VAULT_PASS_FILE}" >/dev/null
 echo "${VAULT_PASS_FILE}: OK"
 
-# 3d) group_vars/all/vault.yml
+# 3d) group_vars/all/vault.yml (encrypted or plaintext fallback)
 echo "#################################################################################"
 if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
   echo "Please provide passwords/keys for network devices to store in ${GV_VAULT}."
@@ -257,7 +254,6 @@ if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
   read -r -p "fortinet_api_access_token: " FNTOK || true
   read -r -p "paloalto_api_password: " PAPASS || true
 
-  # YAML-quoted values (single quotes, inner quotes doubled)
   APASS_YAML="$(yaml_quote "${APASS}")"
   FNPASS_YAML="$(yaml_quote "${FNPASS}")"
   FNTOK_YAML="$(yaml_quote "${FNTOK}")"
@@ -277,19 +273,20 @@ YML
        --output "${GV_VAULT}" "${tmp_yaml}" >/dev/null 2>&1; then
     sudo rm -f "${tmp_yaml}"
     echo "${GV_VAULT}: OK"
-    echo "Note: You can edit later with: ansible-vault edit ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}"
+    echo "Note: edit later with:"
+    echo "  ansible-vault edit ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}"
   else
     echo "Encryption FAILED; leaving plaintext temp at: ${tmp_yaml}"
-    echo "You can inspect it, then encrypt manually:"
+    echo "You can encrypt manually:"
     echo "  ansible-vault encrypt ${tmp_yaml} --vault-password-file ${VAULT_PASS_FILE} --output ${GV_VAULT}"
   fi
 else
   echo "ansible-vault not available or ${VAULT_PASS_FILE} empty."
-  echo "Writing PLAINTEXT ${GV_VAULT} (you should encrypt it later):"
+  echo "Writing PLAINTEXT ${GV_VAULT} (encrypt it later):"
   APASS_YAML="$(yaml_quote "admin")"
   sudo tee "${GV_VAULT}" >/dev/null <<YML
 ---
-# WARNING: PLAINTEXT (not encrypted) — later run:
+# WARNING: PLAINTEXT — later run:
 #   ansible-vault encrypt ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}
 ansible_password: ${APASS_YAML}
 fortinet_api_password: ''
@@ -300,14 +297,14 @@ fi
 
 # 4) Path posture -------------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[4/9] Applying path posture..."
+echo "[4/11] Applying path posture..."
 sudo chmod 755 /home/firework
 sudo chgrp "${APP_GROUP}" "${PROJECT_DIR}"
 sudo chmod 755 "${PROJECT_DIR}"
 
 # 5) Ownership & permissions ---------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[5/9] Setting ownership and permissions..."
+echo "[5/11] Setting ownership and permissions..."
 sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}"
 sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}"
 
@@ -414,7 +411,7 @@ fi
 
 # 6) PostgreSQL ---------------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[6/9] Installing and configuring PostgreSQL..."
+echo "[6/11] Installing and configuring PostgreSQL..."
 sudo systemctl enable --now postgresql >/dev/null 2>&1 || true
 
 # Use just-captured DB_* to set up local DB if host is local
@@ -438,7 +435,7 @@ grep -q "^${DB_HOST}:${DB_PORT}:\*:${DB_USER}:" "${PGPASS_FILE}" 2>/dev/null || 
 sudo chown firework:firework "${PGPASS_FILE}"
 sudo chmod 600 "${PGPASS_FILE}"
 
-# --- PostgreSQL verification (like nginx -t) ---
+# PostgreSQL verification (like nginx -t)
 if command -v psql >/dev/null 2>&1; then
   echo "psql client: $(psql --version 2>/dev/null || echo 'unknown')"
   if PGPASSFILE="${PGPASS_FILE}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT 1" >/dev/null 2>&1; then
@@ -450,13 +447,15 @@ fi
 
 # 7) Ansible collections ------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[7/9] Installing Ansible collections..."
+echo "[7/11] Installing Ansible collections..."
 if command -v ansible-galaxy >/dev/null 2>&1; then
   readonly ANSIBLE_ENV_VARS="ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}"
   sudo -u firework mkdir -p "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
   sudo chown firework:"${APP_GROUP}" "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
   sudo chmod 775 "${ANSIBLE_COLLECTIONS_PATH}/fortinet" "${ANSIBLE_COLLECTIONS_PATH}/paloaltonetworks"
 
+  # Show native output
+  sudo -u firework env ${ANSIBLE_ENV_VARS} \
   sudo -u firework env ${ANSIBLE_ENV_VARS:-ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH} ANSIBLE_TMPDIR=${ANSIBLE_TMP_DIR}} \
     ansible-galaxy collection install -p "${ANSIBLE_COLLECTIONS_PATH}" \
       fortinet.fortios paloaltonetworks.panos
@@ -471,21 +470,19 @@ fi
 
 # 8) Nginx --------------------------------------------------------------------
 echo "--------------------------------------------------------"
-echo "[8/9] Installing and configuring Nginx..."
+echo "[8/11] Installing and configuring Nginx..."
 sudo tee "${NGINX_SITE}" >/dev/null <<'NGINX'
 server {
     listen 80;
     server_name _;
 
-    # Serve static files directly from the app/static directory
     location /static {
         alias /home/firework/firework/app/static;
         expires 30d;
-        access_log on; # Keep access logging on for debugging
+        access_log on;
         log_not_found off;
     }
 
-    # Proxy all other requests to the Gunicorn Unix socket
     location / {
         include proxy_params;
         proxy_pass http://unix:/tmp/firework.sock;
@@ -510,15 +507,16 @@ fi
 
 # Verify service is running
 nginx_state="$(systemctl is-active nginx 2>/dev/null || true)"
-echo "nginx: OK"
-if [ "${nginx_state}" != "active" ]; then
+if [ "${nginx_state}" = "active" ]; then
+  echo "nginx: OK"
+else
   echo "nginx: FAIL"
   sudo journalctl -u nginx --no-pager -n 30 || true
 fi
 
-# 9) systemd ------------------------------------------------------------------
+# 9) systemd unit (do not start yet) ------------------------------------------
 echo "--------------------------------------------------------"
-echo "[9/9] Create systemd service if missing..."
+echo "[9/11] Ensure systemd service exists..."
 if [ ! -f "${SERVICE_FILE}" ]; then
   sudo tee "${SERVICE_FILE}" >/dev/null <<'UNIT'
 [Unit]
@@ -549,7 +547,161 @@ else
   echo "Systemd service: Already exists; skipping."
 fi
 
-# Done ------------------------------------------------------------------------
+# 10) App setup: venv, deps, migrations, default users ------------------------
+echo "--------------------------------------------------------"
+echo "[10/11] Python venv, dependencies, DB migrations, default users..."
+# Create/activate venv
+if [ ! -d "${VENV_DIR}" ]; then
+  echo "Creating virtual environment at '${VENV_DIR}'..."
+  python3 -m venv "${VENV_DIR}"
+else
+  echo "Virtual environment already exists at '${VENV_DIR}'."
+fi
+# shellcheck disable=SC1091
+source "${VENV_DIR}/bin/activate"
+
+# Install deps
+if [ -f "${REQ_FILE}" ]; then
+  echo "Installing dependencies from ${REQ_FILE}..."
+  pip install --upgrade pip
+  pip install -r "${REQ_FILE}"
+else
+  echo "WARNING: ${REQ_FILE} not found; skipping pip install."
+fi
+
+# Flask app env
+export FLASK_APP="${FLASK_APP_FILE}"
+echo "FLASK_APP set to ${FLASK_APP}"
+
+# Initialize migrations if missing
+if [ ! -d "${MIGRATIONS_DIR}" ]; then
+  echo "Initializing Flask-Migrate repository..."
+  (cd "${PROJECT_DIR}" && flask db init)
+else
+  echo "Flask-Migrate repository already initialized."
+fi
+
+# Patch migrations/env.py (idempotent)
+ENV_PY_FILE="${MIGRATIONS_DIR}/env.py"
+if [ -f "${ENV_PY_FILE}" ]; then
+  echo "Patching migrations/env.py..."
+  grep -q "sys.path.append(" "${ENV_PY_FILE}" || \
+    sed -i '\@^import os@a\
+import sys\
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '\''..'\'' )))' "${ENV_PY_FILE}"
+
+  grep -q "from app import create_app" "${ENV_PY_FILE}" || \
+    sed -i '\@from alembic import context@a\
+from app import create_app\
+from app.models import db, JSONEncodedList' "${ENV_PY_FILE}"
+
+  grep -q "^app = create_app()" "${ENV_PY_FILE}" || \
+    sed -i 's|^target_metadata = None|target_metadata = db.metadata\
+app = create_app()|' "${ENV_PY_FILE}"
+
+  grep -q "config.set_main_option('sqlalchemy.url'" "${ENV_PY_FILE}" || \
+    sed -i '/fileConfig(context.config.config_file_name)/a\
+config = context.config\
+config.set_main_option('\''sqlalchemy.url'\'', app.config.get('\''SQLALCHEMY_DATABASE_URI'\''))' "${ENV_PY_FILE}"
+
+  grep -q "with app.app_context():" "${ENV_PY_FILE}" || \
+    sed -i '/def run_migrations_online() -> None:/a\
+    with app.app_context():' "${ENV_PY_FILE}"
+
+  grep -q 'url=config.get_main_option("sqlalchemy.url")' "${ENV_PY_FILE}" || \
+    sed -i '0,/context.configure(/{
+/context.configure(/,/)/s/context.configure([^)]*)/context.configure(\
+        connection=connection,\
+        target_metadata=target_metadata,\
+        url=config.get_main_option("sqlalchemy.url"),\
+    )/
+}' "${ENV_PY_FILE}"
+  echo "Patched migrations/env.py successfully."
+else
+  echo "WARNING: ${ENV_PY_FILE} not found (did flask db init run?)."
+fi
+
+# Generate migration (safe if none)
+echo "Generating migration from models.py (if any changes)..."
+if ! (cd "${PROJECT_DIR}" && flask db migrate -m "Initial Firework app schema"); then
+  echo "No schema changes or migrate failed; continuing."
+fi
+
+# Patch latest migration for JSONEncodedList, if needed
+MIGR_FILE="$(ls -t "${MIGRATIONS_DIR}/versions/"*.py 2>/dev/null | head -n 1 || true)"
+if [ -n "${MIGR_FILE}" ]; then
+  echo "Detected migration file: ${MIGR_FILE}"
+  if grep -q "app.models.JSONEncodedList" "${MIGR_FILE}" && \
+     ! grep -q "^from app.models import JSONEncodedList" "${MIGR_FILE}"; then
+    echo "Patching migration for JSONEncodedList import..."
+    sed -i '\@import sqlalchemy as sa@a from app.models import JSONEncodedList' "${MIGR_FILE}"
+    sed -i 's/app.models.JSONEncodedList/JSONEncodedList/g' "${MIGR_FILE}"
+  fi
+fi
+
+# Apply migrations
+echo "Upgrading database..."
+(cd "${PROJECT_DIR}" && flask db upgrade)
+
+# Load .env for default user creation (if present)
+if [ -f "${ENV_FILE}" ]; then
+  echo "Loading environment variables from ${ENV_FILE}..."
+  set -a
+  # shellcheck disable=SC1091
+  source "${ENV_FILE}"
+  set +a
+fi
+
+# Create default users (idempotent)
+echo "Creating default users..."
+(
+  cd "${PROJECT_DIR}"
+  PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}" python - <<'EOF'
+import os, sys
+from datetime import datetime, timezone
+
+from app import create_app, db
+from app.models import User
+
+app = create_app()
+with app.app_context():
+    users = [
+        {'username':'super_admin','password':'super_admin','email':'superadmin@firework','role':'superadmin'},
+        {'username':'admin','password':'admin','email':'admin@firework','role':'admin'},
+        {'username':'implementer','password':'implementer','email':'implementer@firework','role':'implementer'},
+        {'username':'approver1','password':'approver1','email':'approver1@firework','role':'approver'},
+        {'username':'approver2','password':'approver2','email':'approver2@firework','role':'approver'},
+        {'username':'requester1','password':'requester1','email':'requester1@firework','role':'requester'},
+        {'username':'requester2','password':'requester2','email':'requester2@firework','role':'requester'},
+    ]
+    created = 0
+    for u in users:
+        if User.query.filter_by(username=u['username']).first():
+            print(f"User '{u['username']}' already exists.")
+            continue
+        obj = User(username=u['username'], email=u['email'], role=u['role'], created_at=datetime.now(timezone.utc))
+        obj.set_password(u['password'])
+        db.session.add(obj); created += 1
+    if created:
+        db.session.commit()
+    print(f"Default user creation done. Created: {created}.")
+EOF
+)
+
+# 11) Start services ----------------------------------------------------------
+echo "--------------------------------------------------------"
+echo "[11/11] Starting services..."
+start_unit "firework"
+
+# Nginx should already be active; re-check status for completeness
+nginx_state="$(systemctl is-active nginx 2>/dev/null || true)"
+if [ "${nginx_state}" != "active" ]; then
+  start_unit "nginx"
+else
+  echo "Nginx already running."
+fi
+
 echo "--------------------------------------------------------"
 echo "Installation completed!"
 echo "========================================================"
+firework@ct7030cem:~/firework$
