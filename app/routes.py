@@ -801,7 +801,7 @@ def approve_deny_request(rule_id):
         if action == 'approve':
             rule.status = 'Pending Implementation'
             rule.approval_status = 'Approved'
-            rule.approved_at = datetime.now(timezone.utc)
+            rule.approved_at = datetime.utcnow()
             flash(f"Request ID {rule.id} sucessfully approved.", 'success')
             app_logger.info(f"Request ID {rule.id} sucessfully approved by {current_user.username}. Status: {rule.status}.")
             log_activity(
@@ -935,7 +935,7 @@ def implement_rule(rule_id):
 
         rule.implementer_id = current_user.id
         rule.implementer_comment = implementer_comment
-        rule.implemented_at = datetime.now(timezone.utc)
+        rule.implemented_at = datetime.utcnow()
 
         if action == 'provision':
             firewalls_to_provision = rule.firewalls_to_provision if rule.firewalls_to_provision else []
