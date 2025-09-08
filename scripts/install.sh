@@ -185,6 +185,7 @@ if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get install -y ansible
   fi
   pip install pan-os-python --break-system-packages
+  sudo -u firework_app_user pip install pan-os-python --break-system-packages
   dpkg -s postgresql >/dev/null 2>&1 || sudo apt-get install -y postgresql postgresql-contrib
   command -v nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
 else
