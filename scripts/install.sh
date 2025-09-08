@@ -185,7 +185,6 @@ if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get install -y ansible
   fi
   pip install pan-os-python --break-system-packages
-  sudo -u firework_app_user pip install pan-os-python --break-system-packages
   dpkg -s postgresql >/dev/null 2>&1 || sudo apt-get install -y postgresql postgresql-contrib
   command -v nginx >/dev/null 2>&1 || sudo apt-get install -y nginx
 else
@@ -219,6 +218,8 @@ sudo chown firework:firework "${GV_ALL}"
 
 sudo touch "${INVENTORY_FILE}" "${VAULT_PASS_FILE}" "${ENV_FILE}"
 [ -f "${PGPASS_FILE}" ] || sudo -u firework touch "${PGPASS_FILE}"
+
+sudo -u firework_app_user pip install pan-os-python --break-system-packages
 
 # 3) Interactive config -------------------------------------------------------
 echo "--------------------------------------------------------"
