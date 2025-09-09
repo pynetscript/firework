@@ -106,7 +106,6 @@ write_inventory_example () {
   sudo tee "${INVENTORY_FILE}" >/dev/null <<'INV'
 all:
   vars:
-    ansible_user: admin
     ansible_connection: network_cli
 
   children:
@@ -115,34 +114,43 @@ all:
         R1:
           ansible_host: 10.250.10.111
           ansible_network_os: cisco.ios.ios
+          ansible_user: "{{ cisco_username }}"
+          ansible_password: "{{ cisco_password }}"
         R2:
           ansible_host: 10.250.10.112
           ansible_network_os: cisco.ios.ios
+          ansible_user: "{{ cisco_username }}"
+          ansible_password: "{{ cisco_password }}"
         R3:
           ansible_host: 10.250.10.113
           ansible_network_os: cisco.ios.ios
+          ansible_user: "{{ cisco_username }}"
+          ansible_password: "{{ cisco_password }}"
         SW1:
           ansible_host: 10.250.10.110
           ansible_network_os: cisco.ios.ios
+          ansible_user: "{{ cisco_username }}"
+          ansible_password: "{{ cisco_password }}"
 
     fortinet:
       hosts:
         fgt:
           ansible_host: 10.250.10.101
           ansible_network_os: fortinet.fortios.fortios
+          ansible_user: "{{ fortinet_api_username }}"
+          ansible_httpapi_pass: "{{ fortinet_api_key }}"
+          ansible_connection: httpapi
           ansible_httpapi_use_ssl: yes
           ansible_httpapi_validate_certs: no
-          ansible_connection: httpapi
-          ansible_httpapi_pass: "{{ fortinet_api_password }}"
 
     paloalto:
       hosts:
         pafw:
           ansible_host: 10.250.10.161
           ansible_network_os: paloaltonetworks.panos.panos
+          ansible_user: "{{ paloalto_username }}"
+          ansible_password: "{{ paloalto_password }}"
           ansible_connection: httpapi
-          ansible_user: admin
-          ansible_password: "{{ paloalto_api_password }}"
           ansible_httpapi_use_ssl: yes
           ansible_httpapi_validate_certs: no
 INV
@@ -256,24 +264,30 @@ echo "${VAULT_PASS_FILE}: OK"
 echo "#################################################################################"
 if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
   echo "Please provide passwords/keys for network devices to store in ${GV_VAULT}."
-  read -r -p "ansible_password: " APASS || true
-  read -r -p "fortinet_api_password: " FNPASS || true
-  read -r -p "fortinet_api_access_token: " FNTOK || true
-  read -r -p "paloalto_api_password: " PAPASS || true
+  read -r -p "cisco_username: " CUSER || true
+  read -r -p "cisco_password: " CPASS || true
+  read -r -p "fortinet_api_username: " FNAPIUSER || true
+  read -r -p "fortinet_api_key: " FNAPIKEY || true
+  read -r -p "paloalto_username: " PAUSER || true
+  read -r -p "paloalto_password: " PAPASS || true
 
-  # YAML-quoted values (single quotes, inner quotes doubled)
-  APASS_YAML="${APASS}"
-  FNPASS_YAML="${FNPASS}"
-  FNTOK_YAML="${FNTOK}"
+  # YAML-quoted values
+  CUSER_YAML="${CUSER}"
+  CPASS_YAML="${CPASS}"
+  FNAPIUSER_YAML="${FNAPIUSER}"
+  FNAPIKEY_YAML="${FNAPIKEY}"
+  PAUSER_YAML="${PAUSER}"
   PAPASS_YAML="${PAPASS}"
 
   tmp_yaml="$(sudo -u firework mktemp)"
   sudo -u firework tee "${tmp_yaml}" >/dev/null <<YML
 ---
-ansible_password: ${APASS_YAML}
-fortinet_api_password: ${FNPASS_YAML}
-fortinet_api_access_token: ${FNTOK_YAML}
-paloalto_api_password: ${PAPASS_YAML}
+cisco_username: ${CUSER_YAML}
+cisco_password: ${CPASS_YAML}
+fortinet_api_username: ${FNAPIUSER_YAML}
+fortinet_api_key: ${FNAPIKEY_YAML}
+paloalto_username: ${PAUSER_YAML}
+paloalto_password: ${PAPASS_YAML}
 YML
 
   if sudo -u firework ansible-vault encrypt \
@@ -290,15 +304,16 @@ YML
 else
   echo "ansible-vault not available or ${VAULT_PASS_FILE} empty."
   echo "Writing PLAINTEXT ${GV_VAULT} (you should encrypt it later):"
-  APASS_YAML="$(yaml_quote "admin")"
   sudo tee "${GV_VAULT}" >/dev/null <<YML
 ---
 # WARNING: PLAINTEXT (not encrypted) — later run:
 #   ansible-vault encrypt ${GV_VAULT} --vault-password-file ${VAULT_PASS_FILE}
-ansible_password: ${APASS_YAML}
-fortinet_api_password: ''
-fortinet_api_access_token: ''
-paloalto_api_password: ''
+cisco_username: ''
+cisco_password: ''
+fortinet_api_username: ''
+fortinet_api_key: ''
+paloalto_username: ''
+paloalto_password: ''
 YML
 fi
 
