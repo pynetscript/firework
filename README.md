@@ -23,7 +23,7 @@ The app demonstrates how **open-source automation (Python + Flask + Ansible + Po
 ## Features  
 - **RBAC User Management** (SuperAdmin, Admin, Approver, Requester, Implementer).  
 - **Workflow**: Request → Pre-check → Approval → Provision → Post-check.  
-- **Pre-checks**:
+- **Pre-deployment validation**:
   - Request input validation.
   - Blacklist rule validation.  
   - Network path analysis.  
