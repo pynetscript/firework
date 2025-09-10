@@ -501,7 +501,7 @@ def submit_request():
             'rule_description': rule_description
         }
 
-        # perform_pre_check method returns 4 values.
+        # perform_pre_check method; returns 4 values.
         stdout, stderr, discovered_firewalls, firewalls_already_configured = \
             get_network_automation_service().perform_pre_check(
                 rule_data=rule_data_for_precheck,
@@ -525,6 +525,58 @@ def submit_request():
                 app_logger.info(f"Pre-check STDOUT for request ID {db_rule.id}:\n{stdout}")
             if stderr:
                 app_logger.error(f"Pre-check STDERR for request ID {db_rule.id}:\n{stderr}")
+
+            # Do not submit if policy already exists on all discovered firewalls
+            if rule_data_for_precheck.get('precheck_decision') == 'ALREADY_EXISTS' or (
+                db_rule.firewalls_involved and
+                set(db_rule.firewalls_involved) == set(db_rule.firewalls_already_configured or []) and
+                not (db_rule.firewalls_to_provision or [])
+            ):
+                msg = (
+                    f"Request [{db_rule.source_ip},{db_rule.destination_ip},{db_rule.protocol},{(db_rule.ports or ['any'])[0]}] already exists on all discovered firewalls: "
+                    f"{', '.join(db_rule.firewalls_already_configured or [])}."
+                )
+                app_logger.info(f"[REQUEST_FAILED] {msg}")
+                log_activity(
+                    event_type='REQUEST_FAILED',
+                    description=(
+                        f"Request [{db_rule.source_ip},{db_rule.destination_ip},{db_rule.protocol},{(db_rule.ports or ['any'])[0]}] already exists on all discovered firewalls: "
+                        f"{', '.join(db_rule.firewalls_already_configured or [])}."
+                    ),
+                    user=current_user,
+                    related_resource_id=db_rule.id,
+                    related_resource_type='FirewallRule'
+                )
+
+                try:
+                    db.session.delete(db_rule)
+                    db.session.commit()
+                except Exception as e:
+                    db.session.rollback()
+                    app_logger.error(f"Failed to delete temporary pre-check ticket {db_rule.id}: {e}", exc_info=True)
+
+                return jsonify({
+                    "status": "info",
+                    "message": msg,
+                    "ticket_status": "not_created",
+                    "firewalls_involved": db_rule.firewalls_involved or [],
+                }), 200
+
+            # Determine final status after pre-check, considering user roles for approval
+            # Check for no firewalls in path first, regardless of user role
+            if not db_rule.firewalls_involved or len(db_rule.firewalls_involved) == 0:
+                db_rule.status = 'Completed - No Provisioning Needed'
+                db_rule.approval_status = 'Approved'
+                flash_message = f"Request ID {db_rule.id} completed as no firewalls were involved."
+                app_logger.info(f"Request ID {db_rule.id} submitted by '{current_user.username}' completed as no firewalls were involved.")
+                log_activity(
+                    event_type='REQUEST_COMPLETED',
+                    description=f"Request ID {db_rule.id} completed as no firewalls were involved.",
+                    user=current_user,
+                    related_resource_id=db_rule.id,
+                    related_resource_type='FirewallRule'
+                )
+
 
             # Determine final status after pre-check, considering user roles for approval
             # Check for no firewalls in path first, regardless of user role

@@ -1055,6 +1055,7 @@ class NetworkAutomationService:
             }
 
             playbook = None
+
             if firewall_name.lower().startswith('pa'):
                 playbook = 'pre_check_firewall_rule_paloalto.yml'
             elif firewall_name.lower().startswith('fgt'):
@@ -1064,26 +1065,36 @@ class NetworkAutomationService:
                 continue
 
             app_logger.info(f"Pre-checking rule {rule_data['rule_id']} on {firewall_name} using {playbook}...")
+
             try:
                 stdout, stderr = self._execute_ansible_playbook(playbook, extra_vars=extra_vars)
                 pre_check_stdout += f"\n--- {firewall_name} STDOUT ---\n" + stdout
                 pre_check_stderr += f"\n--- {firewall_name} STDERR ---\n" + stderr
 
+                rule_data.setdefault('firewalls_already_configured', [])
+                rule_data.setdefault('firewalls_to_provision', [])
+
                 if "POLICY_EXISTS" in stdout:
                     app_logger.info(f"Rule {rule_data['rule_id']} already exists on {firewall_name}.")
-                    if 'firewalls_already_configured' not in rule_data or rule_data['firewalls_already_configured'] is None:
-                        rule_data['firewalls_already_configured'] = []
                     rule_data['firewalls_already_configured'].append(firewall_name)
+                    rule_data['firewalls_already_configured'] = sorted(set(rule_data['firewalls_already_configured']))
+                    if firewall_name in rule_data['firewalls_to_provision']:
+                        rule_data['firewalls_to_provision'] = [fw for fw in rule_data['firewalls_to_provision'] if fw != firewall_name]
                 else:
                     app_logger.info(f"Rule {rule_data['rule_id']} does NOT exist on {firewall_name}.")
-                    if 'firewalls_to_provision' not in rule_data or rule_data['firewalls_to_provision'] is None:
-                        rule_data['firewalls_to_provision'] = []
                     rule_data['firewalls_to_provision'].append(firewall_name)
+                    rule_data['firewalls_to_provision'] = sorted(set(rule_data['firewalls_to_provision']))
 
             except RuntimeError as e:
                 app_logger.error(f"Failed to pre-check rule {rule_data['rule_id']} on {firewall_name}: {e}")
             except Exception as e:
                 app_logger.critical(f"An unexpected error occurred during pre-check for rule {rule_data['rule_id']} on {firewall_name}: {e}")
+
+        discovered_set = set(firewalls_for_precheck or [])
+        already_set = set(rule_data.get('firewalls_already_configured') or [])
+        to_prov_set = set(rule_data.get('firewalls_to_provision') or [])
+        rule_data['precheck_decision'] = 'ALREADY_EXISTS' if (discovered_set and discovered_set.issubset(already_set) and not to_prov_set) \
+                                         else 'NEEDS_PROVISION'
 
         return pre_check_stdout, pre_check_stderr, firewalls_for_precheck, rule_data.get('firewalls_already_configured', [])
 
