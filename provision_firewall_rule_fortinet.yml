@@ -27,7 +27,7 @@
       fortinet.fortios.fortios_firewall_address:
           vdom: "root"
           state: "present"
-          access_token: "{{ fortinet_api_access_token }}"
+          access_token: "{{ fortinet_api_key }}"
           firewall_address:
               name: "{{ src_addr_name }}"
               subnet: "{{ source_ip }}/32"
@@ -37,7 +37,7 @@
       fortinet.fortios.fortios_firewall_address:
           vdom: "root"
           state: "present"
-          access_token: "{{ fortinet_api_access_token }}"
+          access_token: "{{ fortinet_api_key }}"
           firewall_address:
               name: "{{ dst_addr_name }}"
               subnet: "{{ destination_ip }}/32"
@@ -49,7 +49,7 @@
       fortinet.fortios.fortios_firewall_service_custom:
           vdom: "root"
           state: "present"
-          access_token: "{{ fortinet_api_access_token }}"
+          access_token: "{{ fortinet_api_key }}"
           firewall_service_custom:
                name: "{{ fortigate_service_name }}"
                protocol: "TCP/UDP/SCTP"
@@ -61,7 +61,7 @@
       fortinet.fortios.fortios_firewall_service_custom:
           vdom: "root"
           state: "present"
-          access_token: "{{ fortinet_api_access_token }}"
+          access_token: "{{ fortinet_api_key }}"
           firewall_service_custom:
                name: "{{ fortigate_service_name }}"
                protocol: "TCP/UDP/SCTP"
@@ -71,7 +71,7 @@
       fortinet.fortios.fortios_firewall_policy:
           vdom: "root"
           state: "present"
-          access_token: "{{ fortinet_api_access_token }}"
+          access_token: "{{ fortinet_api_key }}"
           firewall_policy:
               name: "firework-{{ rule_id }}"
               policyid: "{{ rule_id }}"

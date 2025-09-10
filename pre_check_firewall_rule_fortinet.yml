@@ -20,7 +20,7 @@
 
     - name: Policy Lookup via API
       ansible.builtin.uri:
-        url: "https://{{ ansible_host }}/api/v2/monitor/firewall/policy-lookup/?access_token={{ fortinet_api_access_token }}&srcintf=port3&sourceip={{ check_source_ip }}&protocol={{ check_protocol }}&dest={{ check_destination_ip }}&destport={{ check_port }}"
+        url: "https://{{ ansible_host }}/api/v2/monitor/firewall/policy-lookup/?access_token={{ fortinet_api_key }}&srcintf=port3&sourceip={{ check_source_ip }}&protocol={{ check_protocol }}&dest={{ check_destination_ip }}&destport={{ check_port }}"
         method: GET
         validate_certs: no
         return_content: yes
@@ -30,13 +30,9 @@
     - name: Set policy_found_flag based on API lookup result
       set_fact:
         policy_found_flag: true
-      # This 'when' condition is a basic assumption.
-      # You MUST inspect the actual JSON response from the FortiGate policy-lookup API (e.g., by debugging fgt_policy_lookup_result.json)
-      # to determine the precise condition that indicates a policy match.
-      # Example: if the API returns a 'policyid' or a specific status when a policy is found.
       when: fgt_policy_lookup_result.status == 200 and fgt_policy_lookup_result.json.results.match | default(false) == true
       run_once: true
-      delegate_to: localhost # Run this locally to update the flag once
+      delegate_to: localhost
 
     - name: Indicate if policy was found
       debug:
