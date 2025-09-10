@@ -27,6 +27,7 @@
       fortinet.fortios.fortios_firewall_policy:
         vdom: "root"
         state: present
+        access_token: "{{ fortinet_api_key }}"
         firewall_policy:
           policyid: "{{ rule_id }}"
           name: "firework-{{ rule_id }}"
