@@ -1779,5 +1779,11 @@ def handle_forbidden(e: Forbidden):
     except Exception:
         return_url = url_for('routes.home')
 
+    log_activity(
+        event_type='APPROVAL_FAILED',
+        description=f"Self-approval is prevented by policy (separation of duties).",
+        user=current_user
+    )
+
     flash("Action not allowed: self-approval is prevented by policy (separation of duties).", "warning")
     return redirect(return_url)

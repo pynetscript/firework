@@ -1,6 +1,7 @@
-from functools import wraps
 from flask import abort, flash, redirect, url_for, request
 from flask_login import current_user
+from app.utils import log_activity
+from functools import wraps
 import logging
 
 app_logger = logging.getLogger(__name__)
@@ -46,7 +47,14 @@ def no_self_approval(f):
 
         if current_user.is_authenticated and current_user.id == rule.requester_id:
             app_logger.warning(f"Self-approval attempt detected for rule ID {rule_id} by user {current_user.username} (ID: {current_user.id}).")
-            flash(f"You cannot approve your own requests.", 'danger')
+
+            log_activity(
+                event_type='APPROVAL_FAILED',
+                description=(
+                    f"User attempted to self-approve his own request ID {rule_id}) on path {request.path}."
+                ),
+                user=current_user
+            )
             abort(403)
 
         return f(*args, **kwargs)
