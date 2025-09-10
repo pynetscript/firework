@@ -69,6 +69,7 @@
       fortinet.fortios.fortios_monitor_fact:
         selector: 'system_interface'
         vdom: 'root'
+        access_token: "{{ fortinet_api_key }}"
       register: fgt_interfaces
       ignore_errors: yes
 
@@ -83,6 +84,7 @@
       fortinet.fortios.fortios_monitor_fact:
         selector: 'network_arp'
         vdom: 'root'
+        access_token: "{{ fortinet_api_key }}"
       register: fgt_arp
       ignore_errors: yes
 
@@ -97,6 +99,7 @@
       fortinet.fortios.fortios_monitor_fact:
         selector: 'router_ipv4'
         vdom: 'root'
+        access_token: "{{ fortinet_api_key }}"
       register: fgt_routes
       ignore_errors: yes
 
