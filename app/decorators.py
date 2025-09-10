@@ -51,7 +51,7 @@ def no_self_approval(f):
             log_activity(
                 event_type='APPROVAL_FAILED',
                 description=(
-                    f"User attempted to self-approve his own request ID {rule_id}) on path {request.path}."
+                    f"User attempted to self-approve his own request ID {rule_id} on path {request.path}."
                 ),
                 user=current_user
             )
