@@ -1,4 +1,3 @@
-firework@ct7030cem:~/firework/scripts$ cat reset.sh
 #!/bin/bash
 
 set -Eeuo pipefail
