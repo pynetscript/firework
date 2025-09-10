@@ -9,6 +9,7 @@ from flask_login import login_required, current_user
 from app.services.network_automation import NetworkAutomationService
 from app.services.network_automation import DestinationUnreachableError, PathfindingError
 from app.decorators import roles_required, no_self_approval
+from werkzeug.exceptions import Forbidden
 from io import StringIO
 import os
 import csv
@@ -1764,3 +1765,19 @@ def admin_debug():
         flash(f"Error reading log file: {e}", 'error')
 
     return render_template('debug.html', log_content=log_content, title='Debug')
+
+#######################################################################
+#                            ERRORS                                   #
+#######################################################################
+
+@routes.app_errorhandler(403)
+def handle_forbidden(e: Forbidden):
+    # Prefer Approvals if the user has access; otherwise go Home
+    try:
+        # If you have a role check helper, use it; else just go to approvals_list
+        return_url = url_for('routes.approvals_list')
+    except Exception:
+        return_url = url_for('routes.home')
+
+    flash("Action not allowed: self-approval is prevented by policy (separation of duties).", "warning")
+    return redirect(return_url)
