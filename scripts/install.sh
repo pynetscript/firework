@@ -281,7 +281,6 @@ if command -v ansible-vault >/dev/null 2>&1 && [ -s "${VAULT_PASS_FILE}" ]; then
 
   tmp_yaml="$(sudo -u firework mktemp)"
   sudo -u firework tee "${tmp_yaml}" >/dev/null <<YML
----
 cisco_username: ${CUSER_YAML}
 cisco_password: ${CPASS_YAML}
 fortinet_api_username: ${FNAPIUSER_YAML}
