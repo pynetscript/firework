@@ -283,3 +283,4 @@ start_unit "nginx"
 
 echo "Services started: firework (Gunicorn), nginx."
 echo "Firework Application and Database Schema Setup Completed."
+echo "--- Firework RESET finished ---"
