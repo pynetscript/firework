@@ -24,10 +24,10 @@ The app demonstrates how **open-source automation (Nginx + Gunicorn + Flask + Py
 - **RBAC User Management** (SuperAdmin, Admin, Approver, Requester, Implementer).  
 - **Workflow**: Request → Pre-check → Approval → Provision → Post-check.  
 - **Pre-deployment validation**:
-  - Request input validation.
+  - Input validation.
   - Blacklist rule validation.  
   - Network path analysis.  
-  - Conflicting rule detection.
+  - Policy overlap detection.
 - **Automated rule provisioning** via Ansible (FortiGate & Palo Alto).
 - **Post-deployment certification** to confirm success.
 - **Dashboard + Audit Logs** for monitoring and compliance.
