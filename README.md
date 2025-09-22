@@ -43,7 +43,7 @@ The app demonstrates how **open-source** software **(Nginx, Gunicorn, Flask, Pyt
 - Device type inferred by **hostname convention**, not Ansible facts.
   - R = Router
   - SW = Switch
-  - pafw = Firewal
+  - pafw = Firewall
   - fgt = Firewall
 - Devices assumed preconfigured with admin users, interfaces, VLANs, OSPF, etc.  
 
